@@ -336,7 +336,7 @@ Type objective_function<Type>::operator() ()
   ADREPORT(rho_o);
   ADREPORT(tau);
   ADREPORT(psi);
-  ADREPORT(mu);
+  //ADREPORT(mu);
   
   REPORT(beta);
   REPORT(sigma);

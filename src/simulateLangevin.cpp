@@ -72,9 +72,11 @@ arma::vec rmvnorm(const arma::vec& mean, const arma::mat& sigma) {
 }
 
 // [[Rcpp::export]]
-DataFrame simulate_langevin_cpp(int nbAnimals, 
+DataFrame simulate_langevin_cpp(int model,
+                                  int nbAnimals, 
                                   int obsPerAnimal,
                                   double lambda,
+                                  double gamma,
                                   double sigma,
                                   NumericVector beta,
                                   List raster_data,
@@ -119,6 +121,8 @@ DataFrame simulate_langevin_cpp(int nbAnimals,
   NumericVector dt(total_obs);
   NumericVector mu_x(total_obs);
   NumericVector mu_y(total_obs);
+  NumericVector v_mux(total_obs);
+  NumericVector v_muy(total_obs);
   
   double s2 = sigma * sigma;
   
@@ -141,6 +145,8 @@ DataFrame simulate_langevin_cpp(int nbAnimals,
     dt[start_idx] = 0;
     mu_x[start_idx] = initialPosition(i,0);
     mu_y[start_idx] = initialPosition(i,1);
+    v_mux[start_idx] = R::rnorm(0, sigma);
+    v_muy[start_idx] = R::rnorm(0, sigma);
     
     // Simulate remaining observations
     for(int t = 1; t < obsPerAnimal; t++) {
@@ -166,32 +172,83 @@ DataFrame simulate_langevin_cpp(int nbAnimals,
         h[1] += beta[c] * grad(1,c);
       }
       
-      // Calculate means
-      arma::vec mean(2);
-      mean(0) = mu_x[idx-1] + s2*dt_step/2.0 * h[0];
-      mean(1) = mu_y[idx-1] + s2*dt_step/2.0 * h[1];
-      
-      // Calculate covariance matrix
-      double sd = sigma * sqrt(dt_step);
-    
-      // Generate new positions and velocities jointly
-      arma::vec new_state(2);
-      new_state(0) = R::rnorm(mean(0), sd);
-      new_state(1) = R::rnorm(mean(1), sd);
-      
-      // Check if new position is within bounds before assigning
-      check_bounds(new_state(0), new_state(1), i+1, time[idx]);
-      
-      mu_x[idx] = new_state(0);
-      mu_y[idx] = new_state(1);
+      if(model == 0){  // original (overdamped) Langevin diffusion
+        
+        // Calculate means
+        arma::vec mean(2);
+        mean(0) = mu_x[idx-1] + s2*dt_step/2.0 * h[0];
+        mean(1) = mu_y[idx-1] + s2*dt_step/2.0 * h[1];
+        
+        // Calculate covariance matrix
+        double sd = sigma * sqrt(dt_step);
+        
+        // Generate new positions and velocities jointly
+        arma::vec new_state(2);
+        new_state(0) = R::rnorm(mean(0), sd);
+        new_state(1) = R::rnorm(mean(1), sd);
+        
+        // Check if new position is within bounds before assigning
+        check_bounds(new_state(0), new_state(1), i+1, time[idx]);
+        
+        mu_x[idx] = new_state(0);
+        mu_y[idx] = new_state(1);
+        
+      } else if(model == 1){    // underdamped Langevin diffusion
+        
+        double exp_gdt = exp(-gamma * dt_step);
+        double exp_2gdt = exp(-2 * gamma * dt_step);
+        
+        // Calculate means
+        arma::vec mean(4);
+        mean(0) = mu_x[idx-1] + v_mux[idx-1]/gamma * (1 - exp_gdt) +
+          s2*h[0]/gamma * (dt_step - (1 - exp_gdt)/gamma);
+        mean(1) = v_mux[idx-1] * exp_gdt + s2*h[0]/gamma * (1 - exp_gdt);
+        mean(2) = mu_y[idx-1] + v_muy[idx-1]/gamma * (1 - exp_gdt) +
+          s2*h[1]/gamma * (dt_step - (1 - exp_gdt)/gamma);
+        mean(3) = v_muy[idx-1] * exp_gdt + s2*h[1]/gamma * (1 - exp_gdt);
+        
+        // Calculate covariance matrix
+        double var_x = s2/(gamma*gamma) * (2*gamma*dt_step - 3 + 4*exp_gdt - exp_2gdt);
+        double var_v = s2 * (1 - exp_2gdt);
+        double cov_xv = s2/gamma * (1 - 2*exp_gdt + exp_2gdt);
+        
+        arma::mat Sigma(4,4, arma::fill::zeros);
+        Sigma(0,0) = Sigma(2,2) = var_x;
+        Sigma(1,1) = Sigma(3,3) = var_v;
+        Sigma(0,1) = Sigma(1,0) = cov_xv;
+        Sigma(2,3) = Sigma(3,2) = cov_xv;
+        
+        // Generate new positions and velocities jointly
+        arma::vec new_state = rmvnorm(mean, Sigma);
+        
+        // Check if new position is within bounds before assigning
+        check_bounds(new_state(0), new_state(2), i+1, time[idx]);
+        
+        mu_x[idx] = new_state(0);
+        v_mux[idx] = new_state(1);
+        mu_y[idx] = new_state(2);
+        v_muy[idx] = new_state(3);
+      }
     }
   }
   
-  return DataFrame::create(
-    Named("ID") = ID,
-    Named("time") = time,
-    Named("dt") = dt,
-    Named("mu.x") = mu_x,
-    Named("mu.y") = mu_y
-  );
+  if(model == 0){
+    return DataFrame::create(
+      Named("ID") = ID,
+      Named("time") = time,
+      Named("dt") = dt,
+      Named("mu.x") = mu_x,
+      Named("mu.y") = mu_y
+    );
+  } else {
+    return DataFrame::create(
+      Named("ID") = ID,
+      Named("time") = time,
+      Named("dt") = dt,
+      Named("mu.x") = mu_x,
+      Named("mu.y") = mu_y,
+      Named("v_mux") = v_mux,
+      Named("v_muy") = v_muy
+    );
+  }
 }

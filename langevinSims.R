@@ -23,10 +23,14 @@ if(!requireNamespace("momentuHMM",quietly=TRUE) || as.numeric(substr(packageVers
 library(momentuHMM)
 
 library(TMB)
-compile("src/langevin.cpp")
-dyn.load(dynlib("src/langevin"))
 
-source("R/simulateUnderdampedLangevin.R")
+## specify, compile, and load TMB model (can be "langevin" or "underdampedLangevin")
+model <- "underdampedLangevin" 
+
+compile(paste0("src/",model,".cpp"))
+dyn.load(dynlib(paste0("src/",model)))
+
+source("R/helper_functions.R")
 
 nsims <- 100 # number of simulations
 nbAnimals <- 5 # number of tracks
@@ -43,7 +47,8 @@ resol <- 1 # cell resolution
 ncov <- 3 # number of spatial covariates
 
 beta <- c(-4*resol,6*resol,5*resol,-0.1*resol) # resource selection coefficients for the spatial covariates (cov_1, cov_2, ... cov_ncov, d2c)
-sigma <- 1 * resol / 2 # speed parameter scaled by resol / 2
+sigma <- 1 * resol / 2 # speed parameter scaled by resol/2 
+gamma <- 0.25 # friction parameter (smaller value -> more directional persistence); ignored unless model="underdampedLangevin"
 psi <- 1 # error SD scaling parameter
 
 ## missing data and measurement error
@@ -58,11 +63,14 @@ r <- c(0,180) # range for ellipse orientation (degrees)
 
 langSim <- langTMB <- list()
 covlist <- list()
-parMat <- matrix(NA,nrow=nsims,7,dimnames = list(NULL,c("sigma",paste0("beta",0:(ncov+1)),"UDcor")))
+parMat <- matrix(NA,nrow=nsims,7+ifelse(model=="langevin",0,1))
+if(model=="langevin"){
+  colnames(parMat) <- c("sigma",paste0("beta",0:(ncov+1)),"UDcor")
+} else colnames(parMat) <- c("sigma",paste0("beta",0:(ncov+1)),"gamma","UDcor")
 
 set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
 for(isim in 1:nsims){
-  
+
   cat("Simulation",isim,"\n")
   #######################
   ## Define covariates ##
@@ -139,17 +147,19 @@ for(isim in 1:nsims){
   while(inherits(langSim[[isim]],"error")){
     # randomly start tracks in locations based on UD
     initPos <- matrix(sample(ncell(UD),nbAnimals,replace=FALSE,prob=exp(getValues(UD))/sum(exp(getValues(UD)))),
-                      1,nbAnimals,byrow=TRUE)
+                        1,nbAnimals,byrow=TRUE)
     initialPosition <- t(mapply(function(x) xyFromCell(UD,initPos[,x]),1:nbAnimals,SIMPLIFY = TRUE))
     langSim[[isim]] <- tryCatch(simulate_langevin_cpp(
-      nbAnimals = nbAnimals,
-      obsPerAnimal = obsPerAnimal,
-      lambda = lambda,
-      sigma = sigma,
-      beta = beta,
-      raster_data = raster_data,
-      initialPosition = initialPosition
-    ),error=function(e) e)
+        model = ifelse(model=="langevin",0,1),
+        nbAnimals = nbAnimals,
+        obsPerAnimal = obsPerAnimal,
+        lambda = lambda,
+        gamma = gamma,
+        sigma = sigma,
+        beta = beta,
+        raster_data = raster_data,
+        initialPosition = initialPosition
+      ),error=function(e) e)
     if(!inherits(langSim[[isim]],"error") && (any(M>0) | any(m>0))){
       langSim[[isim]] <- measurementError(langSim[[isim]],M=M,m=m,c=r,psi=psi)
     } else {
@@ -201,10 +211,18 @@ for(isim in 1:nsims){
   #  aniFit <- aniMotum::fit_ssm(aniDat,spdf = TRUE,time.step=data.frame(id=as.character(langSim[[isim]]$ID),date=as.POSIXlt(langSim[[isim]]$time)),map = list(psi = factor(NA)))
   #  init.mu <- do.call(cbind,mapply(function(x) matrix(unlist(aniFit$ssm[[x]]$predicted$geometry),nrow=2),1:nbAnimals,SIMPLIFY = FALSE))
   #} else {
-  init.mu <- t(langSim[[isim]][,c("mux","muy")]) #t(langSim[[isim]][,c("mu.x","mu.y")]) # 
+    init.mu <- t(langSim[[isim]][,c("mux","muy")]) #t(langSim[[isim]][,c("mu.x","mu.y")]) # 
   #}
-  
-  parm <- list(log_sigma=log(sigma)-log(scale_factor),beta=matrix(c(0,beta),1,length(beta)+1),mu=init.mu / scale_factor,
+        
+  if(model=="langevin"){
+    re <- "mu"
+    init.v_mu <- matrix(0,2,nbAnimals*obsPerAnimal)
+  } else {
+    re <- c("mu","v_mu")
+    init.v_mu <- t(langSim[[isim]][,c("v_mux","v_muy")]) # matrix(0,2,nbAnimals*obsPerAnimal) # 
+  } 
+
+  parm <- list(log_sigma=log(sigma)-log(scale_factor),beta=matrix(c(0,beta),1,length(beta)+1),mu=init.mu / scale_factor, v_mu = init.v_mu / scale_factor, log_gamma = log(gamma),
                l_delta=0,l_gamma=matrix(0,1,2),l_psi=log(psi),l_tau=c(0,0),l_rho_o=0)
   
   message("   Fitting model...")
@@ -212,9 +230,9 @@ for(isim in 1:nsims){
     MakeADFun(
       data,
       parm,
-      map = list(l_delta=factor(NA),l_gamma=factor(c(NA,NA)),l_rho_o=factor(NA),l_tau=factor(c(NA,NA)),l_psi=factor(NA)),#,loc_dev=factor(rep(NA,length(loc_dev_init))),vel_dev=factor(rep(NA,length(vel_dev_init)))),
-      random = c("mu"),
-      DLL = "langevin",
+      map = list(l_delta=factor(NA),l_gamma=factor(c(NA,NA)),l_rho_o=factor(NA),l_tau=factor(c(NA,NA)),l_psi=factor(NA)),#,beta=factor(NA,1:(n))),
+      random = re,
+      DLL = model,
       hessian = TRUE,
       silent = TRUE,
       inner.control =  list(maxit = 10000, trace=0)
@@ -227,8 +245,9 @@ for(isim in 1:nsims){
     gradient = obj2$gr,
     control=list(trace=10,iter.max=10000,eval.max=10000)))
   
-  parMat[isim,1:6] <- langTMB[[isim]]$par
+  parMat[isim,1:(6+ifelse(model=="langevin",0,1))] <- langTMB[[isim]]$par
   parMat[isim,"sigma"] <- exp(parMat[isim,"sigma"] + log(scale_factor))
+  if(model=="underdampedLangevin") parMat[isim,"gamma"] <- exp(parMat[isim,"gamma"])
   
   par(mfrow=c(2,2))
   plot(UD,main=paste0("Simulation ",isim),col=viridis::viridis(100))
@@ -256,4 +275,4 @@ for(isim in 1:nsims){
   #hist(sqrt((rep$mu[1,]-langSim[[isim]]$mux)^2+(rep$mu[2,]-langSim[[isim]]$muy)^2),main="loc estimation error",xlim=c(0,1.2),breaks=seq(0,2,length=20))
 }
 
-save(parMat,beta,sigma,obsPerAnimal,langSim,langTMB,covlist,psi,lambda,propMissing,errorProp,scale_factor,resol,sca,file=paste0("data/langevinSim_nbAnimals_",nbAnimals,"_obsPerAnimal_",obsPerAnimal,"_lambda_",lambda,"_sd_",sigma,"_beta_",paste0(beta,collapse="_"),"_propMissing_",propMissing,"_errorProp_",errorProp,"_psi_",psi,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,langSim,langTMB,covlist,psi,lambda,propMissing,errorProp,scale_factor,resol,sca,file=paste0("data/",model,"Sim_nbAnimals_",nbAnimals,"_obsPerAnimal_",obsPerAnimal,"_lambda_",lambda,"_sd_",sigma,"_gamma_",gamma,"_beta_",paste0(beta,collapse="_"),"_propMissing_",propMissing,"_errorProp_",errorProp,"_psi_",psi,".RData"))

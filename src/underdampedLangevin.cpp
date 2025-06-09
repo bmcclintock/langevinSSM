@@ -378,6 +378,7 @@ Type objective_function<Type>::operator() ()
   ADREPORT(tau);
   ADREPORT(psi);
   //ADREPORT(mu);
+  //ADREPORT(v_mu);
   
   REPORT(beta);
   REPORT(sigma);

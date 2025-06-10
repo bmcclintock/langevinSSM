@@ -145,8 +145,8 @@ DataFrame simulate_langevin_cpp(int model,
     dt[start_idx] = 0;
     mu_x[start_idx] = initialPosition(i,0);
     mu_y[start_idx] = initialPosition(i,1);
-    v_mux[start_idx] = R::rnorm(0, sigma);
-    v_muy[start_idx] = R::rnorm(0, sigma);
+    v_mux[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
+    v_muy[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
     
     // Simulate remaining observations
     for(int t = 1; t < obsPerAnimal; t++) {

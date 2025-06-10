@@ -208,7 +208,7 @@ for(isim in 1:nsims){
   #    crs = 3416,  
   #    remove = FALSE
   #  )
-  #  aniFit <- aniMotum::fit_ssm(aniDat,spdf = TRUE,time.step=data.frame(id=as.character(langSim[[isim]]$ID),date=as.POSIXlt(langSim[[isim]]$time)),map = list(psi = factor(NA)))
+  #  aniFit <- aniMotum::fit_ssm(aniDat,spdf = TRUE,model="rw",time.step=data.frame(id=as.character(langSim[[isim]]$ID),date=as.POSIXlt(langSim[[isim]]$time)),map = list(psi = factor(NA)))
   #  init.mu <- do.call(cbind,mapply(function(x) matrix(unlist(aniFit$ssm[[x]]$predicted$geometry),nrow=2),1:nbAnimals,SIMPLIFY = FALSE))
   #} else {
     init.mu <- t(langSim[[isim]][,c("mux","muy")]) #t(langSim[[isim]][,c("mu.x","mu.y")]) # 
@@ -219,7 +219,13 @@ for(isim in 1:nsims){
     init.v_mu <- matrix(0,2,nbAnimals*obsPerAnimal)
   } else {
     re <- c("mu","v_mu")
-    init.v_mu <- t(langSim[[isim]][,c("v_mux","v_muy")]) # matrix(0,2,nbAnimals*obsPerAnimal) # 
+    init.v_mu <- t(langSim[[isim]][,c("v_mux","v_muy")]) # 
+    #init.v_mu <- matrix(0,2,nbAnimals*obsPerAnimal) 
+    #for(i in 1:nbAnimals){
+    #  aInd <- which(data$ID==i)
+    #  init.v_mu[1,aInd[-1]] <- diff(init.mu[1,aInd])/(data$dt[aInd[-1]]*exp(-gamma*data$dt[aInd[-1]]))
+    #  init.v_mu[2,aInd[-1]] <- diff(init.mu[2,aInd])/(data$dt[aInd[-1]]*exp(-gamma*data$dt[aInd[-1]]))
+    #}
   } 
 
   parm <- list(log_sigma=log(sigma)-log(scale_factor),beta=matrix(c(0,beta),1,length(beta)+1),mu=init.mu / scale_factor, v_mu = init.v_mu / scale_factor, log_gamma = log(gamma),
@@ -230,7 +236,7 @@ for(isim in 1:nsims){
     MakeADFun(
       data,
       parm,
-      map = list(l_delta=factor(NA),l_gamma=factor(c(NA,NA)),l_rho_o=factor(NA),l_tau=factor(c(NA,NA)),l_psi=factor(NA)),#,beta=factor(NA,1:(n))),
+      map = list(l_delta=factor(NA),l_gamma=factor(c(NA,NA)),l_rho_o=factor(NA),l_tau=factor(c(NA,NA)),l_psi=factor(NA)),#,beta=factor(NA,1:(ncov+1))),
       random = re,
       DLL = model,
       hessian = TRUE,
@@ -257,6 +263,8 @@ for(isim in 1:nsims){
   }
   plot(data$Y[1,]*scale_factor,data$Y[2,]*scale_factor,col=2,asp=1) # observed locations
   rep <- obj2$report()
+  sdrep <- sdreport(obj2)
+  langTMB[[isim]]$sdreport <- summary(sdrep,"report") # get SEs 
   for(i in 1:nbAnimals){
     lines(rep$mu[1,data$ID==i]*scale_factor,rep$mu[2,data$ID==i]*scale_factor,type="o",pch=20,col=3) # estimated path
     lines(langSim[[isim]]$mux[data$ID==i],langSim[[isim]]$muy[data$ID==i]) # true path
@@ -265,7 +273,7 @@ for(isim in 1:nsims){
   estUD <- langTMB[[isim]]$par[3]*spatialCovs$cov1 + langTMB[[isim]]$par[4] * spatialCovs$cov2 + langTMB[[isim]]$par[5] * spatialCovs$cov3 + langTMB[[isim]]$par[6] * spatialCovs$d2c
   plot(estUD,main="Estimated UD",col=viridis::viridis(100),xlim=c(-100,100),ylim=c(-100,100))
   
-  parMat[isim,"UDcor"] <- cor(values(UD),values(estUD))
+  parMat[isim,"UDcor"] <- cor(values(UD),values(estUD)) # correlation between true and estimated UD (could alternatively use raster::corLocal)
   
   print(paste0("            ",paste0(colnames(parMat),collapse="    ")))
   print(paste0("current ",paste0(round(parMat[isim,],6),collapse=" ")))

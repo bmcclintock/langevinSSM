@@ -273,7 +273,7 @@ Type objective_function<Type>::operator() ()
       // Add prior on initial velocities from stationary distribution
       // V ~ N(0, σ²/2γ)
       for(int i = 0; i < 2; i++) {
-        nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state), true);
+        nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state) / sqrt(Type(2.0) * gamma(state)), true);
       }
       
       for(int t = 0; t < (track_length-1); t++) {

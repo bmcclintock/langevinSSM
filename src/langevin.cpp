@@ -255,8 +255,8 @@ Type objective_function<Type>::operator() ()
     int track_length = track_lengths(id);
     
     // Create track-specific probability matrix
-    matrix<Type> allProbs(track_length-1, nbStates);
-    allProbs.setZero();
+    //matrix<Type> allProbs(track_length-1, nbStates);
+    //allProbs.setZero();
     
     // For each state
     for(int state = 0; state < nbStates; state++) {
@@ -295,13 +295,15 @@ Type objective_function<Type>::operator() ()
         Type sd = sigma_sca(state) * sqrt(dt_step);
         
         // Add to state probability
-        allProbs(t,state) += dnorm(x_curr, Ex, sd, true) + 
-          dnorm(y_curr, Ey, sd, true);
+        //allProbs(t,state) += dnorm(x_curr, Ex, sd, true) + 
+        //  dnorm(y_curr, Ey, sd, true);
+        
+        nll -= (dnorm(x_curr, Ex, sd, true) + dnorm(y_curr, Ey, sd, true));
       }
     }
     
     // Add HMM likelihood for this track
-    nll += forward_alg(delta, log_trMat, allProbs, track_length-1);
+    //nll += forward_alg(delta, log_trMat, allProbs, track_length-1);
   }
   
   // OBSERVATION MODEL

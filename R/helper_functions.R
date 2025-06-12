@@ -31,6 +31,84 @@ measurementError <- function(data,M,m,c,psi){
   return(data)
 }
 
+init.mu_aniMotum <- function(subDat,model="rw",timeStep){
+  
+  aniDat <- data.frame(
+    id = as.character(subDat$ID),
+    date = as.POSIXlt(subDat$time),
+    x = data$Y[1, notNA] * scale_factor,
+    y = data$Y[2, notNA] * scale_factor,
+    lc = 3,
+    smaj = subDat$error_semimajor_axis,
+    smin = subDat$error_semiminor_axis,
+    eor = subDat$error_ellipse_orientation,
+    x.sd = NA,
+    y.sd = NA
+  )
+  aniDat <- sf::st_as_sf(
+    x = aniDat,
+    coords = c("x", "y"),
+    crs = 3416,  
+    remove = FALSE
+  )
+  
+  # Get unique IDs
+  unique_ids <- unique(aniDat$id)
+  
+  # Create a list to store all the data needed for each ID
+  id_data_list <- list()
+  
+  for (id in unique_ids) {
+    # Filter data for this ID
+    id_indices <- which(aniDat$id == id)
+    
+    id_data_list[[id]] <- aniDat[id_indices,]
+  }
+  
+  # Function to fit SSM for a single ID
+  fit_single_ssm <- function(id_data) {
+    
+    # Convert to sf
+    id_data_sf <- sf::st_as_sf(
+      x = id_data,
+      coords = c("x", "y"),
+      crs = 3416,
+      remove = FALSE
+    )
+    
+    # Fit the model
+    tryCatch({
+      result <- aniMotum::fit_ssm(
+        id_data_sf,
+        spdf = TRUE,
+        model = model,
+        time.step = timeStep,
+        map = list(psi = factor(NA))
+      )
+      return(result)
+    }, error = function(e) {
+      message("Error processing ID: ", unique(id_data$id), " - ", e$message)
+      return(NULL)
+    })
+  }
+
+  # Fit models in parallel
+  ssm_results <- furrr::future_map(unique_ids,function(x) fit_single_ssm(id_data_list[[x]]), .options = furrr::furrr_options(seed = TRUE))
+
+  # Combine results
+  aniFit <- list()
+  for (i in seq_along(unique_ids)) {
+    aniFit[[i]] <- ssm_results[[i]]$ssm[[1]]
+  }
+
+  # Extract initial mu as before
+  init.mu <- do.call(cbind, mapply(function(x) {
+    matrix(unlist(aniFit[[x]]$predicted$geometry), nrow = 2)
+  }, seq_along(unique_ids), SIMPLIFY = FALSE))
+  
+  return(init.mu)
+}
+
 simulate_udLangevin <- function(nbAnimals,obsPerAnimal,lambda,gamma,sigma,beta,spatialCovs,initialPosition=matrix(0,nbAnimals,2),min_dt=4.e-5,ncores=1,progress=FALSE,UD=NULL){
   
   # simulate individuals in parallel

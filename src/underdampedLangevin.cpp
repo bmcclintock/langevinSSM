@@ -147,6 +147,79 @@ matrix<Type> extract_raster_values(Type x, Type y,
 }
 
 template<class Type>
+Type calculate_scale(const matrix<Type> &mu, const vector<Type> &dt, 
+                     const vector<int> &track_starts, const vector<int> &track_lengths) {
+  Type sum_squared_displacements = 0;
+  int total_steps = 0;
+  
+  // Loop over tracks
+  for(int id = 0; id < track_starts.size(); id++) {
+    int start_idx = track_starts(id);
+    int track_length = track_lengths(id);
+    
+    // Loop over time steps for this track
+    for(int t = 0; t < (track_length-1); t++) {
+      int idx = start_idx + t;
+      Type dx = mu(0,idx+1) - mu(0,idx);
+      Type dy = mu(1,idx+1) - mu(1,idx);
+      sum_squared_displacements += (dx*dx + dy*dy) / dt(idx+1);
+    }
+    total_steps += track_length - 1;
+  }
+  
+  return sqrt(sum_squared_displacements / (Type(2.0) * Type(total_steps)));
+}
+
+template<class Type>
+matrix<Type> calculate_smooth_gradient(Type x, Type y, 
+                                       const array<Type> &raster_vals,
+                                       const matrix<Type> &raster_coords,
+                                       const vector<Type> &raster_resolution,
+                                       const vector<Type> &raster_extent,
+                                       int n_covs,
+                                       const vector<Type> &weights,
+                                       Type sigma,
+                                       Type gamma,
+                                       Type dt_step,
+                                       Type zetaScale) {
+  
+  // Calculate scale based on sigma
+  Type zeta = zetaScale * sqrt(Type(2.0) * Type(M_PI)) * sigma; // Type zeta = sigma / sqrt(gamma);
+  
+  Type neighborhood_size = zeta * sqrt(dt_step); // would use: neighborhood_size = zeta * sqrt(Type(2.0) * dt_step) to match Blackwell & Matthiopoulos (2024) when zeta is calculated from mu
+  
+  // Calculate gradient at current location
+  matrix<Type> smooth_grads = weights(0) * extract_raster_values(x, y, raster_vals, 
+                                      raster_coords, raster_resolution, 
+                                      raster_extent, n_covs);
+  
+  int n_points = weights.size();
+  
+  // Add gradients for points around center
+  for(int i = 0; i < (n_points-1); i++) {
+    Type angle;
+    if(n_points == 9) {
+      // Queen's case: NNE, NEE, SEE, SSE, SSW, SWW, NWW, NNW
+      angle = Type(M_PI) * (Type(2.0) * i + Type(1.0)) / Type(8.0);
+    } else {
+      // Diagonal case: NE, NW, SW, SE
+      angle = Type(M_PI) * (Type(2.0) * i + Type(1.0)) / Type(4.0);
+    }
+    
+    smooth_grads += weights(i+1) * extract_raster_values(
+      x + neighborhood_size * cos(angle),
+      y + neighborhood_size * sin(angle),
+      raster_vals,
+      raster_coords,
+      raster_resolution,
+      raster_extent,
+      n_covs);
+  }
+  
+  return smooth_grads;
+}
+
+template<class Type>
 Type objective_function<Type>::operator() ()
 {
   DATA_MATRIX(Y);           // Matrix of observed locations
@@ -164,6 +237,9 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(raster_resolution);  // Vector with x,y resolution
   DATA_VECTOR(raster_extent);      // Vector with xmin,xmax,ymin,ymax
   DATA_INTEGER(n_covs);           // Number of covariates
+  DATA_INTEGER(smoothGradient);  // Boolean flag for using smooth gradient calculation
+  DATA_VECTOR(weights);          // Vector of 5 (diagonal) or 9 (queen's) weights that sum to 1
+  DATA_SCALAR(zetaScale);        // scale factor for smooth gradient neighborhood (>1 increases, <1 decreases)
   
   // for KF observation model
   DATA_VECTOR(m);             // m is the semi-minor axis length
@@ -273,22 +349,43 @@ Type objective_function<Type>::operator() ()
       // Add prior on initial velocities from stationary distribution
       // V ~ N(0, σ²/2γ)
       for(int i = 0; i < 2; i++) {
-        nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state) / sqrt(Type(2.0) * gamma(state)), true);
+        nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state), true);// sigma_sca(state) / sqrt(Type(2.0) * gamma(state)), true);
       }
       
       for(int t = 0; t < (track_length-1); t++) {
         int idx = start_idx + t;
         Type dt_step = dt(idx+1);
         
+        // Get current locations
+        Type x_prev = mu(0,idx);
+        Type y_prev = mu(1,idx);
+        
         // Calculate gradient of log(π)
-        matrix<Type> grad = extract_raster_values(
-          mu(0,idx), mu(1,idx),
-          raster_vals,
-          raster_coords,
-          raster_resolution,
-          raster_extent,
-          n_covs
-        );
+        matrix<Type> grad;
+        if(smoothGradient) {
+          grad = calculate_smooth_gradient(
+            x_prev, y_prev,
+            raster_vals,
+            raster_coords,
+            raster_resolution,
+            raster_extent,
+            n_covs,
+            weights,
+            sigma_sca(state),
+            gamma(state),
+            dt_step,
+            zetaScale
+          );
+        } else {
+          grad = extract_raster_values(
+            x_prev, y_prev,
+            raster_vals,
+            raster_coords,
+            raster_resolution,
+            raster_extent,
+            n_covs
+          );
+        }
         
         // Force vector h = ∇log[π(x)]
         vector<Type> h(2);

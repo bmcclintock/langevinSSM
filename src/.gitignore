@@ -2,3 +2,5 @@ langevin.o
 langevin.so
 underdampedLangevin.o
 underdampedLangevin.so
+fitLangevin.o
+fitLangevin.so

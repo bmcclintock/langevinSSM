@@ -1,8 +1,10 @@
 Rcpp::sourceCpp("src/simulateLangevin.cpp")
 
 measurementError <- function(data,M,m,c,psi){
-  M <- runif(nbAnimals*obsPerAnimal,M[1],M[2])
-  m <- runif(nbAnimals*obsPerAnimal,m[1],m[2])
+  M <- tmpM <- abs(rnorm(nbAnimals*obsPerAnimal,0,sd=M))
+  m <- tmpm <- abs(rnorm(nbAnimals*obsPerAnimal,0,sd=m))
+  M[which(tmpM < tmpm)] <- tmpm[which(tmpM < tmpm)]
+  m[which(tmpM < tmpm)] <- tmpM[which(tmpM < tmpm)]
   c <- momentuHMM:::radian(runif(nbAnimals*obsPerAnimal,c[1],c[2]))
   z = sqrt(2);
   s2c = sin(c) * sin(c);
@@ -31,13 +33,13 @@ measurementError <- function(data,M,m,c,psi){
   return(data)
 }
 
-init.mu_aniMotum <- function(subDat,model="rw",timeStep){
+init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
   
   aniDat <- data.frame(
     id = as.character(subDat$ID),
-    date = as.POSIXlt(subDat$time),
-    x = data$Y[1, notNA] * scale_factor,
-    y = data$Y[2, notNA] * scale_factor,
+    date = as.POSIXlt(subDat$time * 1/mean(subDat$dt)), # fit_ssm doesn't like very small \Delta_t
+    x = subDat$mu.x,
+    y = subDat$mu.y,
     lc = 3,
     smaj = subDat$error_semimajor_axis,
     smin = subDat$error_semiminor_axis,
@@ -82,7 +84,7 @@ init.mu_aniMotum <- function(subDat,model="rw",timeStep){
         id_data_sf,
         spdf = TRUE,
         model = model,
-        time.step = timeStep,
+        time.step = timeSteps,
         map = list(psi = factor(NA))
       )
       return(result)

@@ -73,24 +73,23 @@ arma::vec rmvnorm(const arma::vec& mean, const arma::mat& sigma) {
 
 // [[Rcpp::export]]
 DataFrame simulate_langevin_cpp(int model,
-                                  int nbAnimals, 
-                                  int obsPerAnimal,
-                                  double lambda,
-                                  double gamma,
-                                  double sigma,
-                                  NumericVector beta,
-                                  List raster_data,
-                                  NumericMatrix initialPosition,
-                                  double min_dt = 4e-5) {
+                                int nbAnimals, 
+                                int obsPerAnimal,
+                                double timeStep,
+                                double gamma,
+                                double sigma,
+                                NumericVector beta,
+                                List raster_data,
+                                NumericMatrix initialPosition) {
   
-  // Extract raster extent early for boundary checking
+  // Extract raster extent for boundary checking
   NumericVector raster_extent = raster_data["raster_extent"];
   double xmin = raster_extent[0];
   double xmax = raster_extent[1];
   double ymin = raster_extent[2];
   double ymax = raster_extent[3];
   
-  // Function to check if position is within bounds
+  // Bounds checking function
   auto check_bounds = [xmin, xmax, ymin, ymax](double x, double y, int animal_id, double time) {
     if(x < xmin || x > xmax || y < ymin || y > ymax) {
       std::string err_msg = "Position out of bounds for animal " + 
@@ -124,20 +123,18 @@ DataFrame simulate_langevin_cpp(int model,
   NumericVector v_mux(total_obs);
   NumericVector v_muy(total_obs);
   
-  double s2 = sigma * sigma;
-  
   for(int i = 0; i < nbAnimals; i++) {
     int start_idx = i * obsPerAnimal;
     
     // Generate wait times
-    NumericVector waitTimes(obsPerAnimal-1);
-    for(int j = 0; j < obsPerAnimal-1; j++) {
-      double wait;
-      do {
-        wait = R::rexp(lambda);
-      } while(wait < min_dt);
-      waitTimes[j] = wait;
-    }
+    //NumericVector waitTimes(obsPerAnimal-1);
+    //for(int j = 0; j < obsPerAnimal-1; j++) {
+    //  double wait;
+    //  do {
+    //    wait = R::rexp(1./lambda);
+    //  } while(wait < min_dt);  // Check scaled dt instead of raw dt
+    //  waitTimes[j] = wait;
+    //}
     
     // Initialize first observation
     ID[start_idx] = i + 1;
@@ -148,12 +145,14 @@ DataFrame simulate_langevin_cpp(int model,
     v_mux[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
     v_muy[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
     
+    double s2 = sigma * sigma;
+    
     // Simulate remaining observations
     for(int t = 1; t < obsPerAnimal; t++) {
       int idx = start_idx + t;
       ID[idx] = i + 1;
-      time[idx] = time[idx-1] + waitTimes[t-1];
-      dt[idx] = waitTimes[t-1];
+      time[idx] = time[idx-1] + timeStep; // time[idx] = time[idx-1] + waitTimes[t-1];
+      dt[idx] = timeStep; // dt[idx] = waitTimes[t-1];
       
       double dt_step = dt[idx];
       
@@ -166,39 +165,36 @@ DataFrame simulate_langevin_cpp(int model,
                                                  n_covs);
       
       // Calculate force vector
-      NumericVector h(2, 0.0);  // Initialize to zero
+      NumericVector h(2, 0.0);
       for(int c = 0; c < n_covs; c++) {
         h[0] += beta[c] * grad(0,c);
         h[1] += beta[c] * grad(1,c);
       }
       
-      if(model == 0){  // original (overdamped) Langevin diffusion
-        
-        // Calculate means
+      if(model == 0) {  // overdamped Langevin
+        // Calculate means with scaled parameters
         arma::vec mean(2);
         mean(0) = mu_x[idx-1] + s2*dt_step/2.0 * h[0];
         mean(1) = mu_y[idx-1] + s2*dt_step/2.0 * h[1];
         
-        // Calculate covariance matrix
+        // Calculate scaled standard deviation
         double sd = sigma * sqrt(dt_step);
         
-        // Generate new positions and velocities jointly
+        // Generate new positions
         arma::vec new_state(2);
         new_state(0) = R::rnorm(mean(0), sd);
         new_state(1) = R::rnorm(mean(1), sd);
         
-        // Check if new position is within bounds before assigning
         check_bounds(new_state(0), new_state(1), i+1, time[idx]);
         
         mu_x[idx] = new_state(0);
         mu_y[idx] = new_state(1);
         
-      } else if(model == 1){    // underdamped Langevin diffusion
-        
+      } else if(model == 1) {  // underdamped Langevin
         double exp_gdt = exp(-gamma * dt_step);
         double exp_2gdt = exp(-2 * gamma * dt_step);
         
-        // Calculate means
+        // Calculate means with scaled parameters
         arma::vec mean(4);
         mean(0) = mu_x[idx-1] + v_mux[idx-1]/gamma * (1 - exp_gdt) +
           s2*h[0]/gamma * (dt_step - (1 - exp_gdt)/gamma);
@@ -207,8 +203,9 @@ DataFrame simulate_langevin_cpp(int model,
           s2*h[1]/gamma * (dt_step - (1 - exp_gdt)/gamma);
         mean(3) = v_muy[idx-1] * exp_gdt + s2*h[1]/gamma * (1 - exp_gdt);
         
-        // Calculate covariance matrix
-        double var_x = s2/(gamma*gamma) * (2*gamma*dt_step - 3 + 4*exp_gdt - exp_2gdt);
+        // Calculate covariance matrix with scaled sigma
+        double var_x = s2/(gamma*gamma) * 
+          (2*gamma*dt_step - 3 + 4*exp_gdt - exp_2gdt);
         double var_v = s2 * (1 - exp_2gdt);
         double cov_xv = s2/gamma * (1 - 2*exp_gdt + exp_2gdt);
         
@@ -218,10 +215,9 @@ DataFrame simulate_langevin_cpp(int model,
         Sigma(0,1) = Sigma(1,0) = cov_xv;
         Sigma(2,3) = Sigma(3,2) = cov_xv;
         
-        // Generate new positions and velocities jointly
+        // Generate new state
         arma::vec new_state = rmvnorm(mean, Sigma);
         
-        // Check if new position is within bounds before assigning
         check_bounds(new_state(0), new_state(2), i+1, time[idx]);
         
         mu_x[idx] = new_state(0);
@@ -232,7 +228,7 @@ DataFrame simulate_langevin_cpp(int model,
     }
   }
   
-  if(model == 0){
+  if(model == 0) {
     return DataFrame::create(
       Named("ID") = ID,
       Named("time") = time,
@@ -250,5 +246,106 @@ DataFrame simulate_langevin_cpp(int model,
       Named("v_mux") = v_mux,
       Named("v_muy") = v_muy
     );
+  }
+}
+
+// [[Rcpp::export]]
+DataFrame measurementError_rcpp(DataFrame data,
+                                double M,
+                                double m,
+                                NumericVector c,
+                                double psi,
+                                int model) {
+  
+  // Get dimensions
+  int n = data.nrows();
+  
+  // Generate random values for error parameters
+  NumericVector M_rand(n);
+  NumericVector m_rand(n);
+  NumericVector c_rand(n);
+  
+  for(int i = 0; i < n; i++) {
+    M_rand[i] = abs(R::rnorm(0.0, M));
+    m_rand[i] = abs(R::rnorm(0.0, m));
+    if(M_rand[i] < m_rand[i]){
+      double tmpM = M_rand[i];
+      double tmpm = m_rand[i];
+      M_rand[i] = tmpm;
+      m_rand[i] = tmpM;
+    }
+    // Convert degrees to radians (like momentuHMM:::radian)
+    c_rand[i] = R::runif(c[0], c[1]) * M_PI / 180.0;
+  }
+  
+  // Constants
+  double z = sqrt(2.0);
+  
+  // Get position vectors
+  NumericVector mux = data["mu.x"];
+  NumericVector muy = data["mu.y"];
+  
+  // Create new vectors for results
+  NumericVector new_mux = clone(mux);
+  NumericVector new_muy = clone(muy);
+  
+  // Calculate error parameters
+  NumericVector s2c(n);
+  NumericVector c2c(n);
+  NumericVector M2(n);
+  NumericVector m2(n);
+  
+  for(int i = 0; i < n; i++) {
+    s2c[i] = sin(c_rand[i]) * sin(c_rand[i]);
+    c2c[i] = cos(c_rand[i]) * cos(c_rand[i]);
+    M2[i] = (M_rand[i] / z) * (M_rand[i] / z);
+    m2[i] = (m_rand[i] * psi / z) * (m_rand[i] * psi / z);
+  }
+  
+  // Apply measurement error
+  for(int i = 0; i < n; i++) {
+    arma::mat cov_obs(2, 2, arma::fill::zeros);
+    
+    cov_obs(0,0) = M2[i] * s2c[i] + m2[i] * c2c[i];
+    cov_obs(1,1) = M2[i] * c2c[i] + m2[i] * s2c[i];
+    cov_obs(0,1) = (0.5 * (M_rand[i] * M_rand[i] - 
+      (m_rand[i] * psi * m_rand[i] * psi))) * 
+      cos(c_rand[i]) * sin(c_rand[i]);
+    cov_obs(1,0) = cov_obs(0,1);
+    
+    arma::vec mean = {mux[i], muy[i]};
+    arma::vec new_pos = rmvnorm(mean, cov_obs);
+    
+    new_mux[i] = new_pos(0);
+    new_muy[i] = new_pos(1);
+  }
+  
+  // Create output DataFrame
+  if(model==0){
+    return DataFrame::create(
+      Named("ID") = data["ID"],
+      Named("time") = data["time"],
+      Named("dt") = data["dt"],
+      Named("mu.x") = new_mux,
+      Named("mu.y") = new_muy,
+      Named("error_semimajor_axis") = M_rand,
+      Named("error_semiminor_axis") = m_rand,
+      Named("error_ellipse_orientation") = c_rand,
+      Named("mux") = mux, // true location
+      Named("muy") = muy); // true location   
+  } else {
+    return DataFrame::create(
+      Named("ID") = data["ID"],
+      Named("time") = data["time"],
+      Named("dt") = data["dt"],
+      Named("mu.x") = new_mux,
+      Named("mu.y") = new_muy,
+      Named("error_semimajor_axis") = M_rand,
+      Named("error_semiminor_axis") = m_rand,
+      Named("error_ellipse_orientation") = c_rand,
+      Named("mux") = mux, // true location
+      Named("muy") = muy, // true location   
+      Named("v_mux") = data["v_mux"],  // true velocity
+      Named("v_muy") = data["v_muy"]); // true velocity
   }
 }

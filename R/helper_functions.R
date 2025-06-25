@@ -96,7 +96,7 @@ init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
 
   # Fit models in parallel
   ssm_results <- tryCatch(furrr::future_map(unique_ids,function(x) fit_single_ssm(id_data_list[[x]]), .options = furrr::furrr_options(seed = TRUE)),error=function(e) e)
-  for(j in which(unlist(lapply(ssm_results,is.null)))){
+  for(j in which(unlist(lapply(ssm_results,is.null)) | unlist(lapply(ssm_results,function(x) !isTRUE(x$converged))))){
     message("      aniMotum failed for individual ",unique_ids[j],"; trying crawl instead")
     locErr <- crawl::argosDiag2Cov(id_data_list[[j]]$smaj,id_data_list[[j]]$smin,id_data_list[[j]]$eor/(pi/180))
     id_data_list[[j]]$ln.sd.x <- locErr$ln.sd.x

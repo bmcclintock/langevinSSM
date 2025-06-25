@@ -95,18 +95,29 @@ init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
   }
 
   # Fit models in parallel
-  ssm_results <- furrr::future_map(unique_ids,function(x) fit_single_ssm(id_data_list[[x]]), .options = furrr::furrr_options(seed = TRUE))
-
+  ssm_results <- tryCatch(furrr::future_map(unique_ids,function(x) fit_single_ssm(id_data_list[[x]]), .options = furrr::furrr_options(seed = TRUE)),error=function(e) e)
+  for(j in which(unlist(lapply(ssm_results,is.null)))){
+    message("      aniMotum failed for individual ",unique_ids[j],"; trying crawl instead")
+    locErr <- crawl::argosDiag2Cov(id_data_list[[j]]$smaj,id_data_list[[j]]$smin,id_data_list[[j]]$eor/(pi/180))
+    id_data_list[[j]]$ln.sd.x <- locErr$ln.sd.x
+    id_data_list[[j]]$ln.sd.y <- locErr$ln.sd.y
+    id_data_list[[j]]$error.corr <- locErr$error.corr
+    predTime <- list()
+    predTime[[unique_ids[j]]] <- timeSteps$date[which(timeSteps$id==j)]
+    crfit <- tryCatch(momentuHMM::crawlWrap(id_data_list[[j]] %>% rename(ID=id,time=date),predTime=predTime,err.model = list(x =  ~ ln.sd.x - 1,y =  ~ ln.sd.y - 1, rho =  ~ error.corr),fixPar=c(1,1,NA,NA),initialSANN=NULL,retryFits=5),error=function(e) e)
+    if(!inherits(crfit,"error")) ssm_results[[j]] <- crfit$crwPredict[which(crfit$crwPredict$locType=="p"),]
+    else stop("      crawl also failed for individual ",unique_ids[j],": ",crfit$message)
+  }
+  
   # Combine results
   aniFit <- list()
   for (i in seq_along(unique_ids)) {
-    aniFit[[i]] <- ssm_results[[i]]$ssm[[1]]
+    if(inherits(ssm_results[[i]],"ssm_df")) aniFit[[i]] <- matrix(unlist(ssm_results[[i]]$ssm[[1]]$predicted$geometry),nrow=2)
+    else aniFit[[i]] <- matrix(unlist(ssm_results[[i]][,c("mu.x","mu.y")]),nrow=2)
   }
 
   # Extract initial mu as before
-  init.mu <- do.call(cbind, mapply(function(x) {
-    matrix(unlist(aniFit[[x]]$predicted$geometry), nrow = 2)
-  }, seq_along(unique_ids), SIMPLIFY = FALSE))
+  init.mu <- do.call(cbind, aniFit)
   
   return(init.mu)
 }

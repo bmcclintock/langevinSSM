@@ -183,7 +183,9 @@ for(isim in 1:nsims){
   )
   
   # subsample data
-  subDat <-   langSim[[isim]][sort(sample.int(nrow(langSim[[isim]]),ceiling(nrow(langSim[[isim]])/max(samplingRate,1)),replace=FALSE)),]
+  probs <- rep(1,nrow(langSim[[isim]]))
+  probs[cumsum(c(1,table(langSim[[isim]]$ID)[1:(nbAnimals-1)]))] <- 1.e+10 # ensure first observation is sampled
+  subDat <-   langSim[[isim]][sort(sample.int(nrow(langSim[[isim]]),ceiling(nrow(langSim[[isim]])/max(samplingRate,1)),prob=probs,replace=FALSE)),]
   subDat$dt <- do.call(c,mapply(function(x) c(0,diff(subDat$time[which(subDat$ID==x)])),1:nbAnimals,SIMPLIFY = FALSE))
   
   data <- list(model=model,
@@ -191,7 +193,9 @@ for(isim in 1:nsims){
                dt=subDat$dt)
   
   # add missing observations
-  data$Y[,sample.int(nrow(subDat),nrow(subDat)*propMissing,replace=FALSE)] <- NA
+  probs <- rep(1,nrow(subDat))
+  probs[cumsum(c(1,table(subDat$ID)[1:(nbAnimals-1)]))] <- 0 # don't let first observation be missing
+  data$Y[,sample.int(nrow(subDat),nrow(subDat)*propMissing,prob=probs,replace=FALSE)] <- NA
   
   data$isd <- as.numeric(!is.na(data$Y[1,]))
   data$obs_mod <- rep(NA,ncol(data$Y))

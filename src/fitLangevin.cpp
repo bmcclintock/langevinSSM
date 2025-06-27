@@ -327,7 +327,7 @@ Type objective_function<Type>::operator() ()
       // Add prior on initial velocities for underdamped model only
       if(model == 1) {
         for(int i = 0; i < 2; i++) {
-          nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state), true); // sigma_sca(state) / sqrt(Type(2.0) * gamma(state)), true);
+          nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state) / sqrt(Type(2.0) * gamma(state)), true); // sigma_sca(state), true);
         }
       }
       

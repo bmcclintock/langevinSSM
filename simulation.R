@@ -304,4 +304,4 @@ for(isim in 1:nsims){
   #hist(sqrt((rep$mu[1,]-langSim[[isim]]$mux)^2+(rep$mu[2,]-langSim[[isim]]$muy)^2),main="loc estimation error",xlim=c(0,1.2),breaks=seq(0,2,length=20))
 } 
 
-save(parMat,beta,sigma,gamma,obsPerAnimal,langSim,langTMB,covlist,psi,timeStep,samplingRate,propMissing,M,scale_factor,resol,sca,npoints,file=paste0("data/",ifelse(model==1,"underdamped","overdamped"),"Sim_nbAnimals_",nbAnimals,"_obsPerAnimal_",obsPerAnimal,"_timeStep_",timeStep,"_sigma_",sigma,"_gamma_",gamma,"_beta_",paste0(beta,collapse="_"),"_samplingRate_",samplingRate,"_propMissing_",propMissing,"_M_",M,"_npoints_",npoints,"_psi_",psi,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,langSim,langTMB,covlist,psi,timeStep,samplingRate,propMissing,M,scale_factor,resol,sca,npoints,covRange,file=paste0("data/",ifelse(model==1,"underdamped","overdamped"),"Sim_nbAnimals_",nbAnimals,"_obsPerAnimal_",obsPerAnimal,"_timeStep_",timeStep,"_covRange_",covRange,"_sigma_",sigma,"_gamma_",gamma,"_beta_",paste0(beta,collapse="_"),"_samplingRate_",samplingRate,"_propMissing_",propMissing,"_M_",M,"_npoints_",npoints,"_psi_",psi,".RData"))

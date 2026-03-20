@@ -1,11 +1,114 @@
 Rcpp::sourceCpp("src/simulateLangevin.cpp")
 
+rasterList <- function (rast) 
+{
+  lim <- as.vector(extent(rast))
+  res <- raster::res(rast)
+  xgrid <- seq(lim[1] + res[1]/2, lim[2] - res[1]/2, by = res[1])
+  ygrid <- seq(lim[3] + res[2]/2, lim[4] - res[2]/2, by = res[2])
+  z <- t(apply(as.matrix(rast), 2, rev))
+  return(list(x = xgrid, y = ygrid, z = z))
+}
+
+getUD <- function (spatialCovs, beta, log = F) 
+{
+  if(length(spatialCovs)!=length(beta)) stop("length(spatialCovs) must equal length(beta)")
+  covariates <- lapply(spatialCovs,rasterList)
+  ud_rast <- covariates[[1]]
+  dx <- diff(ud_rast$x)[1]
+  dy <- diff(ud_rast$y)[1]
+  J <- length(covariates)
+  ud_rast$z <- Reduce("+", lapply(1:J, function(j) dx * dy * 
+                                    beta[j] * covariates[[j]]$z))
+  if (!log) {
+    ud_rast$z <- exp(ud_rast$z)
+    ud_rast$z <- ud_rast$z/sum(ud_rast$z)
+  }
+  raster::raster(ud_rast)
+}
+
+plotRaster <- function (rast, norm = FALSE, log = FALSE, scale.name = "", light = FALSE) 
+{
+  covmap <- data.frame(coordinates(rast), val = values(rast))
+  if (norm) {
+    s <- sum(covmap$val) * xres(rast) * yres(rast)
+    covmap$val <- covmap$val/s
+  }
+  if (log) {
+    covmap$val <- log(covmap$val)
+  }
+  p <- ggplot(covmap, aes_string(x = "x", y = "y")) + geom_raster(aes_string(fill = "val")) + 
+    coord_equal()
+  if (light) {
+    p <- p + scale_fill_viridis(guide = "none") + theme(axis.title = element_blank(), 
+                                                        axis.text = element_blank(), axis.ticks = element_blank())
+  }
+  else {
+    p <- p + scale_fill_viridis(name = scale.name)
+  }
+  return(p)
+}
+
+simCov <- function(sca = 200, irange=0.3, sigma2 = 0.1, kappa = 0.5, M = 2048, N = 2048) {
+  
+  # --- Parameters ---
+  phi <- irange * sca  
+  n_grid <- 2 * sca + 1
+  
+  # Define the grid
+  grid_list <- list(x = seq(-sca - 0.5, sca + 0.5, length.out = n_grid),
+                    y = seq(-sca - 0.5, sca + 0.5, length.out = n_grid))
+  
+  # Setup the Matérn covariance object with FFT padding
+  obj <- fields::matern.image.cov(setup = TRUE, 
+                                  grid = grid_list, 
+                                  theta = phi, 
+                                  smoothness = kappa,
+                                  M = M,  
+                                  N = N)  
+  
+  # Simulate and scale by the standard deviation
+  grf_fields <- sqrt(sigma2) * fields::sim.rf(obj)
+  
+  # Convert to raster and orient correctly
+  spatialCov <- raster::flip(
+    raster::raster(
+      t(grf_fields), 
+      xmn = min(grid_list$x), xmx = max(grid_list$x),
+      ymn = min(grid_list$y), ymx = max(grid_list$y)
+    ),
+    direction = 'y' 
+  )
+  
+  return(spatialCov)
+}
+
+radian <- function(degree) {
+  radian <- degree * (pi/180)
+  return(radian)
+}
+
+formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), time.unit = "hours", tz = "UTC"){
+  
+  if(is.null(data[[lc]])) stop("data$lc is missing")
+  if(!all(data[[lc]] %in% c(3,2,1,0,"A","B","Z","G"))) stop("data$lc can only be '3', '2', '1', '0', 'A', 'B', and 'Z' for location quality classes or 'G' for GPS data")
+  if(!inherits(data[[date]],"POSIXt")) stop("data$date must be of class 'POSIXt'")
+  out <- aniMotum::format_data(x = data, id = id, date = date, coord = coord, lc = lc, epar = epar, sderr = sderr, tz = tz)
+  out <- out %>% dplyr::rename(x=lon,y=lat) %>% 
+                 dplyr::arrange(id,date) %>%
+                 dplyr::mutate(dt=do.call(c,mapply(function(x) c(0,diff(out$date[which(out$id==x)],units=time.unit)), unique(out$id), SIMPLIFY = FALSE))) %>% 
+                 dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd)
+  attr(out,"row.names") <- NULL
+  attr(out,"time.unit") <- time.unit
+  return(out)
+}
+
 measurementError <- function(data,M,m,c,psi){
   M <- tmpM <- abs(rnorm(nbAnimals*obsPerAnimal,0,sd=M))
   m <- tmpm <- abs(rnorm(nbAnimals*obsPerAnimal,0,sd=m))
   M[which(tmpM < tmpm)] <- tmpm[which(tmpM < tmpm)]
   m[which(tmpM < tmpm)] <- tmpM[which(tmpM < tmpm)]
-  c <- momentuHMM:::radian(runif(nbAnimals*obsPerAnimal,c[1],c[2]))
+  c <- radian(runif(nbAnimals*obsPerAnimal,c[1],c[2]))
   z = sqrt(2);
   s2c = sin(c) * sin(c);
   c2c = cos(c) * cos(c);
@@ -120,81 +223,4 @@ init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
   init.mu <- do.call(cbind, aniFit)
   
   return(init.mu)
-}
-
-simulate_udLangevin <- function(nbAnimals,obsPerAnimal,lambda,gamma,sigma,beta,spatialCovs,initialPosition=matrix(0,nbAnimals,2),min_dt=4.e-5,ncores=1,progress=FALSE,UD=NULL){
-  
-  # simulate individuals in parallel
-  if(ncores>1) future::plan(future::multisession, workers = ncores)
-  
-  if(!is.null(UD) & ncores==1) {
-    par(mfrow=c(1,1))
-    plot(rhabitToRaster(UD))
-  }
-  bb <- bbox(spatialCovs[[1]])
-
-  s2 <- sigma^2
-  
-  simDat <- foreach(i = 1:nbAnimals, .combine = "rbind") %dorng% {
-    if(progress) message("Individual ",i,'\n')
-    iDat <- data.frame(ID=rep(i,obsPerAnimal),time = NA, dt = NA, mu.x = NA, mu.y = NA, v_mux = NA, v_muy = NA)
-    for(cov in names(spatialCovs)){
-      iDat[[paste0(cov,".x")]] <- NA
-      iDat[[paste0(cov,".y")]] <- NA
-    }
-    waitTimes <- rexp(obsPerAnimal-1,lambda)
-    while(any(waitTimes < min_dt)){ # get rid of tiny wait times because they can cause numerical issues
-      tInd <- which(waitTimes < min_dt)
-      waitTimes[tInd] <- rexp(length(tInd),lambda)
-    }
-    iDat$time <- cumsum(c(0,waitTimes))
-    iDat$dt <- c(0,diff(iDat$time))
-    iDat$mu.x[1] <- initialPosition[i,1]
-    iDat$mu.y[1] <- initialPosition[i,2]
-    iDat$v_mux[1] <- rnorm(1,0,sigma)
-    iDat$v_muy[1] <- rnorm(1,0,sigma) 
-    iDat[1,] <- momentuHMM:::getGradients(iDat[1,],spatialCovs,coordNames = c("mu.x","mu.y"))
-    for(t in 1:(obsPerAnimal-1)){
-      if(progress) cat("    Iteration ",t+1,"\r")
-      dt_step <- iDat$dt[t+1]
-      exp_gdt = exp(-gamma * dt_step);
-      exp_2gdt = exp(-2 * gamma * dt_step);
-      h = numeric(2)
-      h[1] <- sum(iDat[t,paste0(names(spatialCovs),".x")] * beta)
-      h[2] <- sum(iDat[t,paste0(names(spatialCovs),".y")] * beta)
-      pred_mux <- iDat$mu.x[t] + 
-        iDat$v_mux[t]/gamma * (1 - exp_gdt) +
-        s2*h[1]/gamma * (dt_step - (1 - exp_gdt)/gamma); 
-      pred_muy <- iDat$mu.y[t] + 
-        iDat$v_muy[t]/gamma * (1 - exp_gdt) +
-        s2*h[2]/gamma * (dt_step - (1 - exp_gdt)/gamma); 
-      pred_v_mux = iDat$v_mux[t] * exp_gdt +
-        s2*h[1]/gamma * (1 - exp_gdt);
-      pred_v_muy = iDat$v_muy[t] * exp_gdt +
-        s2*h[2]/gamma * (1 - exp_gdt);
-      
-      var_x = s2/(gamma*gamma) * 
-        (2*gamma*dt_step - 3 + 
-         4*exp_gdt - exp_2gdt);
-      var_v = s2 * (1 - exp_2gdt);
-      cov_xv = s2/gamma * (1 - 2*exp_gdt + exp_2gdt);
-      Sigma <- matrix(0,4,4)
-      Sigma[1,1] <- Sigma[3,3] <- var_x
-      Sigma[1,2] <- Sigma[2,1] <- Sigma[3,4] <- Sigma[4,3] <- cov_xv
-      Sigma[2,2] <- Sigma[4,4] <- var_v
-  
-      mu_v <- mvtnorm::rmvnorm(1,c(pred_mux,pred_v_mux,pred_muy,pred_v_muy),Sigma)
-      iDat$mu.x[t+1] <- mu_v[1]
-      iDat$mu.y[t+1] <- mu_v[3]
-      iDat$v_mux[t+1] <- mu_v[2]
-      iDat$v_muy[t+1] <- mu_v[4]
-      if(iDat$mu.x[t+1]<bb[1,1] | iDat$mu.x[t+1]>bb[1,2] | iDat$mu.y[t+1]<bb[2,1] | iDat$mu.y[t+1]>bb[2,2]) stop("movement is beyond the extent of the raster(s)")
-      iDat[t+1,] <- momentuHMM:::getGradients(iDat[t+1,],spatialCovs,coordNames = c("mu.x","mu.y"))
-      if(!is.null(UD) & ncores==1) points(iDat$mu.x[(i-1)*obsPerAnimal+t],iDat$mu.y[(i-1)*obsPerAnimal+t],col=i,type="o",pch=20)
-    }
-    if(progress) cat('\n')
-    return(iDat)
-  }
-  if(ncores>1) future::plan(future::sequential)
-  return(simDat)
 }

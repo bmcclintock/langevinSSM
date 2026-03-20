@@ -9,83 +9,7 @@
 
 #include <TMB.hpp>
 
-// Make locally linearized log(sum(exp(.)))
-// - sparseDeriv marks expression to have sparse derivatives
-// - Turn on/off using 'lseflag_' to compare with exact version
-int lseflag_;
-extern "C" double Rf_logspace_add(double, double);
-TMB_ATOMIC_STATIC_FUNCTION(lse,
-                           // Input dim
-                           2,
-                           // Atomic double
-                           ty[0] = Rf_logspace_add(tx[0], tx[1]);,
-                           // Atomic reverse
-                           // Exact
-                           px[0] = exp(tx[0] - ty[0]) * py[0];
-                           px[1] = exp(tx[1] - ty[0]) * py[0];
-                           if (lseflag_ == 0) {
-                             // Force sparse derivatives
-                             px[0] = TMBad::sparseDeriv(px[0]);
-                             px[1] = TMBad::sparseDeriv(px[1]);
-                           }
-)
-  template<class Type>
-  Type lse(Type x, Type y) {
-    CppAD::vector<Type> arg(2);
-    arg[0] = x;
-    arg[1] = y;
-    return lse(arg)[0];
-  }
-  // Override logspace_add
-#define logspace_add(x,y) lse(x,y)
-  
 using namespace density;
-
-/* Numerically stable forward algorithm based on http://bozeman.genome.washington.edu/compbio/mbt599_2006/hmm_scaling_revised.pdf */
-template<class Type>
-Type forward_alg(vector<Type> delta, matrix<Type> log_trMat, matrix<Type> lnProbs, int nbSteps) {
-  int nbStates = log_trMat.cols();
-  Type logalpha;
-  vector<Type> ldeltaG(nbStates);
-  vector<Type> lalpha(nbStates);
-  vector<Type> lnewalpha(nbStates);
-  
-  Type sumalpha  = -INFINITY;
-  for(int j=0; j < nbStates; j++){
-    //ldeltaG(j) = -INFINITY;
-    //for(int i=0; i < nbStates; i++){
-    //  ldeltaG(j) = logspace_add(ldeltaG(j),log(delta(i))); 
-    //  Rprintf("t 0 state %d ldeltaG %f delta %f log(delta) %f \n",i,asDouble(ldeltaG(j)),asDouble(delta(i)),asDouble(log(delta(i))));
-    //}
-    lalpha(j) = log(delta(j)) + lnProbs(0,j);
-    sumalpha  = logspace_add(sumalpha,lalpha(j));
-    //Rprintf("t 0 state %d lalpha %f delta %f l_delta %f lnProbs %f sumalpha %f \n",j,asDouble(lalpha(j)),asDouble(delta(j)),asDouble(log(delta(j))),asDouble(lnProbs(0,j)),asDouble(sumalpha));
-  }
-  Type jnll = -sumalpha;
-  //Rprintf("t 0 delta_1 %f delta_2 %f sumalpha %f jnll %f \n",asDouble(delta(0)),asDouble(delta(1)),asDouble(sumalpha),asDouble(jnll));
-  lalpha -= sumalpha;
-  for(int t=1; t < nbSteps; t++){
-    sumalpha = -INFINITY;
-    for(int j=0; j < nbStates; j++){
-      logalpha = -INFINITY;
-      for(int i=0; i < nbStates; i++){
-        logalpha = logspace_add(logalpha,lalpha(i)+log_trMat(i,j));     // does not recognize sparsity pattern even when nbStates=1
-        //logalpha = lalpha(i)+log_trMat(i,j);                          // recognizes sparsity pattern (jnll still correct for nbStates=1 but not for nbStates>1)
-        //logalpha = log(exp(logalpha)+exp(lalpha(i)+log_trMat(i,j)));  // doesn't fail but does not recognize sparsity pattern even when nbStates=1
-        //Rprintf("t %d j %d i %d logalpha %f log_trMat %f \n",t,j,i,asDouble(logalpha),asDouble(log_trMat(i,j)));
-      }
-      lnewalpha(j) = logalpha + lnProbs(t,j);
-      sumalpha  = logspace_add(sumalpha,lnewalpha(j));               // does not recognize sparsity pattern even when nbStates=1
-      //Rprintf("t %d j %d lnewalpha %f logalpha %f lnProbs %f sumalpha %f \n",t,j,asDouble(lnewalpha(j)),asDouble(logalpha),asDouble(lnProbs(t,j)),asDouble(sumalpha));
-      //sumalpha  = lnewalpha(j);                                    // recognizes sparsity pattern (jnll still correct for nbStates=1 but not for nbStates>1)
-      //sumalpha = log(exp(sumalpha)+exp(lnewalpha(j)));             // fails due to NaN
-    }
-    jnll -= sumalpha;
-    lalpha = lnewalpha - sumalpha;
-    //Rprintf("t %d sumalpha %f jnll %f \n",t,asDouble(sumalpha),asDouble(jnll));
-  }
-  return jnll;
-}
 
 template<class Type>
 matrix<Type> extract_raster_values(Type x, Type y, 
@@ -225,11 +149,11 @@ Type objective_function<Type>::operator() ()
   DATA_SCALAR(zetaScale);        // scale factor for smooth gradient neighborhood (>1 increases, <1 decreases)
   
   // for KF observation model
-  DATA_VECTOR(m);             // m is the semi-minor axis length
-  DATA_VECTOR(M);             // M is the semi-major axis length
-  DATA_VECTOR(c);             // c is the orientation of the error ellipse
-  // for LS observation model
-  DATA_MATRIX(K);            // error weighting factors for LS obs model
+  DATA_VECTOR(m);                 //  m is the semi-minor axis length
+  DATA_VECTOR(M);                 //  M is the semi-major axis length
+  DATA_VECTOR(c);                 //  c is the orientation of the error ellipse
+  // for LS/GPS observation model
+  DATA_MATRIX(K);                 // error weighting factors for LS obs model
   
   // Process parameters (simplified)
   PARAMETER_VECTOR(log_sigma);  // Log velocity process SD
@@ -244,9 +168,11 @@ Type objective_function<Type>::operator() ()
   PARAMETER_MATRIX(l_gamma);    // Transition probabilities
   
   // OBSERVATION PARAMETERS
-  PARAMETER(l_psi);            // error SD scaling parameter
-  PARAMETER_VECTOR(l_tau);      // error dispersion for LS obs model (log scale)
-  PARAMETER(l_rho_o);          // error correlation
+  // for KF OBS MODEL
+  PARAMETER(l_psi); 				    // error SD scaling parameter to account for possible uncertainty in Argos error ellipse variables
+  // for LS/GPS OBS MODEL
+  PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale)
+  PARAMETER(l_rho_o);           // measurement error correlation b/w x,y
   
   Type psi = exp(l_psi);
   vector<Type> tau = exp(l_tau);
@@ -431,7 +357,6 @@ Type objective_function<Type>::operator() ()
         }
       }
     }
-    //nll += forward_alg(delta, log_trMat, allProbs, track_length-1);
   }
   
   
@@ -441,11 +366,12 @@ Type objective_function<Type>::operator() ()
   for(int i = 0; i < timeSteps; ++i) {
     if(isd(i) == 1) {
       if(obs_mod(i) == 0) {
-        // Argos Least Squares observations
+        // Argos Least Squares and GPS observations
         Type s = tau(0) * K(i,0);
         Type q = tau(1) * K(i,1);
         cov_obs(0,0) = s * s;
         cov_obs(1,1) = q * q;
+        cov_obs(0,1) = s * q * rho_o;
       } else if(obs_mod(i) == 1) {
         // Argos Kalman Filter observations
         Type z = sqrt(Type(2.0));
@@ -486,4 +412,3 @@ Type objective_function<Type>::operator() ()
   
   return nll;
 }
-  

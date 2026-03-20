@@ -4,31 +4,13 @@ library(raster)
 library(rasterVis)
 library(viridis)
 library(ggplot2)
-library(future)
-library(furrr)
-library(doRNG)
-library(RStoolbox)
 library(Rcpp)
 library(aniMotum)
 library(remotes)
-if(!requireNamespace("geoR",quietly=TRUE) || packageVersion("geoR")!="1.8.1"){
-  remotes::install_version("geoR", version = "1.8-1", repos = "http://cran.us.r-project.org")
-}
-library(geoR)
-if(!requireNamespace("RandomFieldsUtils",quietly=TRUE)){
-  remotes::install_version("RandomFieldsUtils", version = "1.2-5", repos = "http://cran.us.r-project.org")
-}
-if(!requireNamespace("RandomFields",quietly=TRUE)){
-  remotes::install_version("RandomFields", version = "3.3-14", repos = "http://cran.us.r-project.org")
-}
-remotes::install_github("papayoun/Rhabit@31ddf44",dependencies = TRUE) # last commit before RandomFields was removed from dependencies
-library(Rhabit)
-if(!requireNamespace("momentuHMM",quietly=TRUE) || as.numeric(substr(packageVersion("momentuHMM"),1,1))<2){
-  remotes::install_github("bmcclintock/momentuHMM@develop",dependencies = TRUE) # requires momentuHMM version >= 2.0.0
-}
+library(fields)
 library(momentuHMM)
-
 library(TMB)
+
 ## specify, compile, and load TMB model
 compile("src/fitLangevin.cpp")
 dyn.load(dynlib(paste0("src/fitLangevin")))
@@ -58,29 +40,25 @@ r <- c(0,180) # range for error ellipse orientation (degrees)
 ## specify scale, resolution, and spatial autocorrelation for covariates
 sca <- 200 # bounding box scale
 lim <- c(-1, 1, -1, 1)*sca
-cropExtent <- extent(lim)
 resol <- 1 # cell resolution 
 covRange <- c(0.1,0.5) # lower and upper bounds for covariate spatial range parameter (lower has less spatial autocorrelation)
 
 ## smooth gradient specifications (based on adjacent cells)
-## slows model fitting, but can reduce bias if \Delta_t is large (i.e. samplingRate > 1) relative to timeStep (Blackwell & Matthiopoulos 2024, https://doi.org/10.1002/ecy.4457)
-## can it also reduce bias if there is non-negligible measurement error?
+## slows model fitting, but can potentially reduce bias if \Delta_t is large (i.e. samplingRate > 1) relative to timeStep (Blackwell & Matthiopoulos 2024, https://doi.org/10.1002/ecy.4457)
 npoints <- 0 # number of smoothing points around current cell (0 = none, 4 = diagonal, 8 = queen neighborhood);
 curweight <- 1/2 # smoothing weight of current cell location; ignored if npoints=0
 weights <- c(curweight,rep((1-curweight)/npoints,npoints)) # smoothing weights (must be of length 5 or 9 and sum to 1); ignored if npoints=0
 zetaScale <- 1 # scale factor for smooth gradient neighborhood (>1 increases, <1 decreases neighborhood); underdamped Langevin neighborhood = zetaScale * sqrt(2*pi) * sigma; overdamped langevin neighborhood = zetaScale * sigma / sqrt(2); ignored if npoints=0
 
-
 tracepar <- FALSE # TRUE = trace parameters during each iteration of optimization
 
 langSim <- langTMB <- list()
-covlist <- list()
+spatialCovs <- list()
 parMat <- matrix(NA,nrow=nsims,7+model)
 if(model==0){
   colnames(parMat) <- c("sigma",paste0("beta",0:(ncov+1)),"UDcor")
 } else colnames(parMat) <- c("sigma",paste0("beta",0:(ncov+1)),"gamma","UDcor")
 
-doFuture::registerDoFuture()
 set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
 for(isim in 1:nsims){
   
@@ -90,43 +68,35 @@ for(isim in 1:nsims){
   #######################
   # Generate ncov spatial covariates
   message("   Generating covariates...")
-  covlist[[isim]] <- list()
+  spatialCovs[[isim]] <- list()
   
   # Include squared distance to origin as covariate
   xgrid <- seq(lim[1], lim[2], by=resol)
   ygrid <- seq(lim[3], lim[4], by=resol)
   xygrid <- expand.grid(xgrid,ygrid)
   dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/sca
-  covlist[[isim]][[4]] <- list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid)))
+  spatialCovs[[isim]][[4]] <- raster::raster(list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid))))
   
   for(i in 1:ncov) {
     irange <- runif(1,covRange[1],covRange[2])
-    covlist[[isim]][[i]] <- rasterToRhabit(raster(geoR::grf(NULL, grid="reg", nx=2*sca+1,
-                                                            ny=2*sca+1, xlims=c(-sca-0.5,sca+0.5),ylims=c(-sca-0.5,sca+0.5),
-                                                            cov.pars=c(0.1, irange * sca), messages=FALSE)))
+    spatialCovs[[isim]][[i]] <- simCov(sca = 200, irange=irange, sigma2 = 0.1, kappa = 0.5, M = 2048, N = 2048)
+    #proj4string(spatialCovs[[isim]][[i]]) <- CRS("+init=epsg:3416")
   }
-  
-  names(covlist[[isim]]) <- c("cov1","cov2","cov3","d2c")
-  spatialCovs <- lapply(lapply(covlist[[isim]],rhabitToRaster),function(x) {proj4string(x) <- CRS("+init=epsg:3416");return(x)})
-  names(spatialCovs) <- c("cov1","cov2","cov3","d2c")
-  for(i in names(spatialCovs)){
-    names(spatialCovs[[i]]) <- i
-  }
+  names(spatialCovs[[isim]]) <- c("cov1","cov2","cov3","d2c")
   
   # Compute utilization distribution for states 1 and 2
-  UDrhabit <- Rhabit::getUD(covariates=covlist[[isim]], beta=beta,log=TRUE)
-  UD <- rhabitToRaster(UDrhabit)
+  UD <- getUD(spatialCovs[[isim]], beta=beta,log=TRUE)
   
   # Plot covariates
   ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
                    legend.title = element_text(size=12), legend.text = element_text(size=12))
-  c1plot <- Rhabit::plotRaster(rhabitToRaster(covlist[[isim]][[1]]), scale.name = expression(c[1])) + ggtheme
-  c2plot <- Rhabit::plotRaster(rhabitToRaster(covlist[[isim]][[2]]), scale.name = expression(c[2])) + ggtheme
-  c3plot <- Rhabit::plotRaster(rhabitToRaster(covlist[[isim]][[3]]), scale.name = expression(c[3])) + ggtheme
-  UDplot <- Rhabit::plotRaster(UD, scale.name = expression(pi)) + ggtheme
+  c1plot <- plotRaster(spatialCovs[[isim]][[1]], scale.name = expression(c[1])) + ggtheme
+  c2plot <- plotRaster(spatialCovs[[isim]][[2]], scale.name = expression(c[2])) + ggtheme
+  c3plot <- plotRaster(spatialCovs[[isim]][[3]], scale.name = expression(c[3])) + ggtheme
+  UDplot <- plotRaster(UD, scale.name = expression(pi)) + ggtheme
   #UDplot
   
-  raster_stack <- stack(spatialCovs)
+  raster_stack <- stack(spatialCovs[[isim]])
   
   # Prepare raster data
   raster_data <- list(
@@ -291,7 +261,7 @@ for(isim in 1:nsims){
     lines(langSim[[isim]]$mux[langSim[[isim]]$ID==i],langSim[[isim]]$muy[langSim[[isim]]$ID==i]) # true path
   }
   plot(UD,main="True UD",col=viridis::viridis(100),xlim=c(-100,100),ylim=c(-100,100))
-  estUD <- langTMB[[isim]]$par[3]*spatialCovs$cov1 + langTMB[[isim]]$par[4] * spatialCovs$cov2 + langTMB[[isim]]$par[5] * spatialCovs$cov3 + langTMB[[isim]]$par[6] * spatialCovs$d2c
+  estUD <- langTMB[[isim]]$par[3]*spatialCovs[[isim]]$cov1 + langTMB[[isim]]$par[4] * spatialCovs[[isim]]$cov2 + langTMB[[isim]]$par[5] * spatialCovs[[isim]]$cov3 + langTMB[[isim]]$par[6] * spatialCovs[[isim]]$d2c
   plot(estUD,main="Estimated UD",col=viridis::viridis(100),xlim=c(-100,100),ylim=c(-100,100))
   
   parMat[isim,"UDcor"] <- cor(values(UD),values(estUD)) # correlation between true and estimated UD (could alternatively use raster::corLocal)

@@ -2,11 +2,15 @@ Rcpp::sourceCpp("src/simulateLangevin.cpp")
 
 rasterList <- function (rast) 
 {
-  lim <- as.vector(extent(rast))
-  res <- raster::res(rast)
+  lim <- as.vector(terra::ext(rast))
+  res <- terra::res(rast)
   xgrid <- seq(lim[1] + res[1]/2, lim[2] - res[1]/2, by = res[1])
   ygrid <- seq(lim[3] + res[2]/2, lim[4] - res[2]/2, by = res[2])
-  z <- t(apply(as.matrix(rast), 2, rev))
+  
+  # Add wide = TRUE so terra returns [nrow, ncol] instead of [ncells, nlayers]
+  z_mat <- terra::as.matrix(rast, wide = TRUE)
+  z <- t(apply(z_mat, 2, rev))
+  
   return(list(x = xgrid, y = ygrid, z = z))
 }
 
@@ -24,32 +28,43 @@ getUD <- function (spatialCovs, beta, log = F)
     ud_rast$z <- exp(ud_rast$z)
     ud_rast$z <- ud_rast$z/sum(ud_rast$z)
   }
-  raster::raster(ud_rast)
+  terra::rast(ud_rast)
 }
 
 plotRaster <- function (rast, norm = FALSE, log = FALSE, scale.name = "", light = FALSE) 
 {
-  covmap <- data.frame(coordinates(rast), val = values(rast))
+  # FIX 1: Use as.numeric() to ensure 'val' is a simple vector, not a matrix column
+  covmap <- data.frame(terra::crds(rast), val = as.numeric(terra::values(rast)))
+  
   if (norm) {
-    s <- sum(covmap$val) * xres(rast) * yres(rast)
-    covmap$val <- covmap$val/s
+    # FIX 2: Use native terra::res() instead of raster::xres/yres
+    r_res <- terra::res(rast)
+    s <- sum(covmap$val) * r_res[1] * r_res[2]
+    covmap$val <- covmap$val / s
   }
+  
   if (log) {
     covmap$val <- log(covmap$val)
   }
-  p <- ggplot(covmap, aes_string(x = "x", y = "y")) + geom_raster(aes_string(fill = "val")) + 
+  
+  # FIX 3: Replace aes_string() with standard aes()
+  p <- ggplot(covmap, aes(x = x, y = y)) + 
+    geom_raster(aes(fill = val)) + 
     coord_equal()
+  
   if (light) {
-    p <- p + scale_fill_viridis(guide = "none") + theme(axis.title = element_blank(), 
-                                                        axis.text = element_blank(), axis.ticks = element_blank())
-  }
-  else {
+    p <- p + scale_fill_viridis(guide = "none") + 
+      theme(axis.title = element_blank(), 
+            axis.text = element_blank(), 
+            axis.ticks = element_blank())
+  } else {
     p <- p + scale_fill_viridis(name = scale.name)
   }
+  
   return(p)
 }
 
-simCov <- function(sca = 200, irange=0.3, sigma2 = 0.1, kappa = 0.5, M = 2048, N = 2048) {
+simCov <- function(sca = 200, irange = 0.3, sigma2 = 0.1, kappa = 0.5, M = 2048, N = 2048) {
   
   # --- Parameters ---
   phi <- irange * sca  
@@ -70,14 +85,14 @@ simCov <- function(sca = 200, irange=0.3, sigma2 = 0.1, kappa = 0.5, M = 2048, N
   # Simulate and scale by the standard deviation
   grf_fields <- sqrt(sigma2) * fields::sim.rf(obj)
   
-  # Convert to raster and orient correctly
-  spatialCov <- raster::flip(
-    raster::raster(
+  # Convert to SpatRaster and orient correctly
+  spatialCov <- terra::flip(
+    terra::rast(
       t(grf_fields), 
-      xmn = min(grid_list$x), xmx = max(grid_list$x),
-      ymn = min(grid_list$y), ymx = max(grid_list$y)
+      extent = terra::ext(min(grid_list$x), max(grid_list$x),
+                          min(grid_list$y), max(grid_list$y))
     ),
-    direction = 'y' 
+    direction = "vertical" 
   )
   
   return(spatialCov)
@@ -101,6 +116,98 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
   attr(out,"row.names") <- NULL
   attr(out,"time.unit") <- time.unit
   return(out)
+}
+
+prepareRaster <- function(spatialCovs,scale_factor=1,time.unit="hours"){
+  
+  if(!is.list(spatialCovs)) stop('spatialCovs must be a list')
+  spatialcovnames <- names(spatialCovs)
+  if(is.null(spatialcovnames)) stop('spatialCovs must be a named list')
+  nbSpatialCovs <- length(spatialcovnames)
+  
+  # 1. Update package check to terra
+  if (!requireNamespace("terra", quietly = TRUE)) {
+    stop("Package \"terra\" needed for spatial covariates. Please install it.", call. = FALSE)
+  }
+  
+  for(j in 1:nbSpatialCovs){
+    # 2. Update class check (everything is a SpatRaster)
+    if(!inherits(spatialCovs[[j]], "SpatRaster")) {
+      stop("spatialCovs$", spatialcovnames[j], " must be of class 'SpatRaster'")
+    }
+    
+    # 3. Update value extraction
+    if(any(is.na(terra::values(spatialCovs[[j]])))) {
+      stop("missing values are not permitted in spatialCovs$", spatialcovnames[j])
+    }
+    
+    # 4. Update multi-layer (stack/brick) check and Z-value logic
+    if(terra::nlyr(spatialCovs[[j]]) > 1) {
+      
+      t_vals <- terra::time(spatialCovs[[j]])
+      
+      # Check if time/Z values are set
+      if(is.null(t_vals) || all(is.na(t_vals))) {
+        stop("spatialCovs$", spatialcovnames[j], " is a multi-layer raster that must have time values set (see ?terra::time)")
+      } 
+      
+      # Since terra doesn't store a "Z name" mapping, check directly against the expected 
+      # time column in your data. (Change "time" to whatever your standard column name is).
+      else if(!("time" %in% names(data))) {
+        stop("spatialCovs$", spatialcovnames[j], " requires a 'time' column in 'data' to match the raster's dynamic layers")
+      }
+    }
+  }
+  
+  if(any(spatialcovnames %in% names(data))) stop("spatialCovs cannot have same names as data")
+  if(anyDuplicated(spatialcovnames)) stop("spatialCovs must have unique names")
+  
+  # Extract the 3D array [nrow, ncol, nlayer]
+  vals_array <- as.array(raster_stack) 
+  
+  # CORRECTED: Permute to [ncol, nrow, nlayer] so it perfectly matches the C++ idx formula
+  vals_array <- aperm(vals_array, c(2, 1, 3))
+  
+  # Extract and convert raster times
+  times_list <- lapply(spatialCovs, function(r) {
+    t_vals <- terra::time(r)
+    
+    if (is.null(t_vals) || all(is.na(t_vals))) {
+      if (terra::nlyr(r) == 1) {
+        return(0) # Static covariate dummy value
+      } else {
+        # Fallback for dynamic rasters without time metadata
+        return(as.numeric(1:terra::nlyr(r)))
+      }
+    } else {
+      # Check if the time values are datetime or date objects
+      if (inherits(t_vals, "POSIXt") || inherits(t_vals, "Date")) {
+        return(as.numeric(difftime(t_vals, as.POSIXct("1970-01-01 00:00:00", tz = "UTC"), units = time.unit)))
+      } else {
+        # If they are already numeric (like in your simulations), return as-is
+        return(as.numeric(t_vals))
+      }
+    }
+  })
+  
+  all_z_values_R <- unlist(times_list)
+  
+  n_zvals_cov <- sapply(spatialCovs, nlyr) 
+  cov_offset_R <- c(0, cumsum(n_zvals_cov)[-length(n_zvals_cov)])
+  
+  all_z_values_R <- unlist(times_list)
+  
+  raster_data <- list(
+    raster_vals = vals_array,
+    raster_coords = terra::crds(raster_stack)/scale_factor, 
+    raster_resolution = terra::res(raster_stack)/scale_factor,
+    raster_extent = as.vector(terra::ext(raster_stack)/scale_factor),
+    n_covs = length(n_zvals_cov), 
+    all_z_values = as.numeric(all_z_values_R), # The flattened raster slice times
+    n_zvals_cov = as.integer(n_zvals_cov),
+    cov_offset = as.integer(cov_offset_R)
+  )
+  return(raster_data)
 }
 
 measurementError <- function(data,M,m,c,psi){

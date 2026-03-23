@@ -5,8 +5,11 @@
 using namespace Rcpp;
 using namespace arma;
 
-NumericMatrix extract_raster_values(double x, double y, 
+NumericMatrix extract_raster_values(double x, double y, double z,
                                     const NumericVector& raster_vals,
+                                    const NumericVector& all_z_values,
+                                    const IntegerVector& n_zvals_cov,
+                                    const IntegerVector& cov_offset,
                                     const NumericMatrix& raster_coords,
                                     const NumericVector& raster_resolution,
                                     const NumericVector& raster_extent,
@@ -15,7 +18,7 @@ NumericMatrix extract_raster_values(double x, double y,
   int n_cols = (raster_extent[1] - raster_extent[0]) / raster_resolution[0];
   int n_rows = (raster_extent[3] - raster_extent[2]) / raster_resolution[1];
   
-  // Calculate cell indices exactly as in TMB code
+  // Calculate cell indices
   double x_prop = (x - (raster_extent[0] + raster_resolution[0]/2)) / raster_resolution[0];
   double y_prop = (y - (raster_extent[2] + raster_resolution[1]/2)) / raster_resolution[1];
   
@@ -30,33 +33,75 @@ NumericMatrix extract_raster_values(double x, double y,
     return grad_values;
   }
   
-  // Get cell coordinates exactly as in TMB code
+  // Get cell coordinates
   double x1 = raster_extent[0] + (col + 0.5) * raster_resolution[0];
   double x2 = x1 + raster_resolution[0];
   double y1 = raster_extent[2] + (row + 0.5) * raster_resolution[1];
   double y2 = y1 + raster_resolution[1];
   
-  // Transform row index to match TMB code
+  // Transform row index
   int rev_row = n_rows - 1 - row;
   
   for(int i = 0; i < n_covs; i++) {
-    // Calculate linear indices for 3D array [layer, row, col]
-    int idx = i * (n_rows * n_cols) + rev_row * n_cols + col;
+    int layers = n_zvals_cov[i];
+    int offset = cov_offset[i];
     
-    // Access values in the transformed space exactly as in TMB code
-    double f00 = raster_vals[idx];                          // bottom-left
-    double f10 = raster_vals[idx + 1];                      // bottom-right
-    double f01 = raster_vals[idx - n_cols];                 // top-left
-    double f11 = raster_vals[idx - n_cols + 1];             // top-right
+    int z_idx1 = 0, z_idx2 = 0;
+    double z_weight = 0.0;
     
-    // Calculate gradients exactly as in TMB code
-    grad_values(0,i) = ((y2 - y) * (f10 - f00) + 
-      (y - y1) * (f11 - f01)) / 
-      ((y2 - y1) * (x2 - x1));
+    // --- Z-axis (Time) Interpolation Logic PER COVARIATE ---
+    if (layers > 1) {
+      // Time values for this specific covariate start at all_z_values[offset]
+      if (z <= all_z_values[offset]) {
+        z_idx1 = 0; z_idx2 = 0; z_weight = 0.0;
+      } else if (z >= all_z_values[offset + layers - 1]) {
+        z_idx1 = layers - 1; z_idx2 = layers - 1; z_weight = 0.0;
+      } else {
+        for (int k = 0; k < layers - 1; k++) {
+          double t1 = all_z_values[offset + k];
+          double t2 = all_z_values[offset + k + 1];
+          if (z >= t1 && z <= t2) {
+            z_idx1 = k;
+            z_idx2 = k + 1;
+            z_weight = (z - t1) / (t2 - t1);
+            break;
+          }
+        }
+      }
+    }
     
-    grad_values(1,i) = ((x2 - x) * (f01 - f00) + 
-      (x - x1) * (f11 - f10)) / 
-      ((y2 - y1) * (x2 - x1));
+    // Evaluate first time slice (or static layer)
+    int layer_idx1 = offset + z_idx1;
+    int idx1 = layer_idx1 * (n_rows * n_cols) + rev_row * n_cols + col;
+    
+    double f1_00 = raster_vals[idx1];
+    double f1_10 = raster_vals[idx1 + 1];
+    double f1_01 = raster_vals[idx1 - n_cols];
+    double f1_11 = raster_vals[idx1 - n_cols + 1];
+    
+    double grad_x_1 = ((y2 - y) * (f1_10 - f1_00) + (y - y1) * (f1_11 - f1_01)) / ((y2 - y1) * (x2 - x1));
+    double grad_y_1 = ((x2 - x) * (f1_01 - f1_00) + (x - x1) * (f1_11 - f1_10)) / ((y2 - y1) * (x2 - x1));
+    
+    // If dynamic and between two distinct time slices, interpolate
+    if (layers > 1 && z_idx1 != z_idx2) {
+      int layer_idx2 = offset + z_idx2;
+      int idx2 = layer_idx2 * (n_rows * n_cols) + rev_row * n_cols + col;
+      
+      double f2_00 = raster_vals[idx2];
+      double f2_10 = raster_vals[idx2 + 1];
+      double f2_01 = raster_vals[idx2 - n_cols];
+      double f2_11 = raster_vals[idx2 - n_cols + 1];
+      
+      double grad_x_2 = ((y2 - y) * (f2_10 - f2_00) + (y - y1) * (f2_11 - f2_01)) / ((y2 - y1) * (x2 - x1));
+      double grad_y_2 = ((x2 - x) * (f2_01 - f2_00) + (x - x1) * (f2_11 - f2_10)) / ((y2 - y1) * (x2 - x1));
+      
+      grad_values(0,i) = grad_x_1 * (1.0 - z_weight) + grad_x_2 * z_weight;
+      grad_values(1,i) = grad_y_1 * (1.0 - z_weight) + grad_y_2 * z_weight;
+    } else {
+      // Static covariate OR dynamic evaluated outside bounds
+      grad_values(0,i) = grad_x_1;
+      grad_values(1,i) = grad_y_1;
+    }
   }
   return grad_values;
 }
@@ -107,10 +152,13 @@ DataFrame simulate_langevin_cpp(int model,
     check_bounds(initialPosition(i,0), initialPosition(i,1), i+1, 0.0);
   }
   
-  // Extract raster information
+  // Extract raster information and time metadata
   NumericVector raster_vals = raster_data["raster_vals"];
   NumericMatrix raster_coords = raster_data["raster_coords"];
   NumericVector raster_resolution = raster_data["raster_resolution"];
+  NumericVector all_z_values = raster_data["all_z_values"];
+  IntegerVector n_zvals_cov = raster_data["n_zvals_cov"];
+  IntegerVector cov_offset = raster_data["cov_offset"];
   int n_covs = raster_data["n_covs"];
   
   // Create output dataframe
@@ -125,16 +173,6 @@ DataFrame simulate_langevin_cpp(int model,
   
   for(int i = 0; i < nbAnimals; i++) {
     int start_idx = i * obsPerAnimal;
-    
-    // Generate wait times
-    //NumericVector waitTimes(obsPerAnimal-1);
-    //for(int j = 0; j < obsPerAnimal-1; j++) {
-    //  double wait;
-    //  do {
-    //    wait = R::rexp(1./lambda);
-    //  } while(wait < min_dt);  // Check scaled dt instead of raw dt
-    //  waitTimes[j] = wait;
-    //}
     
     // Initialize first observation
     ID[start_idx] = i + 1;
@@ -151,14 +189,17 @@ DataFrame simulate_langevin_cpp(int model,
     for(int t = 1; t < obsPerAnimal; t++) {
       int idx = start_idx + t;
       ID[idx] = i + 1;
-      time[idx] = time[idx-1] + timeStep; // time[idx] = time[idx-1] + waitTimes[t-1];
-      dt[idx] = timeStep; // dt[idx] = waitTimes[t-1];
+      time[idx] = time[idx-1] + timeStep; 
+      dt[idx] = timeStep; 
       
       double dt_step = dt[idx];
       
-      // Calculate gradients
-      NumericMatrix grad = extract_raster_values(mu_x[idx-1], mu_y[idx-1],
+      // Calculate gradients using previous position AND previous time
+      NumericMatrix grad = extract_raster_values(mu_x[idx-1], mu_y[idx-1], time[idx-1],
                                                  raster_vals,
+                                                 all_z_values,
+                                                 n_zvals_cov,
+                                                 cov_offset,
                                                  raster_coords,
                                                  raster_resolution,
                                                  raster_extent,
@@ -204,8 +245,7 @@ DataFrame simulate_langevin_cpp(int model,
         mean(3) = v_muy[idx-1] * exp_gdt + s2*h[1]/gamma * (1 - exp_gdt);
         
         // Calculate covariance matrix with scaled sigma
-        double var_x = s2/(gamma*gamma) * 
-          (2*gamma*dt_step - 3 + 4*exp_gdt - exp_2gdt);
+        double var_x = s2/(gamma*gamma) * (2*gamma*dt_step - 3 + 4*exp_gdt - exp_2gdt);
         double var_v = s2 * (1 - exp_2gdt);
         double cov_xv = s2/gamma * (1 - 2*exp_gdt + exp_2gdt);
         
@@ -309,8 +349,7 @@ DataFrame measurementError_rcpp(DataFrame data,
     cov_obs(0,0) = M2[i] * s2c[i] + m2[i] * c2c[i];
     cov_obs(1,1) = M2[i] * c2c[i] + m2[i] * s2c[i];
     cov_obs(0,1) = (0.5 * (M_rand[i] * M_rand[i] - 
-      (m_rand[i] * psi * m_rand[i] * psi))) * 
-      cos(c_rand[i]) * sin(c_rand[i]);
+      (m_rand[i] * psi * m_rand[i] * psi))) * cos(c_rand[i]) * sin(c_rand[i]);
     cov_obs(1,0) = cov_obs(0,1);
     
     arma::vec mean = {mux[i], muy[i]};
@@ -324,28 +363,28 @@ DataFrame measurementError_rcpp(DataFrame data,
   if(model==0){
     return DataFrame::create(
       Named("ID") = data["ID"],
-      Named("time") = data["time"],
-      Named("dt") = data["dt"],
-      Named("mu.x") = new_mux,
-      Named("mu.y") = new_muy,
-      Named("error_semimajor_axis") = M_rand,
-      Named("error_semiminor_axis") = m_rand,
-      Named("error_ellipse_orientation") = c_rand,
-      Named("mux") = mux, // true location
-      Named("muy") = muy); // true location   
+                        Named("time") = data["time"],
+                                            Named("dt") = data["dt"],
+                                                              Named("mu.x") = new_mux,
+                                                              Named("mu.y") = new_muy,
+                                                              Named("error_semimajor_axis") = M_rand,
+                                                              Named("error_semiminor_axis") = m_rand,
+                                                              Named("error_ellipse_orientation") = c_rand,
+                                                              Named("mux") = mux, // true location
+                                                              Named("muy") = muy); // true location   
   } else {
     return DataFrame::create(
       Named("ID") = data["ID"],
-      Named("time") = data["time"],
-      Named("dt") = data["dt"],
-      Named("mu.x") = new_mux,
-      Named("mu.y") = new_muy,
-      Named("error_semimajor_axis") = M_rand,
-      Named("error_semiminor_axis") = m_rand,
-      Named("error_ellipse_orientation") = c_rand,
-      Named("mux") = mux, // true location
-      Named("muy") = muy, // true location   
-      Named("v_mux") = data["v_mux"],  // true velocity
-      Named("v_muy") = data["v_muy"]); // true velocity
+                        Named("time") = data["time"],
+                                            Named("dt") = data["dt"],
+                                                              Named("mu.x") = new_mux,
+                                                              Named("mu.y") = new_muy,
+                                                              Named("error_semimajor_axis") = M_rand,
+                                                              Named("error_semiminor_axis") = m_rand,
+                                                              Named("error_ellipse_orientation") = c_rand,
+                                                              Named("mux") = mux, // true location
+                                                              Named("muy") = muy, // true location   
+                                                              Named("v_mux") = data["v_mux"],  // true velocity
+                                                                                   Named("v_muy") = data["v_muy"]); // true velocity
   }
 }

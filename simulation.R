@@ -1,7 +1,6 @@
 options("rgdal_show_exportToProj4_warnings"="none") # suppress annoying warnings
 library(tidyverse)
-library(raster)
-library(rasterVis)
+library(terra)
 library(viridis)
 library(ggplot2)
 library(Rcpp)
@@ -70,18 +69,18 @@ for(isim in 1:nsims){
   message("   Generating covariates...")
   spatialCovs[[isim]] <- list()
   
-  # Include squared distance to origin as covariate
-  xgrid <- seq(lim[1], lim[2], by=resol)
-  ygrid <- seq(lim[3], lim[4], by=resol)
-  xygrid <- expand.grid(xgrid,ygrid)
-  dist2 <- ((xygrid[,1])^2+(xygrid[,2])^2)/sca
-  spatialCovs[[isim]][[4]] <- raster::raster(list(x=xgrid, y=ygrid, z=matrix(dist2, length(xgrid), length(ygrid))))
-  
   for(i in 1:ncov) {
     irange <- runif(1,covRange[1],covRange[2])
     spatialCovs[[isim]][[i]] <- simCov(sca = 200, irange=irange, sigma2 = 0.1, kappa = 0.5, M = 2048, N = 2048)
-    #proj4string(spatialCovs[[isim]][[i]]) <- CRS("+init=epsg:3416")
+    # terra::crs(spatialCovs[[isim]][[i]]) <- "epsg:3416"
   }
+  
+  coords <- terra::crds(spatialCovs[[isim]][[1]])
+  dist2_vals <- (coords[, "x"]^2 + coords[, "y"]^2) / sca
+  
+  spatialCovs[[isim]][[4]] <- spatialCovs[[isim]][[1]]
+  terra::values(spatialCovs[[isim]][[4]]) <- dist2_vals
+  
   names(spatialCovs[[isim]]) <- c("cov1","cov2","cov3","d2c")
   
   # Compute utilization distribution for states 1 and 2
@@ -96,27 +95,15 @@ for(isim in 1:nsims){
   UDplot <- plotRaster(UD, scale.name = expression(pi)) + ggtheme
   #UDplot
   
-  raster_stack <- stack(spatialCovs[[isim]])
-  
-  # Prepare raster data
-  raster_data <- list(
-    raster_vals = array(as.numeric(values(raster_stack)), 
-                        dim = c(nlayers(raster_stack),
-                                nrow(raster_stack),
-                                ncol(raster_stack))),
-    raster_coords = coordinates(raster_stack),
-    raster_resolution = res(raster_stack),
-    raster_extent = c(xmin(raster_stack), xmax(raster_stack),
-                      ymin(raster_stack), ymax(raster_stack)),
-    n_covs = nlayers(raster_stack)
-  )
+  raster_stack <- terra::rast(spatialCovs[[isim]])
+  raster_data <- prepareRaster(spatialCovs[[isim]])
   
   # simulate "high resolution" tracks; this can take a while...
   message("   Simulating tracks...")
   langSim[[isim]] <- tryCatch(stop(),error=function(e) e)
   while(inherits(langSim[[isim]],"error")){
     # randomly start tracks in locations based on UD
-    initPos <- matrix(sample(ncell(UD),nbAnimals,replace=FALSE,prob=exp(getValues(UD))/sum(exp(getValues(UD)))),
+    initPos <- matrix(sample(ncell(UD),nbAnimals,replace=FALSE,prob=exp(values(UD))/sum(exp(values(UD)))),
                       1,nbAnimals,byrow=TRUE)
     initialPosition <- t(mapply(function(x) xyFromCell(UD,initPos[,x]),1:nbAnimals,SIMPLIFY = TRUE))
     langSim[[isim]] <- tryCatch(simulate_langevin_cpp(
@@ -140,17 +127,7 @@ for(isim in 1:nsims){
   scale_factor <- 1  # sca # max(abs(langSim[[isim]][,c("mu.x","mu.y")]))
   
   # Prepare raster data
-  sca_raster_data <- list(
-    raster_vals = array(as.numeric(values(raster_stack)), 
-                        dim = c(nlayers(raster_stack),
-                                nrow(raster_stack),
-                                ncol(raster_stack))),
-    raster_coords = coordinates(raster_stack) / scale_factor,
-    raster_resolution = res(raster_stack) / scale_factor,
-    raster_extent = c(xmin(raster_stack), xmax(raster_stack),
-                      ymin(raster_stack), ymax(raster_stack)) / scale_factor,
-    n_covs = nlayers(raster_stack)
-  )
+  sca_raster_data <- prepareRaster(spatialCovs[[isim]],scale_factor=scale_factor)
   
   # subsample data
   probs <- rep(1,nrow(langSim[[isim]]))
@@ -158,9 +135,12 @@ for(isim in 1:nsims){
   subDat <-   langSim[[isim]][sort(sample.int(nrow(langSim[[isim]]),ceiling(nrow(langSim[[isim]])/max(samplingRate,1)),prob=probs,replace=FALSE)),]
   subDat$dt <- do.call(c,mapply(function(x) c(0,diff(subDat$time[which(subDat$ID==x)])),1:nbAnimals,SIMPLIFY = FALSE))
   
-  data <- list(model=model,
-               Y=t(subDat[,c("mu.x","mu.y")])/scale_factor,
-               dt=subDat$dt)
+  data <- list(
+    model = model,
+    Y = t(subDat[, c("mu.x", "mu.y")]) / scale_factor,
+    times = as.numeric(subDat$time), 
+    dt = subDat$dt
+  )
   
   # add missing observations
   probs <- rep(1,nrow(subDat))
@@ -247,6 +227,8 @@ for(isim in 1:nsims){
   parMat[isim,"sigma"] <- rep$sigma
   if(model==1) parMat[isim,"gamma"] <- rep$gamma
   
+  zoom_ext <- terra::ext(-100, 100, -100, 100)
+  
   par(mfrow=c(2,2))
   plot(UD,main=paste0("Simulation ",isim),col=viridis::viridis(100))
   points(data$Y[1,]*scale_factor,data$Y[2,]*scale_factor,col=2) # observed locations
@@ -260,9 +242,9 @@ for(isim in 1:nsims){
   for(i in 1:nbAnimals){
     lines(langSim[[isim]]$mux[langSim[[isim]]$ID==i],langSim[[isim]]$muy[langSim[[isim]]$ID==i]) # true path
   }
-  plot(UD,main="True UD",col=viridis::viridis(100),xlim=c(-100,100),ylim=c(-100,100))
+  plot(terra::crop(UD,zoom_ext),main="True UD",col=viridis::viridis(100))
   estUD <- langTMB[[isim]]$par[3]*spatialCovs[[isim]]$cov1 + langTMB[[isim]]$par[4] * spatialCovs[[isim]]$cov2 + langTMB[[isim]]$par[5] * spatialCovs[[isim]]$cov3 + langTMB[[isim]]$par[6] * spatialCovs[[isim]]$d2c
-  plot(estUD,main="Estimated UD",col=viridis::viridis(100),xlim=c(-100,100),ylim=c(-100,100))
+  plot(terra::crop(estUD,zoom_ext),main="Estimated UD",col=viridis::viridis(100))
   
   parMat[isim,"UDcor"] <- cor(values(UD),values(estUD)) # correlation between true and estimated UD (could alternatively use raster::corLocal)
   

@@ -179,7 +179,6 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(isd);        // indexes observations vs. interpolation points
   DATA_IVECTOR(obs_mod);    // indicates which obs error model to be used
   DATA_IVECTOR(ID);         // Track IDs
-  DATA_INTEGER(nbStates);   // Number of states
   DATA_IVECTOR(nbObs);      // Number of observations per step
   DATA_SCALAR(scale_factor);
   
@@ -205,17 +204,13 @@ Type objective_function<Type>::operator() ()
   DATA_MATRIX(K);                 // error weighting factors for LS obs model
   
   // Process parameters (simplified)
-  PARAMETER_VECTOR(log_sigma);  // Log velocity process SD
-  PARAMETER_MATRIX(beta);       // Matrix of covariate effects [nstates, ncovs]
+  PARAMETER_VECTOR(beta);       // Vector of covariate effects
+  PARAMETER(log_sigma);  // Log velocity process SD
+  PARAMETER(log_gamma);  // Log friction coefficient, only used if model=1
   
   PARAMETER_MATRIX(mu);        // Locations [2 x timeSteps]
   PARAMETER_MATRIX(v_mu);        // Velocity innovations [2 x timeSteps], only used if model=1
-  PARAMETER_VECTOR(log_gamma);  // Log friction coefficient, only used if model=1
-  
-  // HMM parameters
-  PARAMETER_VECTOR(l_delta);    // Initial state distribution
-  PARAMETER_MATRIX(l_gamma);    // Transition probabilities
-  
+
   // OBSERVATION PARAMETERS
   // for KF OBS MODEL
   PARAMETER(l_psi); 				    // error SD scaling parameter to account for possible uncertainty in Argos error ellipse variables
@@ -226,31 +221,6 @@ Type objective_function<Type>::operator() ()
   Type psi = exp(l_psi);
   vector<Type> tau = exp(l_tau);
   Type rho_o = Type(2.0) / (Type(1.0) + exp(-l_rho_o)) - Type(1.0);
-  
-  // Transform HMM parameters 
-  vector<Type> delta(nbStates);
-  matrix<Type> trMat(nbStates,nbStates);
-  delta(0) = Type(1.0);
-  for(int i=1; i < nbStates; i++){
-    delta(i) = exp(l_delta(i-1));
-  }
-  delta /= delta.sum();
-  
-  // Pre-calculate log transition probabilities
-  matrix<Type> log_trMat(nbStates,nbStates);
-  int cpt = 0;
-  for(int i=0; i<nbStates; i++){
-    for(int j=0; j<nbStates; j++){
-      if(i==j) {
-        trMat(i,j) = Type(1.0);
-        cpt++;
-      } else trMat(i,j) = exp(l_gamma(0,i*nbStates+j-cpt));
-    }
-    trMat.row(i) /= trMat.row(i).sum();
-    for(int j=0; j<nbStates; j++){
-      log_trMat(i,j) = log(trMat(i,j));
-    }
-  }
   
   Type nll = 0.0;
   
@@ -278,112 +248,106 @@ Type objective_function<Type>::operator() ()
   track_lengths(track_lengths.size()-1) = timeSteps - track_start;
   
   // Transform parameters
-  vector<Type> sigma(nbStates);
-  vector<Type> sigma_sca(nbStates);
-  vector<Type> gamma(nbStates);
-  for(int i=0; i < nbStates; i++){
-    sigma(i) = exp(log_sigma(i) + log(scale_factor));   // Original scale
-    sigma_sca(i) = exp(log_sigma(i));
-    gamma(i) = exp(log_gamma(i));
-  }
+  Type sigma = exp(log_sigma + log(scale_factor));   // Original scale
+  Type sigma_sca = exp(log_sigma);
+  Type gamma = exp(log_gamma);
   
   // Process model - loop over tracks
   for(int id = 0; id < track_starts.size(); id++) {
     int start_idx = track_starts(id);
     int track_length = track_lengths(id);
+      
+    Type s2 = pow(sigma_sca, Type(2.0));
     
-    for(int state = 0; state < nbStates; state++) {
+    // Add prior on initial velocities for underdamped model only
+    if(model == 1) {
+      for(int i = 0; i < 2; i++) {
+        nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca / sqrt(Type(2.0) * gamma), true);
+      }
+    }
+    
+    for(int t = 0; t < (track_length-1); t++) {
       
-      Type s2 = pow(sigma_sca(state), Type(2.0));
+      int idx = start_idx + t;
+      Type dt_step = dt(idx+1); 
       
-      // Add prior on initial velocities for underdamped model only
-      if(model == 1) {
-        for(int i = 0; i < 2; i++) {
-          nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca(state) / sqrt(Type(2.0) * gamma(state)), true);
-        }
+      // Get current locations and absolute time
+      Type x_prev = mu(0,idx);
+      Type y_prev = mu(1,idx);
+      Type z_prev = times(idx);
+      
+      // Calculate gradient of log(π)
+      matrix<Type> grad;
+      if(smoothGradient) {
+        grad = calculate_smooth_gradient(
+          x_prev, y_prev, z_prev,
+          raster_vals, all_z_values, n_zvals_cov, cov_offset,
+          raster_coords, raster_resolution, raster_extent,
+          n_covs, weights, sigma_sca, gamma, dt_step, zetaScale, model
+        );
+      } else {
+        grad = extract_raster_values(
+          x_prev, y_prev, z_prev,
+          raster_vals, all_z_values, n_zvals_cov, cov_offset,
+          raster_coords, raster_resolution, raster_extent, n_covs
+        );
       }
       
-      for(int t = 0; t < (track_length-1); t++) {
+      // Force vector h = ∇log[π(x)]
+      vector<Type> h(2);
+      h.setZero();
+      //h(0) = beta(0);
+      //h(1) = beta(0);
+      for(int c = 0; c < n_covs; c++) {
+        h(0) += beta(c) * grad(0,c);
+        h(1) += beta(c) * grad(1,c);
+        //h(0) += beta(c+1) * grad(0,c);
+        //h(1) += beta(c+1) * grad(1,c);
+      }
+      
+      if(model == 1) {  // Underdamped
+        Type exp_gdt = exp(-gamma * dt_step);
+        Type exp_2gdt = exp(-Type(2.0) * gamma * dt_step);
         
-        int idx = start_idx + t;
-        Type dt_step = dt(idx+1); 
+        // Variance terms
+        Type var_x = s2/(gamma*gamma) * (Type(2.0)*gamma*dt_step - Type(3.0) + 
+          Type(4.0)*exp_gdt - exp_2gdt);
+        Type var_v = s2 * (Type(1.0) - exp_2gdt);
+        Type cov_xv = s2/gamma * (Type(1.0) - Type(2.0)*exp_gdt + exp_2gdt);
         
-        // Get current locations and absolute time
-        Type x_prev = mu(0,idx);
-        Type y_prev = mu(1,idx);
-        Type z_prev = times(idx);
-        
-        // Calculate gradient of log(π)
-        matrix<Type> grad;
-        if(smoothGradient) {
-          grad = calculate_smooth_gradient(
-            x_prev, y_prev, z_prev,
-            raster_vals, all_z_values, n_zvals_cov, cov_offset,
-            raster_coords, raster_resolution, raster_extent,
-            n_covs, weights, sigma_sca(state), gamma(state), dt_step, zetaScale, model
-          );
-        } else {
-          grad = extract_raster_values(
-            x_prev, y_prev, z_prev,
-            raster_vals, all_z_values, n_zvals_cov, cov_offset,
-            raster_coords, raster_resolution, raster_extent, n_covs
-          );
+        for(int i = 0; i < 2; i++) {
+          // Position mean
+          Type mu_x_pred = mu(i,idx) + 
+            v_mu(i,idx)/gamma * (Type(1.0) - exp_gdt) +
+            s2*h(i)/gamma * (dt_step - (Type(1.0) - exp_gdt)/gamma);
+          
+          // Velocity mean
+          Type mu_v_pred = v_mu(i,idx) * exp_gdt +
+            s2*h(i)/gamma * (Type(1.0) - exp_gdt);
+          
+          // Construct variance-covariance matrix
+          matrix<Type> Sigma(2,2);
+          Sigma(0,0) = var_x;
+          Sigma(1,1) = var_v;
+          Sigma(0,1) = cov_xv;
+          Sigma(1,0) = cov_xv;
+          
+          vector<Type> nu(2);
+          nu(0) = mu(i,idx+1) - mu_x_pred;
+          nu(1) = v_mu(i,idx+1) - mu_v_pred;
+          
+          nll += MVNORM(Sigma)(nu);
         }
+      } else {  // Overdamped
         
-        // Force vector h = ∇log[π(x)]
-        vector<Type> h(2);
-        h.setZero();
-        h(0) = beta(state,0);
-        h(1) = beta(state,0);
-        for(int c = 0; c < n_covs; c++) {
-          h(0) += beta(state,c+1) * grad(0,c);
-          h(1) += beta(state,c+1) * grad(1,c);
-        }
+        // Expected locations (simplified case of underdamped as γ → ∞)
+        Type Ex = x_prev + s2 * dt_step / Type(2.0) * h(0);
+        Type Ey = y_prev + s2 * dt_step / Type(2.0) * h(1);
         
-        if(model == 1) {  // Underdamped
-          Type exp_gdt = exp(-gamma(state) * dt_step);
-          Type exp_2gdt = exp(-Type(2.0) * gamma(state) * dt_step);
-          
-          // Variance terms
-          Type var_x = s2/(gamma(state)*gamma(state)) * (Type(2.0)*gamma(state)*dt_step - Type(3.0) + 
-            Type(4.0)*exp_gdt - exp_2gdt);
-          Type var_v = s2 * (Type(1.0) - exp_2gdt);
-          Type cov_xv = s2/gamma(state) * (Type(1.0) - Type(2.0)*exp_gdt + exp_2gdt);
-          
-          for(int i = 0; i < 2; i++) {
-            // Position mean
-            Type mu_x_pred = mu(i,idx) + 
-              v_mu(i,idx)/gamma(state) * (Type(1.0) - exp_gdt) +
-              s2*h(i)/gamma(state) * (dt_step - (Type(1.0) - exp_gdt)/gamma(state));
-            
-            // Velocity mean
-            Type mu_v_pred = v_mu(i,idx) * exp_gdt +
-              s2*h(i)/gamma(state) * (Type(1.0) - exp_gdt);
-            
-            // Construct variance-covariance matrix
-            matrix<Type> Sigma(2,2);
-            Sigma(0,0) = var_x;
-            Sigma(1,1) = var_v;
-            Sigma(0,1) = cov_xv;
-            Sigma(1,0) = cov_xv;
-            
-            vector<Type> nu(2);
-            nu(0) = mu(i,idx+1) - mu_x_pred;
-            nu(1) = v_mu(i,idx+1) - mu_v_pred;
-            
-            nll += MVNORM(Sigma)(nu);
-          }
-        } else {  // Overdamped
-          
-          // Expected locations (simplified case of underdamped as γ → ∞)
-          Type Ex = x_prev + s2 * dt_step / Type(2.0) * h(0);
-          Type Ey = y_prev + s2 * dt_step / Type(2.0) * h(1);
-          
-          Type sd = sigma_sca(state) * sqrt(dt_step);
-          
-          nll -= (dnorm(mu(0,idx+1), Ex, sd, true) + 
-            dnorm(mu(1,idx+1), Ey, sd, true));
-        }
+        Type sd = sigma_sca * sqrt(dt_step);
+        
+        nll -= (dnorm(mu(0,idx+1), Ex, sd, true) + 
+          dnorm(mu(1,idx+1), Ey, sd, true));
       }
     }
   }
@@ -423,19 +387,6 @@ Type objective_function<Type>::operator() ()
   ADREPORT(rho_o);
   ADREPORT(tau);
   ADREPORT(psi);
-  
-  REPORT(beta);
-  REPORT(sigma);
-  if(model == 1) REPORT(gamma);
-  REPORT(mu);
-  if(model == 1) REPORT(v_mu);
-  
-  if(nbStates>1){
-    ADREPORT(delta);
-    ADREPORT(trMat);
-    REPORT(delta);
-    REPORT(trMat);
-  }
   
   return nll;
 }

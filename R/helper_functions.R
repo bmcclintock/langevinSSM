@@ -14,30 +14,57 @@ rasterList <- function (rast)
   return(list(x = xgrid, y = ygrid, z = z))
 }
 
-getUD <- function (spatialCovs, beta, log = F) 
-{
-  if(length(spatialCovs)!=length(beta)) stop("length(spatialCovs) must equal length(beta)")
-  covariates <- lapply(spatialCovs,rasterList)
-  ud_rast <- covariates[[1]]
-  dx <- diff(ud_rast$x)[1]
-  dy <- diff(ud_rast$y)[1]
-  J <- length(covariates)
-  ud_rast$z <- Reduce("+", lapply(1:J, function(j) dx * dy * 
-                                    beta[j] * covariates[[j]]$z))
-  if (!log) {
-    ud_rast$z <- exp(ud_rast$z)
-    ud_rast$z <- ud_rast$z/sum(ud_rast$z)
+#' @export
+getUD <- function(spatialCovs, beta, log = FALSE) {
+  if(length(spatialCovs) != length(beta)) stop("length(spatialCovs) must equal length(beta)")
+  
+  # Get cell area (dx * dy)
+  r_res <- terra::res(spatialCovs[[1]])
+  cell_area <- r_res[1] * r_res[2]
+  
+  ud_rast <- spatialCovs[[1]] * beta[1] * cell_area
+  for (j in 2:length(spatialCovs)) {
+    ud_rast <- ud_rast + (spatialCovs[[j]] * beta[j] * cell_area)
   }
-  terra::rast(ud_rast)
+  
+  if (!log) {
+    ud_rast <- exp(ud_rast)
+    
+    layer_sums <- terra::global(ud_rast, "sum", na.rm = TRUE)$sum
+    
+    for(k in 1:terra::nlyr(ud_rast)) {
+      ud_rast[[k]] <- ud_rast[[k]] / layer_sums[k]
+    }
+  }
+  
+  n_layers <- sapply(spatialCovs, terra::nlyr)
+  max_layers <- max(n_layers)
+  
+  if (max_layers > 1) {
+    
+    dyn_idx <- which(n_layers == max_layers)[1]
+    z_times <- terra::time(spatialCovs[[dyn_idx]])
+    
+    if (!is.null(z_times)) {
+      names(ud_rast) <- paste0("UD_time_", z_times)
+      terra::time(ud_rast) <- z_times
+    } else {
+      names(ud_rast) <- paste0("UD_layer_", 1:max_layers)
+    }
+  } else {
+
+    names(ud_rast) <- "UD_static"
+  }
+  
+  return(ud_rast)
 }
 
-plotRaster <- function (rast, norm = FALSE, log = FALSE, scale.name = "", light = FALSE) 
+#' @export
+plotRaster <- function (rast, norm = FALSE, log = FALSE, scale.name = expression(pi), light = FALSE) 
 {
-  # FIX 1: Use as.numeric() to ensure 'val' is a simple vector, not a matrix column
   covmap <- data.frame(terra::crds(rast), val = as.numeric(terra::values(rast)))
   
   if (norm) {
-    # FIX 2: Use native terra::res() instead of raster::xres/yres
     r_res <- terra::res(rast)
     s <- sum(covmap$val) * r_res[1] * r_res[2]
     covmap$val <- covmap$val / s
@@ -47,23 +74,23 @@ plotRaster <- function (rast, norm = FALSE, log = FALSE, scale.name = "", light 
     covmap$val <- log(covmap$val)
   }
   
-  # FIX 3: Replace aes_string() with standard aes()
-  p <- ggplot(covmap, aes(x = x, y = y)) + 
-    geom_raster(aes(fill = val)) + 
-    coord_equal()
+  p <- ggplot2::ggplot(covmap, aes(x = x, y = y)) + 
+    ggplot2::geom_raster(aes(fill = val)) + 
+    ggplot2::coord_equal()
   
   if (light) {
-    p <- p + scale_fill_viridis(guide = "none") + 
-      theme(axis.title = element_blank(), 
+    p <- p + viridis::scale_fill_viridis(guide = "none") + 
+      ggplot2::theme(axis.title = element_blank(), 
             axis.text = element_blank(), 
             axis.ticks = element_blank())
   } else {
-    p <- p + scale_fill_viridis(name = scale.name)
+    p <- p + viridis::scale_fill_viridis(name = scale.name)
   }
   
   return(p)
 }
 
+#' @export
 simCov <- function(sca = 200, irange = 0.3, sigma2 = 0.1, kappa = 0.5, M = 2048, N = 2048) {
   
   # --- Parameters ---
@@ -103,6 +130,7 @@ radian <- function(degree) {
   return(radian)
 }
 
+#' @export
 formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), time.unit = "hours", tz = "UTC"){
   
   if(is.null(data[[lc]])) stop("data$lc is missing")
@@ -115,33 +143,32 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
                  dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd)
   attr(out,"row.names") <- NULL
   attr(out,"time.unit") <- time.unit
+  class(out) <- append(class(out),"dataLangevin")
   return(out)
 }
 
-prepareRaster <- function(spatialCovs,scale_factor=1,time.unit="hours"){
+prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = NULL) {
   
   if(!is.list(spatialCovs)) stop('spatialCovs must be a list')
   spatialcovnames <- names(spatialCovs)
   if(is.null(spatialcovnames)) stop('spatialCovs must be a named list')
   nbSpatialCovs <- length(spatialcovnames)
   
-  # 1. Update package check to terra
   if (!requireNamespace("terra", quietly = TRUE)) {
     stop("Package \"terra\" needed for spatial covariates. Please install it.", call. = FALSE)
   }
   
-  for(j in 1:nbSpatialCovs){
-    # 2. Update class check (everything is a SpatRaster)
+  raster_stack <- terra::rast(spatialCovs)
+  
+  for(j in 1:nbSpatialCovs) {
     if(!inherits(spatialCovs[[j]], "SpatRaster")) {
       stop("spatialCovs$", spatialcovnames[j], " must be of class 'SpatRaster'")
     }
     
-    # 3. Update value extraction
     if(any(is.na(terra::values(spatialCovs[[j]])))) {
       stop("missing values are not permitted in spatialCovs$", spatialcovnames[j])
     }
     
-    # 4. Update multi-layer (stack/brick) check and Z-value logic
     if(terra::nlyr(spatialCovs[[j]]) > 1) {
       
       t_vals <- terra::time(spatialCovs[[j]])
@@ -151,57 +178,45 @@ prepareRaster <- function(spatialCovs,scale_factor=1,time.unit="hours"){
         stop("spatialCovs$", spatialcovnames[j], " is a multi-layer raster that must have time values set (see ?terra::time)")
       } 
       
-      # Since terra doesn't store a "Z name" mapping, check directly against the expected 
-      # time column in your data. (Change "time" to whatever your standard column name is).
-      else if(!("time" %in% names(data))) {
-        stop("spatialCovs$", spatialcovnames[j], " requires a 'time' column in 'data' to match the raster's dynamic layers")
+      else if(!is.null(data) && !("date" %in% names(data))) {
+        stop("spatialCovs$", spatialcovnames[j], " requires a 'date' column in 'data' to match the raster's dynamic layers")
       }
     }
   }
   
-  if(any(spatialcovnames %in% names(data))) stop("spatialCovs cannot have same names as data")
+  if(!is.null(data) && any(spatialcovnames %in% names(data))) stop("spatialCovs cannot have same names as data")
   if(anyDuplicated(spatialcovnames)) stop("spatialCovs must have unique names")
   
-  # Extract the 3D array [nrow, ncol, nlayer]
   vals_array <- as.array(raster_stack) 
   
-  # CORRECTED: Permute to [ncol, nrow, nlayer] so it perfectly matches the C++ idx formula
+  # Permute to [ncol, nrow, nlayer] so it matches the C++ idx formula
   vals_array <- aperm(vals_array, c(2, 1, 3))
   
   # Extract and convert raster times
   times_list <- lapply(spatialCovs, function(r) {
     t_vals <- terra::time(r)
     
-    if (is.null(t_vals) || all(is.na(t_vals))) {
-      if (terra::nlyr(r) == 1) {
-        return(0) # Static covariate dummy value
-      } else {
-        # Fallback for dynamic rasters without time metadata
-        return(as.numeric(1:terra::nlyr(r)))
-      }
+    if (terra::nlyr(r) == 1 && (is.null(t_vals) || all(is.na(t_vals)))) {
+      return(0) 
     } else {
-      # Check if the time values are datetime or date objects
       if (inherits(t_vals, "POSIXt") || inherits(t_vals, "Date")) {
         return(as.numeric(difftime(t_vals, as.POSIXct("1970-01-01 00:00:00", tz = "UTC"), units = time.unit)))
       } else {
-        # If they are already numeric (like in your simulations), return as-is
         return(as.numeric(t_vals))
       }
     }
   })
   
-  all_z_values_R <- unlist(times_list)
-  
-  n_zvals_cov <- sapply(spatialCovs, nlyr) 
+  n_zvals_cov <- sapply(spatialCovs, terra::nlyr) 
   cov_offset_R <- c(0, cumsum(n_zvals_cov)[-length(n_zvals_cov)])
   
   all_z_values_R <- unlist(times_list)
   
   raster_data <- list(
     raster_vals = vals_array,
-    raster_coords = terra::crds(raster_stack)/scale_factor, 
-    raster_resolution = terra::res(raster_stack)/scale_factor,
-    raster_extent = as.vector(terra::ext(raster_stack)/scale_factor),
+    raster_coords = terra::crds(raster_stack)/scaleFactor, 
+    raster_resolution = terra::res(raster_stack)/scaleFactor,
+    raster_extent = as.vector(terra::ext(raster_stack)/scaleFactor),
     n_covs = length(n_zvals_cov), 
     all_z_values = as.numeric(all_z_values_R), # The flattened raster slice times
     n_zvals_cov = as.integer(n_zvals_cov),
@@ -210,50 +225,214 @@ prepareRaster <- function(spatialCovs,scale_factor=1,time.unit="hours"){
   return(raster_data)
 }
 
-measurementError <- function(data,M,m,c,psi){
-  M <- tmpM <- abs(rnorm(nbAnimals*obsPerAnimal,0,sd=M))
-  m <- tmpm <- abs(rnorm(nbAnimals*obsPerAnimal,0,sd=m))
-  M[which(tmpM < tmpm)] <- tmpm[which(tmpM < tmpm)]
-  m[which(tmpM < tmpm)] <- tmpM[which(tmpM < tmpm)]
-  c <- radian(runif(nbAnimals*obsPerAnimal,c[1],c[2]))
-  z = sqrt(2);
-  s2c = sin(c) * sin(c);
-  c2c = cos(c) * cos(c);
-  M2  = (M / z) * (M / z);
-  m2 = (m * psi / z) * (m * psi / z);
+checkPar <- function(par, model, map=NULL, dat=NULL){
   
-  data$mux <- data$mu.x
-  data$muy <- data$mu.y
-  data$mu.x <- NA
-  data$mu.y <- NA
-  data$error_semimajor_axis <- M
-  data$error_semiminor_axis <- m
-  data$error_ellipse_orientation <- c
-  
-  for(i in 1:nrow(data)){
-    cov_obs <- matrix(0,2,2)
-    cov_obs[1,1] = (M2[i] * s2c[i] + m2[i] * c2c[i]);
-    cov_obs[2,2] = (M2[i] * c2c[i] + m2[i] * s2c[i]);
-    cov_obs[1,2] = (0.5 * (M[i] * M[i] - (m[i] * psi * m[i] * psi))) * cos(c[i]) * sin(c[i]);
-    cov_obs[2,1] = cov_obs[1,2];
-    mu <- mvtnorm::rmvnorm(1,cbind(data$mux[i],data$muy[i]),cov_obs)
-    data$mu.x[i] <- mu[1]
-    data$mu.y[i] <- mu[2]
+  if(is.null(map)) map <- list()
+  if(!is.list(par)) stop("par must be a list.")
+  if(!all(names(par) %in% c("beta","sigma","gamma","mu","v_mu","psi","tau","rho_o"))) stop("names(par) is limited to c('beta','sigma','gamma','mu','v_mu','psi','tau','rho_o')")
+  if(model=="underdamped"){
+    if(!is.null(par$gamma)) gamma <- par$gamma
+    else stop("par$gamma is missing, with no default.")
+    if(!is.finite(gamma) || gamma<=0){
+      stop("gamma should be greater than zero.")
+    } else {
+      par$log_gamma <- log(par$gamma)
+      par$gamma <- NULL
+    }
+    if(!is.null(map$gamma)){
+      if(length(map$gamma)!=length(gamma)) stop("map$gamma should be of length 1.")
+      map$log_gamma <- map$gamma
+      map$gamma <- NULL
+    }
+  } else {
+    map$log_gamma <- factor(NA)
+    map$gamma <- NULL
+    par$log_gamma <- 0
   }
-  return(data)
+  if(!is.null(par$sigma)){
+    sigma <- par$sigma
+    if(!is.finite(sigma) || sigma<=0){
+      stop("sigma should be greater than zero.")
+    } else {
+      par$log_sigma <- log(par$sigma)
+      par$sigma <- NULL
+    }
+    if(!is.null(map$sigma)){
+      if(length(map$sigma)!=length(sigma)) stop("map$sigma should be of length 1.")
+      map$log_sigma <- map$sigma
+      map$sigma <- NULL
+    }
+  } else stop("par$sigma is missing, with no default.")
+  
+  if(!is.null(par$beta)){
+    beta <- par$beta
+    if(any(!is.finite(beta))){
+      stop("beta must be finite.")
+    }
+    if(!is.null(map$beta)){
+      if(length(map$beta)!=length(beta)) stop("map$beta should be of length ",length(beta),".")
+    }
+  } else stop("par$beta is missing, with no default.")
+  
+  if(!is.null(par$psi)){
+    if(!is.finite(par$psi) || psi<=0)
+      stop("par$psi should be greater than zero.")
+    par$l_psi <- log(par$psi)
+    par$psi <- NULL
+    if(!is.null(map$psi)){
+      if(length(map$psi)!=length(par$l_psi)) stop("map$psi should be of length 1.")
+      map$l_psi <- map$psi
+      map$psi <- NULL
+    }
+  } else {
+    par$l_psi <- 0
+    map$l_psi <- factor(NA)
+  }
+  if(!is.null(par$tau)){
+    if(length(par$tau)!=2) stop("par$tau should be of length 2.")
+    if(!is.finite(par$tau) || tau<=0)
+      stop("par$tau should be greater than zero.")
+    par$l_tau <- log(par$tau)
+    par$tau <- NULL
+    if(!is.null(map$tau)){
+      if(length(map$tau)!=length(par$l_tau)) stop("map$tau should be of length 2.")
+      map$l_tau <- map$tau
+      map$tau <- NULL
+    }
+  } else {
+    par$l_tau <- c(0,0)
+    map$l_tau <- factor(rep(NA,2))
+  }
+  if(!is.null(par$rho_o)){
+    if(!is.finite(par$rho_o)) stop("par$rho_o must be finite.")
+    par$l_rho_o <- log(par$rho_o)
+    par$rho_o <- NULL
+    if(!is.null(map$rho_o)){
+      if(length(map$rho_o)!=length(par$l_rho_o)) stop("map$rho_o should be of length 1.")
+      map$l_rho_o <- map$rho_o
+      map$rho_o <- NULL
+    }
+  } else {
+    par$l_rho_o <- 0
+    map$l_rho_o <- factor(NA)
+  }
+  
+  if(!is.null(dat)){
+    
+    if(!is.null(par$mu)) par$mu <- t(par$mu)
+    if(!is.null(par$v_mu)) par$v_mu <- t(par$v_mu)
+    
+    if(model=="overdamped"){
+      re <- "mu"
+      par$v_mu <- matrix(0,2,ncol(dat$Y)) 
+      map$v_mu <- factor(rep(NA,length(dat$Y)))
+      map$log_gamma <- factor(NA)
+    } else {
+      re <- c("mu","v_mu")
+    }
+    
+    if(all(is.na(dat$obs_mod))){
+      if(model=="overdamped") re <- NULL
+      else re <- "v_mu"
+      par$mu <- dat$Y
+      map$mu <- factor(rep(NA,length(dat$Y)))
+    } 
+    
+    if(is.null(par$mu)) stop("par$mu is missing, with no default.")
+    if(is.null(par$v_mu)) stop("par$v_mu is missing, with no default.")
+    if(any(dim(par$mu)!=dim(dat$Y))) stop("par$mu must have ",ncol(dat$Y)," rows and 2 columns")
+    if(any(dim(par$v_mu)!=dim(dat$Y))) stop("par$v_mu must have ",ncol(dat$Y)," rows and 2 columns")
+    if(any(!is.finite(par$mu)) | any(!is.finite(par$v_mu))) stop("par$mu and/or par$v_mu must be finite")
+    
+    par <- par[c("beta","log_sigma","log_gamma","mu","v_mu","l_psi","l_tau","l_rho_o")]
+    out <- list(par=par,map=map,re=re)
+  } else out <- list(par=par,map=map)
+  
+  return(out)
+}
+
+getInitialPosition <- function(nbAnimals,initialPosition,spatialCovs){
+  
+  spatialcovnames <- names(spatialCovs)
+  
+  if(missing(initialPosition)){
+    message("   Randomly drawing initial positions from UD...")
+    UD <- getUD(spatialCovs, beta=beta,log=TRUE)
+    initPos <- matrix(sample(terra::ncell(UD[[1]]),nbAnimals,replace=FALSE,prob=exp(terra::values(UD[[1]]))/sum(exp(terra::values(UD[[1]])))),
+                      1,nbAnimals,byrow=TRUE)
+    initialPosition <- t(mapply(function(x) xyFromCell(UD,initPos[,x]),1:nbAnimals,SIMPLIFY = FALSE))
+  } else {
+    if(is.list(initialPosition)){
+      if(length(initialPosition)!=nbAnimals) stop("initialPosition must be a list of length ",nbAnimals)
+      for(i in 1:nbAnimals){
+        if(length(initialPosition[[i]])!=2 | !is.numeric(initialPosition[[i]]) | any(!is.finite(initialPosition[[i]]))) stop("each element of initialPosition must be a finite numeric vector of length 2")
+      }
+    } else {
+      if(length(initialPosition)!=2 | !is.numeric(initialPosition) | any(!is.finite(initialPosition))) stop("initialPosition must be a finite numeric vector of length 2")
+      tmpPos<-initialPosition
+      initialPosition<-vector('list',nbAnimals)
+      for(i in 1:nbAnimals){
+        initialPosition[[i]]<-tmpPos
+      }
+    }
+    for(i in 1:length(initialPosition)){
+      for(j in 1:length(spatialCovs)){
+        if(is.na(terra::cellFromXY(spatialCovs[[j]],matrix(initialPosition[[i]],ncol=2)))) stop("initialPosition for individual ",i," is not within the spatial extent of the ",spatialcovnames[j]," raster")
+      }
+    }
+  }
+  initialPosition <- do.call(rbind,initialPosition)
+  return(initialPosition)
+}
+
+addMeasurementError <- function(model, out, par, measurementError){
+  if(!is.null(measurementError)){
+    if(!is.list(measurementError)) stop("'measurementError' must be a list.")
+    if(!is.null(measurementError$M)){
+      M <- measurementError$M
+      if(!is.finite(M) || M<=0)
+        stop("measurementerror$M should be greater than zero.")
+    } 
+    if(!is.null(measurementError$m)){
+      m <- measurementError$m
+      if(!is.finite(m) || m<=0)
+        stop("measurementerror$m should be greater than zero.")
+    } 
+    if(!is.null(measurementError$c)){
+      r <- measurementError$c
+      if(length(r)!=2) stop("measurementError$c should be of length 2.")
+      if(any(!is.finite(r))) stop("measurementError$c must be finite.")
+      if(any(r < 0 | r > 180)) stop("measurementError$c must be in degrees between 0 and 180.")
+      if(r[2] < r[1]) stop("measurementError$c[2] must be greater than measurementError$c[1].")
+    } 
+    if(!is.null(par$l_psi)){
+      psi <- exp(par$l_psi)
+    } else psi <- 1
+    out <- measurementError_rcpp(out,
+                                 M=M,
+                                 m=m,
+                                 c=r,
+                                 psi=psi,
+                                 model=ifelse(model=="underdamped",1,0))
+    out$sd.x <- NA
+    out$sd.y <- NA
+  } else {
+    out <- out %>% dplyr::mutate(x=mu.x,y=mu.y,smaj=NA,smin=NA,eor=NA,sd.x=NA,sd.y=NA)
+  }
+  return(out)
 }
 
 init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
   
   aniDat <- data.frame(
-    id = as.character(subDat$ID),
-    date = as.POSIXlt(subDat$time * 1/mean(subDat$dt)), # fit_ssm doesn't like very small \Delta_t
-    x = subDat$mu.x,
-    y = subDat$mu.y,
-    lc = 3,
-    smaj = subDat$error_semimajor_axis,
-    smin = subDat$error_semiminor_axis,
-    eor = subDat$error_ellipse_orientation,
+    id = as.character(subDat$id),
+    date = as.POSIXlt(subDat$date * 1000), # fit_ssm doesn't like very small \Delta_t
+    x = subDat$x,
+    y = subDat$y,
+    lc = "G",
+    smaj = subDat$smaj,
+    smin = subDat$smin,
+    eor = subDat$eor,
     x.sd = NA,
     y.sd = NA
   )
@@ -263,6 +442,9 @@ init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
     crs = 3416,  
     remove = FALSE
   )
+  
+  # prevent automatic km conversion by fit_ssm
+  suppressWarnings(sf::st_crs(aniDat) <- "+proj=lcc +lat_0=47.5 +lon_0=13.3333333333333 +lat_1=49 +lat_2=46 +x_0=400 +y_0=400 +ellps=GRS80 +units=km +no_defs")
   
   # Get unique IDs
   unique_ids <- unique(aniDat$id)
@@ -306,28 +488,20 @@ init.mu_aniMotum <- function(subDat,model="rw",timeSteps){
 
   # Fit models in parallel
   ssm_results <- tryCatch(furrr::future_map(unique_ids,function(x) fit_single_ssm(id_data_list[[x]]), .options = furrr::furrr_options(seed = TRUE)),error=function(e) e)
-  for(j in which(unlist(lapply(ssm_results,is.null)) | unlist(lapply(ssm_results,function(x) !isTRUE(x$converged))))){
-    message("      aniMotum failed for individual ",unique_ids[j],"; trying crawl instead")
-    locErr <- crawl::argosDiag2Cov(id_data_list[[j]]$smaj,id_data_list[[j]]$smin,id_data_list[[j]]$eor/(pi/180))
-    id_data_list[[j]]$ln.sd.x <- locErr$ln.sd.x
-    id_data_list[[j]]$ln.sd.y <- locErr$ln.sd.y
-    id_data_list[[j]]$error.corr <- locErr$error.corr
-    predTime <- list()
-    predTime[[unique_ids[j]]] <- timeSteps$date[which(timeSteps$id==j)]
-    crfit <- tryCatch(momentuHMM::crawlWrap(id_data_list[[j]] %>% rename(ID=id,time=date),predTime=predTime,err.model = list(x =  ~ ln.sd.x - 1,y =  ~ ln.sd.y - 1, rho =  ~ error.corr),fixPar=c(1,1,NA,NA),initialSANN=NULL,retryFits=5),error=function(e) e)
-    if(!inherits(crfit,"error")) ssm_results[[j]] <- crfit$crwPredict[which(crfit$crwPredict$locType=="p"),]
-    else stop("      crawl also failed for individual ",unique_ids[j],": ",crfit$message)
-  }
   
   # Combine results
   aniFit <- list()
   for (i in seq_along(unique_ids)) {
-    if(inherits(ssm_results[[i]],"ssm_df")) aniFit[[i]] <- matrix(unlist(ssm_results[[i]]$ssm[[1]]$predicted$geometry),nrow=2)
-    else aniFit[[i]] <- matrix(unlist(ssm_results[[i]][,c("mu.x","mu.y")]),nrow=2)
+    if(inherits(ssm_results[[i]],"ssm_df")) {
+      aniFit[[i]] <- matrix(unlist(ssm_results[[i]]$ssm[[1]]$predicted$geometry),nrow=2)
+    } else {
+      message("      aniMotum failed for individual ",unique_ids[i],"; using true locations instead instead")
+      aniFit[[i]] <- matrix(unlist(ssm_results[[i]][,c("mu.x","mu.y")]),nrow=2)
+    }
   }
 
   # Extract initial mu as before
-  init.mu <- do.call(cbind, aniFit)
+  init.mu <- t(do.call(cbind, aniFit))
   
   return(init.mu)
 }

@@ -270,21 +270,21 @@ DataFrame simulate_langevin_cpp(int model,
   
   if(model == 0) {
     return DataFrame::create(
-      Named("ID") = ID,
-      Named("time") = time,
+      Named("id") = ID,
+      Named("date") = time,
       Named("dt") = dt,
       Named("mu.x") = mu_x,
       Named("mu.y") = mu_y
     );
   } else {
     return DataFrame::create(
-      Named("ID") = ID,
-      Named("time") = time,
+      Named("id") = ID,
+      Named("date") = time,
       Named("dt") = dt,
       Named("mu.x") = mu_x,
       Named("mu.y") = mu_y,
-      Named("v_mux") = v_mux,
-      Named("v_muy") = v_muy
+      Named("v.x") = v_mux,
+      Named("v.y") = v_muy
     );
   }
 }
@@ -362,29 +362,29 @@ DataFrame measurementError_rcpp(DataFrame data,
   // Create output DataFrame
   if(model==0){
     return DataFrame::create(
-      Named("ID") = data["ID"],
-                        Named("time") = data["time"],
+      Named("id") = data["id"],
+                        Named("date") = data["date"],
                                             Named("dt") = data["dt"],
-                                                              Named("mu.x") = new_mux,
-                                                              Named("mu.y") = new_muy,
-                                                              Named("error_semimajor_axis") = M_rand,
-                                                              Named("error_semiminor_axis") = m_rand,
-                                                              Named("error_ellipse_orientation") = c_rand,
-                                                              Named("mux") = mux, // true location
-                                                              Named("muy") = muy); // true location   
+                                                              Named("x") = new_mux,
+                                                              Named("y") = new_muy,
+                                                              Named("smaj") = M_rand,
+                                                              Named("smin") = m_rand,
+                                                              Named("eor") = c_rand,
+                                                              Named("mu.x") = mux, // true location
+                                                              Named("mu.y") = muy); // true location   
   } else {
     return DataFrame::create(
-      Named("ID") = data["ID"],
-                        Named("time") = data["time"],
+      Named("id") = data["id"],
+                        Named("date") = data["date"],
                                             Named("dt") = data["dt"],
-                                                              Named("mu.x") = new_mux,
-                                                              Named("mu.y") = new_muy,
-                                                              Named("error_semimajor_axis") = M_rand,
-                                                              Named("error_semiminor_axis") = m_rand,
-                                                              Named("error_ellipse_orientation") = c_rand,
-                                                              Named("mux") = mux, // true location
-                                                              Named("muy") = muy, // true location   
-                                                              Named("v_mux") = data["v_mux"],  // true velocity
-                                                                                   Named("v_muy") = data["v_muy"]); // true velocity
+                                                              Named("x") = new_mux,
+                                                              Named("y") = new_muy,
+                                                              Named("smaj") = M_rand,
+                                                              Named("smin") = m_rand,
+                                                              Named("eor") = c_rand,
+                                                              Named("mu.x") = mux, // true location
+                                                              Named("mu.y") = muy, // true location   
+                                                              Named("v.x") = data["v.x"],  // true velocity
+                                                              Named("v.y") = data["v.y"]); // true velocity
   }
 }

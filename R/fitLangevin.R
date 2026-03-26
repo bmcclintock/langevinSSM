@@ -1,32 +1,91 @@
+#' Fit the habitat-driven Langevin diffusion
+#'
+#' Fit the underdamped or overdamped Langevin model to the location data provided, via numerical optimization of the log-likelihood
+#' function using \code{TMB}. Location data can be temporally irregular and/or subject to measurement error.
+#'
+#' @param data \code{dataLangevin} object. See \code{\link{formatData}}.
+#' @param model Character string indicating which Langevin diffusion model to fit (``underdamped'', or ``overdamped''). Default: ``underdamped''.
+#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
+#' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma'').
+#' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). All parameter are specified on their natural scale and are converted to working scale internally.
+#' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, and ``rho_o'' = 0) via \code{map}.
+#' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
+#' @param coord Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.
+#' @param scaleFactor Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.
+#' @param smoothGradient Logical indicating whether or not to smooth the gradients using the approach of Blackwell and Matthiopoulos (2024). Default: \code{FALSE}.
+#' @param npoints Number of smoothing points around current cell (4 = diagonal, 8 = queen neighborhood). Ignored unless \code{smoothGradient=TRUE}.
+#' @param curweight Smoothing weight of current cell location (\code{0 <= curweight < 1}). Ignored unless \code{smoothGradient=TRUE}.
+#' @param zetaScale Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sigma}, while the neightborhood for the overdamped model is \code{zetaScale * sigma / sqrt(2)}. Ignored unless \code{smoothGradient=TRUE}.
+#' @param hessian Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
+#' @param silent Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
+#' @param method Outer optimization method. Default: \code{"BFGS"}.
+#' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``v_mu'') before optimizing over all parameters. Default: \code{TRUE}.
+#' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
+#' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
+#'
+#' @return \code{fitLangevin} object, i.e., a list of:
+#' \item{par}{See \code{\link[stats]{nlminb}}}
+#' \item{objective}{See \code{\link[stats]{nlminb}}}
+#' \item{convergence}{See \code{\link[stats]{nlminb}}}
+#' \item{message}{See \code{\link[stats]{nlminb}}}
+#' \item{iterations}{See \code{\link[stats]{nlminb}}}
+#' \item{evaluations}{See \code{\link[stats]{nlminb}}}
+#' \item{elapsedTime}{Run time of the optimization}
+#' \item{estimates}{List containing point estimates and standard error for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates for the true locations (``mu'') and/or the true velocities (``v_mu'').}
+#' \item{conditions}{List containing the optimization settings}
+#'
+#' @examples
+#' # fit underdamped model with measurement error
+#' # exampleDat included in package; see ?exampleDat for details
+#' # exampleCovs included in package; see ?exampleCovs for details
+#' fit <- fitLangevin(exampleDat,
+#'                    spatialCovs = exampleCovs)
+#' @references
+#' Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
+#'
+#' Michelot T, Gloaguen P, Blackwell PG, Etienne M-P. 2019. The Langevin diffusion as a continuous-time model of animal movement and habitat selection. Methods Ecol Evol 10:1894–1907. doi: 10.1111/2041-210X.13275.
+#'
+#' Michelot T, Hanks E. 2025. Multiscale modelling of animal movement with persistent dynamics. arXiv doi: 10.48550/arXiv.2406.15195
+#'
+#' Blackwell PG, Matthiopoulos J. 2024. Joint inference for telemetry and spatial survey data. Ecology 105(12):e4457. doi: 10.1002/ecy.4457.
+#'
+#' @rawNamespace useDynLib(langevinSSM, .registration=TRUE); useDynLib(langevinSSM_TMBExports)
+#' @importFrom stats nlminb
+#' @importFrom TMB MakeADFun sdreport
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000)){
-  
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000)){
+
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
-  match.arg(model)
-  
+
+  model <- match.arg(model)
+
   time.unit <- attr(data,"time.unit")
-  
+
   # Prepare raster data
   raster_data <- prepareRaster(spatialCovs,data=data,scaleFactor=scaleFactor,time.unit=time.unit)
-  
+
   if(!all(coord %in% colnames(data))) stop("coord not found in data.")
-  
+
+  if(smoothGradient & isFALSE(npoints %in% c(4,8))) stop("npoints must be 4 or 8")
+  if(smoothGradient & isFALSE(curweight>=0 & curweight<1)) stop("curweight must be >=0 and <1")
+  if(smoothGradient & isFALSE(zetaScale>0)) stop("zetaScale must be >0")
+
   if (inherits(data$date, "POSIXt") || inherits(data$date, "Date")) {
     track_times <- as.numeric(difftime(data$date, as.POSIXct("1970-01-01 00:00:00", tz = "UTC"), units = time.unit))
   } else {
     track_times <- as.numeric(data$date)
   }
-  
+
   if(any(!coord %in% colnames(data))) stop("'coord' not found in data.")
-  dat <-  list(model=ifelse(model=="underdamped",1,0),
+  dat <-  list(process_model=ifelse(model=="underdamped",1,0),
                Y=t(data[,coord])/scaleFactor,
                times=track_times,
                dt=data$dt)
-  
+
   dat$M <- data$smaj / scaleFactor
   dat$m <- data$smin / scaleFactor
   dat$c <- data$eor
-  dat$K <- as.matrix(data[,c("sd.x","sd.y")] / scaleFactor)
+  dat$K <- as.matrix(data[,c("x.sd","y.sd")] / scaleFactor)
   dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$M) & !is.na(dat$m) & !is.na(dat$c))))
   dat$obs_mod <- rep(NA,ncol(dat$Y))
   dat$obs_mod[dat$isd==1 & (!is.na(dat$K[,1]) & !is.na(dat$K[,2]))] <- 0
@@ -38,30 +97,56 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   dat$smoothGradient <- ifelse(smoothGradient,1,0)
   dat$weights <- c(curweight,rep((1-curweight)/npoints,npoints))
   dat$zetaScale <- zetaScale
-  
-  cp <- checkPar(par, model, map, dat=dat)
+
+  par <- initialValues(data,model,par,spatialCovs,coord)
+
+  cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs)
   par <- cp$par
   map <- cp$map
   re <- cp$re
-  
+
   # scale parameters
   par$log_sigma <- par$log_sigma - log(scaleFactor)
   par$mu <- par$mu / scaleFactor
   par$v_mu <- par$v_mu / scaleFactor
-  
+
   message("   Fitting ",model," Langevin model...")
+  if(initialInner){
+    obj1 <-
+      TMB::MakeADFun(
+        c(model="langevinSSM",dat),
+        par,
+        map = lapply(par[names(par)[!names(par) %in% c("mu","v_mu")]],function(x) factor(rep(NA,length(x)))),
+        random = re,
+        DLL = "langevinSSM_TMBExports",
+        hessian = hessian,
+        method = method,
+        silent = silent,
+        inner.control =  inner.control
+      )
+
+    obj1$fn()
+
+    smoothed_pars <- obj1$env$parList()
+    if("mu" %in% re) par$mu <- smoothed_pars$mu
+    if ("v_mu" %in% re) {
+      par$v_mu <- smoothed_pars$v_mu
+    }
+  }
+
   obj2 <-
-    MakeADFun(
-      dat,
+    TMB::MakeADFun(
+      c(model="langevinSSM",dat),
       par,
       map = map,
       random = re,
-      DLL = "fitLangevin",
+      DLL = "langevinSSM_TMBExports",
       hessian = hessian,
+      method = method,
       silent = silent,
       inner.control =  inner.control
     )
-  
+
   start <- proc.time()
   fit <- do.call(stats::nlminb,args = list(
     start = obj2$par,
@@ -69,21 +154,29 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     gradient = obj2$gr,
     control=control))
   fit$elapsedTime <- proc.time()-start
-  
+
   message("   Calculating SEs...")
   #fit$report <- obj2$report()
-  sdreport <- sdreport(obj2)
+  sdreport <- TMB::sdreport(obj2)
   fit$estimates <- list()
-  fit$estimates$natural <- summary(sdreport,"report") # get SEs 
-  fit$estimates$working <- summary(sdreport,"fixed") # get SEs 
+  fit$estimates$natural <- summary(sdreport,"report") # get SEs
+  fit$estimates$working <- summary(sdreport,"fixed") # get SEs
   if(length(re)) {
     ran_est <- summary(sdreport, "random")
     fit$estimates$random <- list()
     for(i in 1:length(re)){
-      fit$estimates$random[[re[i]]] <- cbind(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),1],ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2]) * scaleFactor
-      colnames(fit$estimates$random[[re[i]]]) <- c("Estimate","Std. Error")
+      fit$estimates$random[[re[i]]] <- list()
+      fit$estimates$random[[re[i]]]$est <- data.frame(t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),1],nrow=2) * scaleFactor))
+      fit$estimates$random[[re[i]]]$se <- data.frame(t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2],nrow=2) * scaleFactor))
+      colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- c("x","y")
     }
   }
-  class(fit) <- append(class(fit),"fitLangevin")
+  fit$conditions <- list(hessian = hessian,
+                         method = method,
+                         silent = silent,
+                         initialInner = initialInner,
+                         inner.control =  inner.control,
+                         control = control)
+  class(fit) <- append("fitLangevin",class(fit))
   return(fit)
 }

@@ -1,0 +1,21 @@
+bibentry(bibtype = "Article",
+         title = "Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion",
+         author = c(
+           person(given = "Fanny", family = "Dupont"),
+           person(given = c("Brett", "T."), family = "McClintock"),
+           person(given = "Jan-Ole", family = "Fischer"),
+           person(given = "Marianne", family = "Marcoux"),
+           person(given = "Nigel", family = "Hussey"),
+           person(given = "Marie", family = "Auger-Méthé")
+         ),
+         journal = "TBD",
+         year = 2025,
+         volume = "",
+         number = "",
+         pages = "",
+         url = "",
+         doi = "",
+         textVersion = "Dupont, F., McClintock, B.T., Fischer, J.-O., Marcoux, M., Hussey, N., and Auger-Méthé, M. (2025). Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.",
+         header = "To cite package 'langevinSSM' in publications use:",
+         footer = paste("Additions and modifications to langevinSSM are frequent, to help with reproducibility of output please cite its version number. This is 'langevinSSM' version", meta$Version)
+)

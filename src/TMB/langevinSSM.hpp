@@ -1,179 +1,19 @@
-// Use 'TMBad' regardless of what's selected by 'TMB::compile'
-#undef TMBAD_FRAMEWORK
-#undef CPPAD_FRAMEWORK
-#define TMBAD_FRAMEWORK
+// src/TMB/langevinSSM.hpp
 
-// Just in case we want to use RTMB to inspect tapes...
-#undef TMBAD_INDEX_TYPE
-#define TMBAD_INDEX_TYPE uint64_t
+#ifndef langevinSSM_hpp
+#define langevinSSM_hpp
 
-#include <TMB.hpp>
+#include "include/raster_helpers.hpp"
 
 using namespace density;
 
-template<class Type>
-matrix<Type> extract_raster_values(Type x, Type y, Type z,
-                                   const array<Type> &raster_vals,
-                                   const vector<Type> &all_z_values, // NEW: Flattened vector of ALL times
-                                   const vector<int> &n_zvals_cov, 
-                                   const vector<int> &cov_offset,  
-                                   const matrix<Type> &raster_coords,
-                                   const vector<Type> &raster_resolution,
-                                   const vector<Type> &raster_extent,
-                                   int n_covs) {
-  
-  int n_cols = CppAD::Integer((raster_extent[1] - raster_extent[0]) / raster_resolution[0]);
-  int n_rows = CppAD::Integer((raster_extent[3] - raster_extent[2]) / raster_resolution[1]);
-  
-  Type x_prop = (x - (raster_extent[0] + raster_resolution[0]/2)) / raster_resolution[0];
-  Type y_prop = (y - (raster_extent[2] + raster_resolution[1]/2)) / raster_resolution[1];
-  
-  int col = CppAD::Integer(x_prop);
-  int row = CppAD::Integer(y_prop);
-  
-  matrix<Type> grad_values(2, n_covs);
-  grad_values.setZero();
-  
-  if(col < 0 || col >= (n_cols-1) || row < 0 || row >= (n_rows-1)) return grad_values;
-  
-  Type x1 = raster_extent[0] + (col + Type(0.5)) * raster_resolution[0];
-  Type x2 = x1 + raster_resolution[0];
-  Type y1 = raster_extent[2] + (row + Type(0.5)) * raster_resolution[1];
-  Type y2 = y1 + raster_resolution[1];
-  
-  int rev_row = n_rows - 1 - row;
-  
-  for(int i = 0; i < n_covs; i++) {
-    int layers = n_zvals_cov[i];
-    int offset = cov_offset[i];
-    
-    int z_idx1 = 0, z_idx2 = 0;
-    Type z_weight = 0.0;
-    
-    // --- Z-axis (Time) Interpolation Logic PER COVARIATE ---
-    if (layers > 1) {
-      // Time values for this specific covariate start at all_z_values[offset]
-      if (z <= all_z_values[offset]) {
-        z_idx1 = 0; z_idx2 = 0; z_weight = 0.0;
-      } else if (z >= all_z_values[offset + layers - 1]) {
-        z_idx1 = layers - 1; z_idx2 = layers - 1; z_weight = 0.0;
-      } else {
-        for (int k = 0; k < layers - 1; k++) {
-          Type t1 = all_z_values[offset + k];
-          Type t2 = all_z_values[offset + k + 1];
-          if (z >= t1 && z <= t2) {
-            z_idx1 = k;
-            z_idx2 = k + 1;
-            z_weight = (z - t1) / (t2 - t1);
-            break;
-          }
-        }
-      }
-    }
-    
-    // Evaluate first time slice (or static layer)
-    int layer_idx1 = offset + z_idx1;
-    int idx1 = layer_idx1 * (n_rows * n_cols) + rev_row * n_cols + col;
-    
-    Type f1_00 = raster_vals.data()[idx1];
-    Type f1_10 = raster_vals.data()[idx1 + 1];
-    Type f1_01 = raster_vals.data()[idx1 - n_cols];
-    Type f1_11 = raster_vals.data()[idx1 - n_cols + 1];
-    
-    Type grad_x_1 = ((y2 - y) * (f1_10 - f1_00) + (y - y1) * (f1_11 - f1_01)) / ((y2 - y1) * (x2 - x1));
-    Type grad_y_1 = ((x2 - x) * (f1_01 - f1_00) + (x - x1) * (f1_11 - f1_10)) / ((y2 - y1) * (x2 - x1));
-    
-    // If dynamic and between two distinct time slices, interpolate
-    if (layers > 1 && z_idx1 != z_idx2) {
-      int layer_idx2 = offset + z_idx2;
-      int idx2 = layer_idx2 * (n_rows * n_cols) + rev_row * n_cols + col;
-      
-      Type f2_00 = raster_vals.data()[idx2];
-      Type f2_10 = raster_vals.data()[idx2 + 1];
-      Type f2_01 = raster_vals.data()[idx2 - n_cols];
-      Type f2_11 = raster_vals.data()[idx2 - n_cols + 1];
-      
-      Type grad_x_2 = ((y2 - y) * (f2_10 - f2_00) + (y - y1) * (f2_11 - f2_01)) / ((y2 - y1) * (x2 - x1));
-      Type grad_y_2 = ((x2 - x) * (f2_01 - f2_00) + (x - x1) * (f2_11 - f2_10)) / ((y2 - y1) * (x2 - x1));
-      
-      grad_values(0,i) = grad_x_1 * (Type(1.0) - z_weight) + grad_x_2 * z_weight;
-      grad_values(1,i) = grad_y_1 * (Type(1.0) - z_weight) + grad_y_2 * z_weight;
-    } else {
-      // Static covariate OR dynamic evaluated outside bounds
-      grad_values(0,i) = grad_x_1;
-      grad_values(1,i) = grad_y_1;
-    }
-  }
-  return grad_values;
-}
+#undef TMB_OBJECTIVE_PTR
+#define TMB_OBJECTIVE_PTR obj
 
 template<class Type>
-matrix<Type> calculate_smooth_gradient(Type x, Type y, Type z, 
-                                       const array<Type> &raster_vals,
-                                       const vector<Type> &all_z_values,
-                                       const vector<int> &n_zvals_cov, 
-                                       const vector<int> &cov_offset, 
-                                       const matrix<Type> &raster_coords,
-                                       const vector<Type> &raster_resolution,
-                                       const vector<Type> &raster_extent,
-                                       int n_covs,
-                                       const vector<Type> &weights,
-                                       Type sigma,
-                                       Type gamma,
-                                       Type dt_step,
-                                       Type zetaScale,
-                                       int model) {
-  
-  // Calculate scale based on sigma
-  Type zeta;
-  if(model == 1) {  // Underdamped
-    zeta = zetaScale * sqrt(Type(2.0) * Type(M_PI)) * sigma; 
-  } else {  // Overdamped
-    zeta = zetaScale * sigma / sqrt(Type(2.0));
-  }
-  
-  Type neighborhood_size = zeta * sqrt(dt_step); 
-  
-  // Calculate gradient at current location
-  matrix<Type> smooth_grads = weights(0) * extract_raster_values(x, y, z, raster_vals, 
-                                      all_z_values, n_zvals_cov, cov_offset, 
-                                      raster_coords, raster_resolution, 
-                                      raster_extent, n_covs);
-  
-  int n_points = weights.size();
-  
-  // Add gradients for points around center
-  for(int i = 0; i < (n_points-1); i++) {
-    Type angle;
-    if(n_points == 9) {
-      // Queen's case: NNE, NEE, SEE, SSE, SSW, SWW, NWW, NNW
-      angle = Type(M_PI) * (Type(2.0) * i + Type(1.0)) / Type(8.0);
-    } else {
-      // Diagonal case: NE, NW, SW, SE
-      angle = Type(M_PI) * (Type(2.0) * i + Type(1.0)) / Type(4.0);
-    }
-    
-    smooth_grads += weights(i+1) * extract_raster_values(
-      x + neighborhood_size * cos(angle),
-      y + neighborhood_size * sin(angle),
-      z,
-      raster_vals,
-      all_z_values,
-      n_zvals_cov,
-      cov_offset,
-      raster_coords,
-      raster_resolution,
-      raster_extent,
-      n_covs);
-  }
-  
-  return smooth_grads;
-}
-
-template<class Type>
-Type objective_function<Type>::operator() ()
+Type langevinSSM(objective_function<Type>* obj)
 {
-  DATA_INTEGER(model);      // 0 = overdamped, 1 = underdamped
+  DATA_INTEGER(process_model);      // 0 = overdamped, 1 = underdamped
   DATA_MATRIX(Y);           // Matrix of observed locations
   DATA_VECTOR(dt);          // Time steps
   DATA_IVECTOR(isd);        // indexes observations vs. interpolation points
@@ -181,7 +21,7 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(ID);         // Track IDs
   DATA_IVECTOR(nbObs);      // Number of observations per step
   DATA_SCALAR(scale_factor);
-  
+
   // Raster covariate data
   DATA_ARRAY(raster_vals);         // 3D array of raster values [layer, nrow, ncol]
   DATA_MATRIX(raster_coords);      // Matrix of raster cell coordinates
@@ -195,19 +35,19 @@ Type objective_function<Type>::operator() ()
   DATA_INTEGER(smoothGradient);    // Boolean flag for using smooth gradient calculation
   DATA_VECTOR(weights);            // Vector of 5 (diagonal) or 9 (queen's) weights that sum to 1
   DATA_SCALAR(zetaScale);          // scale factor for smooth gradient neighborhood (>1 increases, <1 decreases)
-  
+
   // for KF observation model
   DATA_VECTOR(m);                 //  m is the semi-minor axis length
   DATA_VECTOR(M);                 //  M is the semi-major axis length
   DATA_VECTOR(c);                 //  c is the orientation of the error ellipse
   // for LS/GPS observation model
   DATA_MATRIX(K);                 // error weighting factors for LS obs model
-  
+
   // Process parameters (simplified)
   PARAMETER_VECTOR(beta);       // Vector of covariate effects
   PARAMETER(log_sigma);  // Log velocity process SD
   PARAMETER(log_gamma);  // Log friction coefficient, only used if model=1
-  
+
   PARAMETER_MATRIX(mu);        // Locations [2 x timeSteps]
   PARAMETER_MATRIX(v_mu);        // Velocity innovations [2 x timeSteps], only used if model=1
 
@@ -217,22 +57,22 @@ Type objective_function<Type>::operator() ()
   // for LS/GPS OBS MODEL
   PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale)
   PARAMETER(l_rho_o);           // measurement error correlation b/w x,y
-  
+
   Type psi = exp(l_psi);
   vector<Type> tau = exp(l_tau);
   Type rho_o = Type(2.0) / (Type(1.0) + exp(-l_rho_o)) - Type(1.0);
-  
+
   Type nll = 0.0;
-  
+
   // Create map of unique IDs to track lengths
   int curr_id = ID(0);
   int track_start = 0;
   vector<int> track_starts(1);
   vector<int> track_lengths(1);
   track_starts(0) = 0;
-  
+
   int timeSteps = dt.size();
-  
+
   // Find track starts and lengths
   for(int i = 1; i < timeSteps; i++) {
     if(ID(i) != curr_id) {
@@ -246,36 +86,36 @@ Type objective_function<Type>::operator() ()
   }
   // Add length of last track
   track_lengths(track_lengths.size()-1) = timeSteps - track_start;
-  
+
   // Transform parameters
   Type sigma = exp(log_sigma + log(scale_factor));   // Original scale
   Type sigma_sca = exp(log_sigma);
   Type gamma = exp(log_gamma);
-  
+
   // Process model - loop over tracks
   for(int id = 0; id < track_starts.size(); id++) {
     int start_idx = track_starts(id);
     int track_length = track_lengths(id);
-      
+
     Type s2 = pow(sigma_sca, Type(2.0));
-    
+
     // Add prior on initial velocities for underdamped model only
-    if(model == 1) {
+    if(process_model == 1) {
       for(int i = 0; i < 2; i++) {
         nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca / sqrt(Type(2.0) * gamma), true);
       }
     }
-    
+
     for(int t = 0; t < (track_length-1); t++) {
-      
+
       int idx = start_idx + t;
-      Type dt_step = dt(idx+1); 
-      
+      Type dt_step = dt(idx+1);
+
       // Get current locations and absolute time
       Type x_prev = mu(0,idx);
       Type y_prev = mu(1,idx);
       Type z_prev = times(idx);
-      
+
       // Calculate gradient of log(π)
       matrix<Type> grad;
       if(smoothGradient) {
@@ -283,7 +123,7 @@ Type objective_function<Type>::operator() ()
           x_prev, y_prev, z_prev,
           raster_vals, all_z_values, n_zvals_cov, cov_offset,
           raster_coords, raster_resolution, raster_extent,
-          n_covs, weights, sigma_sca, gamma, dt_step, zetaScale, model
+          n_covs, weights, sigma_sca, gamma, dt_step, zetaScale, process_model
         );
       } else {
         grad = extract_raster_values(
@@ -292,7 +132,7 @@ Type objective_function<Type>::operator() ()
           raster_coords, raster_resolution, raster_extent, n_covs
         );
       }
-      
+
       // Force vector h = ∇log[π(x)]
       vector<Type> h(2);
       h.setZero();
@@ -304,55 +144,55 @@ Type objective_function<Type>::operator() ()
         //h(0) += beta(c+1) * grad(0,c);
         //h(1) += beta(c+1) * grad(1,c);
       }
-      
-      if(model == 1) {  // Underdamped
+
+      if(process_model == 1) {  // Underdamped
         Type exp_gdt = exp(-gamma * dt_step);
         Type exp_2gdt = exp(-Type(2.0) * gamma * dt_step);
-        
+
         // Variance terms
-        Type var_x = s2/(gamma*gamma) * (Type(2.0)*gamma*dt_step - Type(3.0) + 
+        Type var_x = s2/(gamma*gamma) * (Type(2.0)*gamma*dt_step - Type(3.0) +
           Type(4.0)*exp_gdt - exp_2gdt);
         Type var_v = s2 * (Type(1.0) - exp_2gdt);
         Type cov_xv = s2/gamma * (Type(1.0) - Type(2.0)*exp_gdt + exp_2gdt);
-        
+
         for(int i = 0; i < 2; i++) {
           // Position mean
-          Type mu_x_pred = mu(i,idx) + 
+          Type mu_x_pred = mu(i,idx) +
             v_mu(i,idx)/gamma * (Type(1.0) - exp_gdt) +
             s2*h(i)/gamma * (dt_step - (Type(1.0) - exp_gdt)/gamma);
-          
+
           // Velocity mean
           Type mu_v_pred = v_mu(i,idx) * exp_gdt +
             s2*h(i)/gamma * (Type(1.0) - exp_gdt);
-          
+
           // Construct variance-covariance matrix
           matrix<Type> Sigma(2,2);
           Sigma(0,0) = var_x;
           Sigma(1,1) = var_v;
           Sigma(0,1) = cov_xv;
           Sigma(1,0) = cov_xv;
-          
+
           vector<Type> nu(2);
           nu(0) = mu(i,idx+1) - mu_x_pred;
           nu(1) = v_mu(i,idx+1) - mu_v_pred;
-          
+
           nll += MVNORM(Sigma)(nu);
         }
       } else {  // Overdamped
-        
+
         // Expected locations (simplified case of underdamped as γ → ∞)
         Type Ex = x_prev + s2 * dt_step / Type(2.0) * h(0);
         Type Ey = y_prev + s2 * dt_step / Type(2.0) * h(1);
-        
+
         Type sd = sigma_sca * sqrt(dt_step);
-        
-        nll -= (dnorm(mu(0,idx+1), Ex, sd, true) + 
+
+        nll -= (dnorm(mu(0,idx+1), Ex, sd, true) +
           dnorm(mu(1,idx+1), Ey, sd, true));
       }
     }
   }
-  
-  
+
+
   // OBSERVATION MODEL
   matrix<Type> cov_obs(2, 2);
   cov_obs.setZero();
@@ -380,13 +220,18 @@ Type objective_function<Type>::operator() ()
       nll += MVNORM(cov_obs)(Y.col(i) - mu.col(i));
     }
   }
-  
+
   ADREPORT(beta);
   ADREPORT(sigma);
-  if(model == 1) ADREPORT(gamma);
+  if(process_model == 1) ADREPORT(gamma);
   ADREPORT(rho_o);
   ADREPORT(tau);
   ADREPORT(psi);
-  
+
   return nll;
 }
+
+#undef TMB_OBJECTIVE_PTR
+#define TMB_OBJECTIVE_PTR this
+
+#endif

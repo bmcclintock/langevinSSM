@@ -33,4 +33,7 @@ docs/
 po/*~
 # RStudio Connect folder
 rsconnect/
-langevin-ssm.Rproj
+.DS_Store
+.Rproj.user
+langevinSSM.Rproj
+simResults

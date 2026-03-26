@@ -1,45 +1,39 @@
+---
+output: github_document
+---
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# {langevinSSM}
-
-#### Habitat-driven Langevin Diffusion with Spatial Uncertainty
-
-`{langevinSSM}` is an R package for simulating and fitting the
-habitat-driven Langevin diffusion to animal tracking data subject to
-location measurement error and temporal irregularity. The package
-provides tools for simulating animal movement paths (`simLangevin`) and
-fitting the Langevin diffusion model to observed tracking data
-(`fitLangevin`). Location measurement error can take the form of either
-(older) Argos Least Squares-based locations or (newer) Argos Kalman
-Filter-based locations with error ellipse information. The Langevin
-diffusion is a continuous-time model in state-space form that estimates
-the underlying movement process while accounting for location
-measurement error and associated uncertainty in the spatial (habitat)
-covariates. Template Model Builder {TMB} is used for fast estimation.
-
-## Installation
-
-One can install the `langevinSSM` package from CRAN using the following
-command:
-
-``` r
-install.packages("langevinSSM") 
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  message = FALSE
+)
 ```
 
-Alternatively, one can install the package from GitHub using the
-`remotes` package:
 
-``` r
+
+# {langevinSSM} 
+
+####  Habitat-driven Langevin Diffusion with Spatial Uncertainty
+
+`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). Location measurement error can take the form of either (older) Argos Least Squares-based locations or (newer) Argos Kalman Filter-based locations with error ellipse information. The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
+
+## Installation 
+One can install the `langevinSSM` package from CRAN using the following command:
+```{r, eval = FALSE}
+install.packages("langevinSSM") 
+``` 
+Alternatively, one can install the package from GitHub using the `remotes` package:
+```{r, eval = FALSE}
 remotes::install_github("bmcclintock/langevinSSM")
 ```
 
 ## Usage
-
-To simulate animal movement paths using the Langevin diffusion model,
-one can use the `simLangevin` function. For example:
-
-``` r
+To simulate animal movement paths using the Langevin diffusion model, one can use the `simLangevin` function. For example:
+```{r,eval=TRUE}
 library(langevinSSM)
 library(ggplot2)
 library(terra)
@@ -66,12 +60,9 @@ simDat_ee <- simLangevin(model = "underdamped",
                          par = par,
                          spatialCovs = exampleCovs,
                          measurementError = measurementError)
-```
-
-To fit the Langevin diffusion model to observed tracking data, one can
-use the `fitLangevin` function. For example:
-
-``` r
+```                                                 
+To fit the Langevin diffusion model to observed tracking data, one can use the `fitLangevin` function. For example:
+```{r,eval=TRUE}
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
 ## exampleDat is a data frame of simulated tracking data with measurement error that loads with the package
 fit <- fitLangevin(model = "underdamped",
@@ -80,17 +71,6 @@ fit <- fitLangevin(model = "underdamped",
                    silent = TRUE)  
 
 fit$estimates$natural # fixed parameter estimates
-#>         Estimate Std. Error
-#> beta  -3.9594699 1.26167794
-#> beta   5.3510148 1.62146628
-#> beta   2.7943329 1.04227206
-#> beta  -0.1212424 0.07998059
-#> sigma  5.5354854 0.71609183
-#> gamma  0.4742999 0.13131545
-#> rho_o  0.0000000 0.00000000
-#> tau    1.0000000 0.00000000
-#> tau    1.0000000 0.00000000
-#> psi    1.0000000 0.00000000
 
 # calculate the estimated utilization distribution
 UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exampleCovs)])
@@ -99,27 +79,16 @@ UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exa
 plotRaster(UD, legend.title = expression(log(pi))) + 
   geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
   geom_point(aes(x = x, y = y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
-```
-
-![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
-
-``` r
 
 # zoom in a bit
 plotRaster(terra::crop(UD,terra::ext(0, 50, -25, 25)), legend.title = expression(log(pi))) + 
   geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
   geom_point(aes(x = x, y = y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
   coord_equal(xlim = c(0,50), ylim = c(-25,25))
-```
-
-![](man/figures/README-unnamed-chunk-5-2.png)<!-- -->
-
-``` r
 
 # calculate the true utiliziation distribution
 trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
 
 # calculate similarity of true and estimated utilization distributions using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
-#> [1] 0.9672121
 ```

@@ -4,3 +4,9 @@ underdampedLangevin.o
 underdampedLangevin.so
 fitLangevin.o
 fitLangevin.so
+.DS_Store
+RcppExports.o
+langevinSSM.so
+langevinSSM_TMBExports.so
+langevinSSM_init.o
+simulateLangevin.o

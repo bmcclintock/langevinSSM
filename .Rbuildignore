@@ -1,0 +1,11 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^langevinSSM\.Rproj$
+^simResults$
+^simulation$
+^data-raw$
+^\.github$
+^.*\.gitignore$
+^.*\.Rhistory$
+^README\.Rmd$
+^README-.*\.png$

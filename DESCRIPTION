@@ -1,0 +1,37 @@
+Package: langevinSSM
+Type: Package
+Title: Habitat-Driven Langevin Diffusion with Spatial Uncertainty
+Version: 0.0.1
+Date: 2026-03-30
+Authors@R: person(given = "Brett",
+                  family = "McClintock",
+                  role = c("aut", "cre"),
+                  email = "brett.mcclintock@gmail.com")
+Maintainer: Brett McClintock <brett.mcclintock@gmail.com>
+Description: Tools for simulating and fitting habitat-driven Langevin diffusion models to animal telemetry data subject to location measurement error, missing data, and temporal irregularity (i.e. continous time).
+License: GPL-3
+LazyData: TRUE
+Imports:
+    dplyr,
+    stats,
+    terra,
+    sf,
+    utils,
+    TMB (>= 1.9.2)
+LinkingTo: 
+    Rcpp,
+    RcppArmadillo,
+    TMB,
+    RcppEigen
+Suggests:
+    fields,
+    ggplot2,
+    viridis
+RoxygenNote: 7.3.3
+Encoding: UTF-8
+NeedsCompilation: yes
+URL: https://github.com/bmcclintock/langevinSSM,
+    https://github.com/bmcclintock/langevinSSM/discussions
+BugReports: https://github.com/bmcclintock/langevinSSM/issues
+Depends: 
+    R (>= 3.5)

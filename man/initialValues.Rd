@@ -26,8 +26,8 @@ initialValues(
 \value{
 A list of initial parameter values, with names corresponding to the parameters used in the model. The list will include the following parameters:
 \item{beta}{Numeric vector of initial values for the coefficients of the spatial covariates. Length should match the number of spatial covariates.}
-\item{sigma}{Numeric value for the initial estimate of the diffusion coefficient.}
-\item{gamma}{Numeric value for the initial estimate of the friction coefficient (only for the underdamped model).}
+\item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
+\item{gamma}{Numeric value for the initial estimate of the friction parameter (only for the underdamped model).}
 \item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates.}
 \item{v_mu}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.}
 And, if provided in \code{par}, the following observation process parameters:

@@ -77,6 +77,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     track_times <- as.numeric(data$date)
   }
 
+  checkErrorData(data, coord)
+
   if(any(!coord %in% colnames(data))) stop("'coord' not found in data.")
   dat <-  list(process_model=ifelse(model=="underdamped",1,0),
                Y=t(data[,coord])/scaleFactor,

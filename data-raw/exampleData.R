@@ -34,7 +34,8 @@ plotRaster(UD)+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=m
 fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1))
 fit$estimates$natural
 
-exampleDat$date <- as.POSIXlt(exampleDat$date*1000, tz = "UTC")
+exampleDat$date <- as.POSIXlt(exampleDat$date*100*60, tz = "UTC")
+attr(exampleDat,"time.unit") <- "mins"
 exampleDat$lc <- "G"
 
 lapply(1:ncov,function(x) terra::writeRaster(exampleCovs[[x]], paste0("inst/extdata/exampleCov",x,".tif"),overwrite=TRUE))

@@ -146,19 +146,10 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
   }
 }
 
-set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
+# subsample data
+set.seed(1, kind="Mersenne-Twister", normal.kind = "Inversion")
 for(isim in 1:nsims){
-
-  # subsample data
-  probs <- rep(1,nrow(langSim[[isim]]))
-  probs[cumsum(c(1,table(langSim[[isim]]$id)[1:(nbAnimals-1)]))] <- 1.e+10 # ensure first observation is sampled
-  subDat[[isim]] <-   langSim[[isim]][sort(sample.int(nrow(langSim[[isim]]),ceiling(nrow(langSim[[isim]])/max(samplingRate,1)),prob=probs,replace=FALSE)),]
-  subDat[[isim]]$dt <- do.call(c,mapply(function(x) c(0,diff(subDat[[isim]]$date[which(subDat[[isim]]$id==x)])),1:nbAnimals,SIMPLIFY = FALSE))
-
-  # add missing observations
-  probs <- rep(1,nrow(subDat[[isim]]))
-  probs[cumsum(c(1,table(subDat[[isim]]$id)[1:(nbAnimals-1)]))] <- 0 # don't let first observation be missing
-  subDat[[isim]][sample.int(nrow(subDat[[isim]]),nrow(subDat[[isim]])*propMissing,prob=probs,replace=FALSE),c("x","y","smaj","smin","eor")] <- NA
+  subDat[[isim]] <- subSample(langSim[[isim]], samplingRate = samplingRate, propMissing = propMissing)
 }
 
 for(isim in 1:nsims){

@@ -27,7 +27,7 @@ formatData(
 
 \item{lc}{Character string specifying the column name for the location quality class. Default: ``lc''.}
 
-\item{epar}{Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). Default: c("smaj", "smin", "eor").}
+\item{epar}{Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). See details. Default: c("smaj", "smin", "eor").}
 
 \item{sderr}{Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.sd", "sd.y").}
 
@@ -45,12 +45,17 @@ A data frame of class \code{dataLangevin} containing the formatted tracking data
 \item{lc}{Location quality class}
 \item{smaj}{Semi-major axis of the error ellipse}
 \item{smin}{Semi-minor axis of the error ellipse}
-\item{eor}{Error ellipse orientation}
+\item{eor}{Error ellipse orientation (in radians)}
 \item{x.sd}{Standard deviation of the x-coordinate error}
 \item{y.sd}{Standard deviation of the y-coordinate error}
 }
 \description{
 \code{formatData} takes a data frame containing tracking data and formats it for use with the \code{\link{fitLangevin}} function. It is a modified version of the \code{format_data} function from the \href{https://ianjonsen.github.io/aniMotum/}{aniMotum} package.
+}
+\details{
+For error ellipse data, the columns specified in \code{epar} should contain the semi-major axis (on same scale as the coordinates), semi-minor axis (on same scale as the coordinates), and error ellipse orientation (in degrees from north) for each error ellipse observation.
+For x- and y-axis error data, the columns specified in \code{sderr} should contain the standard deviations of the errors for the x and y coordinates for each x- and y-axis error observation, respectively.
+Note that the error ellipse orientation is converted from degrees to radians in the \code{dataLangevin} object returned by \code{formatData}.
 }
 \examples{
 # exampleDat included in package; see ?exampleDat for details

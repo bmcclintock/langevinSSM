@@ -21,7 +21,8 @@ fitLangevin(
   method = "BFGS",
   initialInner = TRUE,
   inner.control = list(maxit = 1000),
-  control = list(trace = 0, iter.max = 1000, eval.max = 1000)
+  control = list(trace = 0, iter.max = 1000, eval.max = 1000),
+  getJointPrecision = FALSE
 )
 }
 \arguments{
@@ -60,6 +61,8 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{inner.control}{List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.}
 
 \item{control}{A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.}
+
+\item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:

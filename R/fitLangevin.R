@@ -22,6 +22,7 @@
 #' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``v_mu'') before optimizing over all parameters. Default: \code{TRUE}.
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
 #' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
+#' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
 #'
 #' @return \code{fitLangevin} object, i.e., a list of:
 #' \item{par}{See \code{\link[stats]{nlminb}}}
@@ -53,7 +54,7 @@
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000)){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
@@ -157,7 +158,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
   message("   Calculating SEs...")
   #fit$report <- obj2$report()
-  sdreport <- TMB::sdreport(obj2)
+  sdreport <- TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
   fit$estimates <- list()
   fit$estimates$natural <- summary(sdreport,"report") # get SEs
   fit$estimates$working <- summary(sdreport,"fixed") # get SEs
@@ -170,6 +171,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       fit$estimates$random[[re[i]]]$se <- data.frame(t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2],nrow=2) * scaleFactor))
       colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- c("x","y")
     }
+    if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport$jointPrecision
   }
   fit$conditions <- list(hessian = hessian,
                          method = method,

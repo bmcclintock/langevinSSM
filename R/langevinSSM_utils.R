@@ -37,7 +37,7 @@ NULL
 
 #' Example Tracking Data
 #'
-#' A \code{dataLangevin} object containing example movement track for use with langevinSSM.
+#' A \code{dataLangevin} object containing an example simulated movement track.
 #'
 #' @name exampleDat
 #' @docType data

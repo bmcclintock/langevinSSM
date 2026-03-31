@@ -51,8 +51,8 @@ A data frame of class \code{dataLangevin} containing the simulated trajectories.
 \item{y.sd}{Standard deviation of the y-axis error}
 \item{mu.x}{True x-coordinate of the location}
 \item{mu.y}{True y-coordinate of the location}
-\item{v.x}{True x-velocity of the location (if \code{model="underdamped"})}
-\item{v.y}{True y-velocity of the location (if \code{model="underdamped"})}
+\item{vel.x}{True x-velocity of the location (if \code{model="underdamped"})}
+\item{vel.y}{True y-velocity of the location (if \code{model="underdamped"})}
 }
 \description{
 Simulate trajectories from the habitat-driven Langevin diffusion

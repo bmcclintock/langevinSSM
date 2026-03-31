@@ -19,7 +19,7 @@
 #' @param hessian Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
 #' @param silent Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
 #' @param method Outer optimization method. Default: \code{"BFGS"}.
-#' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``v_mu'') before optimizing over all parameters. Default: \code{TRUE}.
+#' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
 #' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
@@ -32,7 +32,7 @@
 #' \item{iterations}{See \code{\link[stats]{nlminb}}}
 #' \item{evaluations}{See \code{\link[stats]{nlminb}}}
 #' \item{elapsedTime}{Run time of the optimization}
-#' \item{estimates}{List containing point estimates and standard error for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates for the true locations (``mu'') and/or the true velocities (``v_mu'').}
+#' \item{estimates}{List containing point estimates and standard error for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates for the true locations (``mu'') and/or the true velocities (``vel'').}
 #' \item{conditions}{List containing the optimization settings}
 #'
 #' @examples
@@ -109,7 +109,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   # scale parameters
   par$log_sigma <- par$log_sigma - log(scaleFactor)
   par$mu <- par$mu / scaleFactor
-  par$v_mu <- par$v_mu / scaleFactor
+  par$vel <- par$vel / scaleFactor
 
   message("   Fitting ",model," Langevin model...")
   if(initialInner){
@@ -117,7 +117,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       TMB::MakeADFun(
         c(model="langevinSSM",dat),
         par,
-        map = lapply(par[names(par)[!names(par) %in% c("mu","v_mu")]],function(x) factor(rep(NA,length(x)))),
+        map = lapply(par[names(par)[!names(par) %in% c("mu","vel")]],function(x) factor(rep(NA,length(x)))),
         random = re,
         DLL = "langevinSSM_TMBExports",
         hessian = hessian,
@@ -130,8 +130,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     smoothed_pars <- obj1$env$parList()
     if("mu" %in% re) par$mu <- smoothed_pars$mu
-    if ("v_mu" %in% re) {
-      par$v_mu <- smoothed_pars$v_mu
+    if ("vel" %in% re) {
+      par$vel <- smoothed_pars$vel
     }
   }
 
@@ -169,7 +169,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       fit$estimates$random[[re[i]]] <- list()
       fit$estimates$random[[re[i]]]$est <- data.frame(t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),1],nrow=2) * scaleFactor))
       fit$estimates$random[[re[i]]]$se <- data.frame(t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2],nrow=2) * scaleFactor))
-      colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- c("x","y")
+      colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- paste0(re[i],".",c("x","y"))
     }
     if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport$jointPrecision
   }

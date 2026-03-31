@@ -49,7 +49,7 @@ Type langevinSSM(objective_function<Type>* obj)
   PARAMETER(log_gamma);  // Log friction coefficient, only used if model=1
 
   PARAMETER_MATRIX(mu);        // Locations [2 x timeSteps]
-  PARAMETER_MATRIX(v_mu);        // Velocity innovations [2 x timeSteps], only used if model=1
+  PARAMETER_MATRIX(vel);        // Velocity innovations [2 x timeSteps], only used if model=1
 
   // OBSERVATION PARAMETERS
   // for KF OBS MODEL
@@ -102,7 +102,7 @@ Type langevinSSM(objective_function<Type>* obj)
     // Add prior on initial velocities for underdamped model only
     if(process_model == 1) {
       for(int i = 0; i < 2; i++) {
-        nll -= dnorm(v_mu(i,start_idx), Type(0.0), sigma_sca / sqrt(Type(2.0) * gamma), true);
+        nll -= dnorm(vel(i,start_idx), Type(0.0), sigma_sca / sqrt(Type(2.0) * gamma), true);
       }
     }
 
@@ -158,11 +158,11 @@ Type langevinSSM(objective_function<Type>* obj)
         for(int i = 0; i < 2; i++) {
           // Position mean
           Type mu_x_pred = mu(i,idx) +
-            v_mu(i,idx)/gamma * (Type(1.0) - exp_gdt) +
+            vel(i,idx)/gamma * (Type(1.0) - exp_gdt) +
             s2*h(i)/gamma * (dt_step - (Type(1.0) - exp_gdt)/gamma);
 
           // Velocity mean
-          Type mu_v_pred = v_mu(i,idx) * exp_gdt +
+          Type mu_v_pred = vel(i,idx) * exp_gdt +
             s2*h(i)/gamma * (Type(1.0) - exp_gdt);
 
           // Construct variance-covariance matrix
@@ -174,7 +174,7 @@ Type langevinSSM(objective_function<Type>* obj)
 
           vector<Type> nu(2);
           nu(0) = mu(i,idx+1) - mu_x_pred;
-          nu(1) = v_mu(i,idx+1) - mu_v_pred;
+          nu(1) = vel(i,idx+1) - mu_v_pred;
 
           nll += MVNORM(Sigma)(nu);
         }

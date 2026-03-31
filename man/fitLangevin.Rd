@@ -56,7 +56,7 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{method}{Outer optimization method. Default: \code{"BFGS"}.}
 
-\item{initialInner}{Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``v_mu'') before optimizing over all parameters. Default: \code{TRUE}.}
+\item{initialInner}{Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.}
 
 \item{inner.control}{List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.}
 
@@ -73,7 +73,7 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{iterations}{See \code{\link[stats]{nlminb}}}
 \item{evaluations}{See \code{\link[stats]{nlminb}}}
 \item{elapsedTime}{Run time of the optimization}
-\item{estimates}{List containing point estimates and standard error for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates for the true locations (``mu'') and/or the true velocities (``v_mu'').}
+\item{estimates}{List containing point estimates and standard error for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates for the true locations (``mu'') and/or the true velocities (``vel'').}
 \item{conditions}{List containing the optimization settings}
 }
 \description{

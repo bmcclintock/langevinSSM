@@ -2,7 +2,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL){
 
   if(is.null(map)) map <- list()
   if(!is.list(par)) stop("par must be a list.")
-  if(!all(names(par) %in% c("beta","sigma","gamma","mu","v_mu","psi","tau","rho_o"))) stop("names(par) is limited to c('beta','sigma','gamma','mu','v_mu','psi','tau','rho_o')")
+  if(!all(names(par) %in% c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"))) stop("names(par) is limited to c('beta','sigma','gamma','mu','vel','psi','tau','rho_o')")
   if(model=="underdamped"){
     if(!is.null(par$gamma)) gamma <- par$gamma
     else stop("par$gamma is missing, with no default.")
@@ -95,31 +95,31 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL){
   if(!is.null(dat)){
 
     if(!is.null(par$mu)) par$mu <- t(par$mu)
-    if(!is.null(par$v_mu)) par$v_mu <- t(par$v_mu)
+    if(!is.null(par$vel)) par$vel <- t(par$vel)
 
     if(model=="overdamped"){
       re <- "mu"
-      par$v_mu <- matrix(0,2,ncol(dat$Y))
-      map$v_mu <- factor(rep(NA,length(dat$Y)))
+      par$vel <- matrix(0,2,ncol(dat$Y))
+      map$vel <- factor(rep(NA,length(dat$Y)))
       map$log_gamma <- factor(NA)
     } else {
-      re <- c("mu","v_mu")
+      re <- c("mu","vel")
     }
 
     if(all(is.na(dat$obs_mod))){
       if(model=="overdamped") re <- NULL
-      else re <- "v_mu"
+      else re <- "vel"
       par$mu <- dat$Y
       map$mu <- factor(rep(NA,length(dat$Y)))
     }
 
     if(is.null(par$mu)) stop("par$mu is missing, with no default.")
-    if(is.null(par$v_mu)) stop("par$v_mu is missing, with no default.")
+    if(is.null(par$vel)) stop("par$vel is missing, with no default.")
     if(any(dim(par$mu)!=dim(dat$Y))) stop("par$mu must have ",ncol(dat$Y)," rows and 2 columns")
-    if(any(dim(par$v_mu)!=dim(dat$Y))) stop("par$v_mu must have ",ncol(dat$Y)," rows and 2 columns")
-    if(any(!is.finite(par$mu)) | any(!is.finite(par$v_mu))) stop("par$mu and/or par$v_mu must be finite")
+    if(any(dim(par$vel)!=dim(dat$Y))) stop("par$vel must have ",ncol(dat$Y)," rows and 2 columns")
+    if(any(!is.finite(par$mu)) | any(!is.finite(par$vel))) stop("par$mu and/or par$vel must be finite")
 
-    par <- par[c("beta","log_sigma","log_gamma","mu","v_mu","l_psi","l_tau","l_rho_o")]
+    par <- par[c("beta","log_sigma","log_gamma","mu","vel","l_psi","l_tau","l_rho_o")]
     out <- list(par=par,map=map,re=re)
   } else out <- list(par=par,map=map)
 

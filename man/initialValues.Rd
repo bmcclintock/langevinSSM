@@ -17,7 +17,7 @@ initialValues(
 
 \item{model}{Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".}
 
-\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","v_mu","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. Default: NULL.}
+\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. Default: NULL.}
 
 \item{spatialCovs}{A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.}
 
@@ -29,7 +29,7 @@ A list of initial parameter values, with names corresponding to the parameters u
 \item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
 \item{gamma}{Numeric value for the initial estimate of the friction parameter (only for the underdamped model).}
 \item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates.}
-\item{v_mu}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.}
+\item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.}
 And, if provided in \code{par}, the following observation process parameters:
 \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
 \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}

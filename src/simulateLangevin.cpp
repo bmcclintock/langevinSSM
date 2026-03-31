@@ -93,8 +93,8 @@ DataFrame simulate_langevin_cpp(int model,
   NumericVector dt(total_obs);
   NumericVector mu_x(total_obs);
   NumericVector mu_y(total_obs);
-  NumericVector v_mux(total_obs);
-  NumericVector v_muy(total_obs);
+  NumericVector velx(total_obs);
+  NumericVector vely(total_obs);
 
   for(int i = 0; i < nbAnimals; i++) {
     int start_idx = i * obsPerAnimal;
@@ -105,8 +105,8 @@ DataFrame simulate_langevin_cpp(int model,
     dt[start_idx] = 0;
     mu_x[start_idx] = initialPosition(i,0);
     mu_y[start_idx] = initialPosition(i,1);
-    v_mux[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
-    v_muy[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
+    velx[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
+    vely[start_idx] = R::rnorm(0, sigma / sqrt(2. * gamma));
 
     double s2 = sigma * sigma;
 
@@ -162,12 +162,12 @@ DataFrame simulate_langevin_cpp(int model,
 
         // Calculate means with scaled parameters
         arma::vec mean(4);
-        mean(0) = mu_x[idx-1] + v_mux[idx-1]/gamma * (1 - exp_gdt) +
+        mean(0) = mu_x[idx-1] + velx[idx-1]/gamma * (1 - exp_gdt) +
           s2*h[0]/gamma * (dt_step - (1 - exp_gdt)/gamma);
-        mean(1) = v_mux[idx-1] * exp_gdt + s2*h[0]/gamma * (1 - exp_gdt);
-        mean(2) = mu_y[idx-1] + v_muy[idx-1]/gamma * (1 - exp_gdt) +
+        mean(1) = velx[idx-1] * exp_gdt + s2*h[0]/gamma * (1 - exp_gdt);
+        mean(2) = mu_y[idx-1] + vely[idx-1]/gamma * (1 - exp_gdt) +
           s2*h[1]/gamma * (dt_step - (1 - exp_gdt)/gamma);
-        mean(3) = v_muy[idx-1] * exp_gdt + s2*h[1]/gamma * (1 - exp_gdt);
+        mean(3) = vely[idx-1] * exp_gdt + s2*h[1]/gamma * (1 - exp_gdt);
 
         // Calculate covariance matrix with scaled sigma
         double var_x = s2/(gamma*gamma) * (2*gamma*dt_step - 3 + 4*exp_gdt - exp_2gdt);
@@ -186,9 +186,9 @@ DataFrame simulate_langevin_cpp(int model,
         check_bounds(new_state(0), new_state(2), i+1, time[idx]);
 
         mu_x[idx] = new_state(0);
-        v_mux[idx] = new_state(1);
+        velx[idx] = new_state(1);
         mu_y[idx] = new_state(2);
-        v_muy[idx] = new_state(3);
+        vely[idx] = new_state(3);
       }
     }
   }
@@ -208,8 +208,8 @@ DataFrame simulate_langevin_cpp(int model,
       Named("dt") = dt,
       Named("mu.x") = mu_x,
       Named("mu.y") = mu_y,
-      Named("v.x") = v_mux,
-      Named("v.y") = v_muy
+      Named("vel.x") = velx,
+      Named("vel.y") = vely
     );
   }
 }
@@ -309,8 +309,8 @@ DataFrame measurementError_rcpp(DataFrame data,
                                                               Named("eor") = c_rand,
                                                               Named("mu.x") = mux, // true location
                                                               Named("mu.y") = muy, // true location
-                                                              Named("v.x") = data["v.x"],  // true velocity
-                                                              Named("v.y") = data["v.y"]); // true velocity
+                                                              Named("vel.x") = data["vel.x"],  // true velocity
+                                                              Named("vel.y") = data["vel.y"]); // true velocity
   }
 }
 
@@ -383,8 +383,8 @@ DataFrame measurementError_LS_rcpp(DataFrame data,
                                                               Named("y.sd") = y_sd_vec,
                                                               Named("mu.x") = mux,
                                                               Named("mu.y") = muy,
-                                                              Named("v.x") = data["v.x"],
-                                                              Named("v.y") = data["v.y"]
+                                                              Named("vel.x") = data["vel.x"],
+                                                              Named("vel.y") = data["vel.y"]
     );
   }
 }

@@ -25,8 +25,8 @@
 #' \item{y.sd}{Standard deviation of the y-axis error}
 #' \item{mu.x}{True x-coordinate of the location}
 #' \item{mu.y}{True y-coordinate of the location}
-#' \item{v.x}{True x-velocity of the location (if \code{model="underdamped"})}
-#' \item{v.y}{True y-velocity of the location (if \code{model="underdamped"})}
+#' \item{vel.x}{True x-velocity of the location (if \code{model="underdamped"})}
+#' \item{vel.y}{True y-velocity of the location (if \code{model="underdamped"})}
 #' @examples
 #' # underdamped model with measurement error
 #'
@@ -104,7 +104,7 @@ simLangevin <- function(model = c("underdamped","overdamped"),
   out <- addMeasurementError(model, out, par, measurementError)
 
   out$id <- as.factor(out$id)
-  if(model=="underdamped") out <- out %>% dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd,mu.x,mu.y,v.x,v.y)
+  if(model=="underdamped") out <- out %>% dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd,mu.x,mu.y,vel.x,vel.y)
   else if(model=="overdamped") out <- out %>% dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd,mu.x,mu.y)
   class(out) <- append("dataLangevin",class(out))
   return(out)

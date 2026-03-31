@@ -8,14 +8,34 @@ using namespace arma;
 #define IS_RCPP_BUILD
 #include "TMB/include/raster_helpers.hpp"
 
-// Helper function for multivariate normal sampling
+// Helper function for multivariate normal sampling (Hybrid Approach)
 arma::vec rmvnorm(const arma::vec& mean, const arma::mat& sigma) {
   int n = mean.n_elem;
+
+  // Generate standard normal random vector using R's RNG
   arma::vec z(n);
   for(int i = 0; i < n; i++) {
     z(i) = R::rnorm(0, 1);
   }
-  return mean + arma::trans(arma::chol(sigma)) * z;
+
+  arma::mat chol_sigma;
+
+  // Try Cholesky Decomposition first
+  if (arma::chol(chol_sigma, sigma)) {
+    return mean + arma::trans(chol_sigma) * z;
+  }
+
+  // If Cholesky fails due to floating-point truncation,
+  // safely compute using Eigen Decomposition (robust but slower)
+  arma::vec eigval;
+  arma::mat eigvec;
+
+  arma::eig_sym(eigval, eigvec, sigma);
+
+  // Clamp any microscopic negative eigenvalues to exactly 0
+  eigval.elem(arma::find(eigval < 0)).zeros();
+
+  return mean + eigvec * arma::diagmat(arma::sqrt(eigval)) * z;
 }
 
 // [[Rcpp::export]]

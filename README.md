@@ -7,16 +7,18 @@
 
 `{langevinSSM}` is an R package for simulating and fitting the
 habitat-driven Langevin diffusion to animal tracking data subject to
-location measurement error and temporal irregularity. The package
-provides tools for simulating animal movement paths (`simLangevin`) and
-fitting the Langevin diffusion model to observed tracking data
-(`fitLangevin`). Location measurement error can take the form of either
-(older) Argos Least Squares-based locations or (newer) Argos Kalman
-Filter-based locations with error ellipse information. The Langevin
-diffusion is a continuous-time model in state-space form that estimates
-the underlying movement process while accounting for location
-measurement error and associated uncertainty in the spatial (habitat)
-covariates. Template Model Builder {TMB} is used for fast estimation.
+location measurement error and temporal irregularity. The habitat-driven
+Langevin diffusion can provide inferences about habitat selection and
+utilization distributions. The package provides tools for simulating
+animal movement paths (`simLangevin`) and fitting the Langevin diffusion
+model to observed tracking data (`fitLangevin`). Location measurement
+error can take the form of either (older) Argos Least Squares-based
+locations or (newer) Argos Kalman Filter-based locations with error
+ellipse information. The Langevin diffusion is a continuous-time model
+in state-space form that estimates the underlying movement process while
+accounting for location measurement error and associated uncertainty in
+the spatial (habitat) covariates. Template Model Builder {TMB} is used
+for fast estimation.
 
 ## Installation
 
@@ -81,12 +83,12 @@ fit <- fitLangevin(model = "underdamped",
 
 fit$estimates$natural # fixed parameter estimates
 #>         Estimate Std. Error
-#> beta  -3.9594699 1.26167794
-#> beta   5.3510148 1.62146628
-#> beta   2.7943329 1.04227206
-#> beta  -0.1212424 0.07998059
-#> sigma  5.5354854 0.71609183
-#> gamma  0.4742999 0.13131545
+#> beta  -3.9594701 1.26147867
+#> beta   5.3510150 1.62107927
+#> beta   2.7943331 1.04202103
+#> beta  -0.1212424 0.07997307
+#> sigma  5.5354852 0.71588476
+#> gamma  0.4743000 0.13127897
 #> rho_o  0.0000000 0.00000000
 #> tau    1.0000000 0.00000000
 #> tau    1.0000000 0.00000000
@@ -98,7 +100,7 @@ UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exa
 # plot the estimated utilization distribution with the observed and estimated locations
 plotRaster(UD, legend.title = expression(log(pi))) + 
   geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = x, y = y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
+  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
 ```
 
 ![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
@@ -108,7 +110,7 @@ plotRaster(UD, legend.title = expression(log(pi))) +
 # zoom in a bit
 plotRaster(terra::crop(UD,terra::ext(0, 50, -25, 25)), legend.title = expression(log(pi))) + 
   geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = x, y = y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
+  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
   coord_equal(xlim = c(0,50), ylim = c(-25,25))
 ```
 

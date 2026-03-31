@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 
 ####  Habitat-driven Langevin Diffusion with Spatial Uncertainty
 
-`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). Location measurement error can take the form of either (older) Argos Least Squares-based locations or (newer) Argos Kalman Filter-based locations with error ellipse information. The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
+`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The habitat-driven Langevin diffusion can provide inferences about habitat selection and utilization distributions. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). Location measurement error can take the form of either (older) Argos Least Squares-based locations or (newer) Argos Kalman Filter-based locations with error ellipse information. The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
 
 ## Installation 
 One can install the `langevinSSM` package from CRAN using the following command:
@@ -78,12 +78,12 @@ UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exa
 # plot the estimated utilization distribution with the observed and estimated locations
 plotRaster(UD, legend.title = expression(log(pi))) + 
   geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = x, y = y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
+  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
 
 # zoom in a bit
 plotRaster(terra::crop(UD,terra::ext(0, 50, -25, 25)), legend.title = expression(log(pi))) + 
   geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = x, y = y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
+  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
   coord_equal(xlim = c(0,50), ylim = c(-25,25))
 
 # calculate the true utiliziation distribution

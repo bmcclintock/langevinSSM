@@ -37,7 +37,7 @@ NULL
 
 #' Example Tracking Data
 #'
-#' A \code{dataLangevin} object containing an example simulated movement track.
+#' A \code{dataLangevin} object containing example simulated movement tracks.
 #'
 #' @name exampleDat
 #' @docType data

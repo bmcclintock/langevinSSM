@@ -1,7 +1,7 @@
 #' Simulate trajectories from the habitat-driven Langevin diffusion
 #' @param model Langevin model to simulate: "underdamped" (default) or "overdamped".
 #' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}.
-#' If \code{measurementError} is specified, optional observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (\code{psi}), a 2-vector scaling factor for uncertainty in the x- and y-axis errors (\code{tau}), and a correlation term betwwen the x- and y-axis errors (\code{rho_o}).
+#' If \code{measurementError} is specified, optional observation process parameters include a scaling factor to account for uncertainty in the error ellipse (\code{psi}), a 2-vector scaling factor for uncertainty in the x- and y-axis errors (\code{tau}), and a correlation term between the x- and y-axis errors (\code{rho_o}).
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
 #' @param nbAnimals Number of animals to simulate. Default: 1.
 #' @param obsPerAnimal Number of observations to simulate per animal. Default: 500.
@@ -9,9 +9,8 @@
 #' @param initialPosition Initial position(s) for the simulation. This can be a 2-vector providing the x- and y-coordinates of the initial position for all animals. Alternatively, initialPosition can be specified as a list of length \code{nbAnimals} with each element a 2-vector providing the x- and y-coordinates of the initial position for each individual. If \code{NULL} (default), initial positions are randomly generated within the spatial extent of the covariates, with a preference for areas of higher habitat quality (i.e., higher values of the utilization distribution).
 #' @param measurementError List of specifications to add measurement error to the simulated trajectories.
 #' Measurement error can be added in the form of the Argos Kalman Filter error ellipse (i.e., semi-major axis, semi-minor axis, and error ellipse orientation) or in the form of Argos least squares or GPS x- and y-axis errors.
-#' For the error ellipse, the specifications are \code{M} (the standard deviation of the semi-major axis), \code{m} (the standard deviation of the semi-minor axis), and \code{c} (a 2-vector providing the range for the error ellipse orientation in degrees).
-#' For x- and y-axis errors, the specifications are \code{x.sd} and \code{y.sd} (the standard deviation of the x- and y-axis errors, respectively). Optional observation process parameters that can be included in \code{par} are \code{psi} (a scaling factor to account for uncertainty in the error ellipse), \code{tau} (a 2-vector scaling factor to account for uncertainty in the x- and y-axis errors), and rho_o (a correlation term between the x- and y-axis errors).
-#' Any of the observation process parameters not specified in \code{par} are set to their default values \code{psi = 1}, \code{tau = c(1, 1)}, and \code{rho_o = 0}.
+#' For the error ellipse, the specifications are \code{M} (the standard deviation of the semi-major axis), \code{m} (the standard deviation of the semi-minor axis), and \code{c} (a 2-vector providing the range for the error ellipse orientation in \strong{degrees from north}).
+#' For x- and y-axis errors, the specifications are \code{x.sd} and \code{y.sd} (the standard deviation of the x- and y-axis errors, respectively). Default: \code{NULL} (no measurement error). See Details.
 #' @return A data frame of class \code{dataLangevin} containing the simulated trajectories. The data frame contains the following columns:
 #' \item{id}{Animal ID}
 #' \item{date}{Date of observation}
@@ -27,6 +26,14 @@
 #' \item{mu.y}{True y-coordinate of the location}
 #' \item{vel.x}{True x-velocity of the location (if \code{model="underdamped"})}
 #' \item{vel.y}{True y-velocity of the location (if \code{model="underdamped"})}
+#' @details
+#' \strong{Measurement Error Models:}
+#' \code{simLangevin} can generate location measurement error based on two distinct observation models:
+#' \itemize{
+#'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} Activated when \code{M} (semi-major axis), \code{m} (semi-minor axis), and \code{c} (ellipse orientation range) are provided in \code{measurementError}. The (optional) observation process parameter \code{psi} scales the semi-minor axis to simulate uncertainty in the ellipse ellipse data.
+#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} Activated when \code{x.sd} and \code{y.sd} are provided in \code{measurementError}. The optional observation process parameters \code{tau} (a 2-vector) scales these standard deviations to simulate uncertainty in x- and y-axis errors, respectively, and \code{rho_o} simulates correlation between the x- and y-axis errors.
+#' }
+#' Any of the observation process parameters (\code{psi}, \code{tau}, \code{rho_o}) not explicitly provided in \code{par} default to \code{psi = 1}, \code{tau = c(1, 1)}, and \code{rho_o = 0}.
 #' @examples
 #' # underdamped model with measurement error
 #'

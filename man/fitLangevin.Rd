@@ -73,12 +73,22 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{iterations}{See \code{\link[stats]{nlminb}}}
 \item{evaluations}{See \code{\link[stats]{nlminb}}}
 \item{elapsedTime}{Run time of the optimization}
-\item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates point estimates (``est'') and standard error (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
+\item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
 \item{conditions}{List containing the optimization settings}
 }
 \description{
 Fit the underdamped or overdamped Langevin model to the location data provided, via numerical optimization of the log-likelihood
 function using \code{TMB}. Location data can be temporally irregular and/or subject to measurement error.
+}
+\details{
+\strong{Measurement Error Models:}
+The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models:
+\itemize{
+  \item \strong{Error Ellipse Model (Argos Kalman Filter):} This model is used when error ellipse data (\code{smaj}, \code{smin}, and \code{eor}) are present for an observation. The (optional) observation process parameter \code{psi} acts as a scaling multiplier specifically on the semi-minor axis (\code{smin}) to account for uncertainty in the error ellipse.
+  \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.sd} and \code{y.sd}) are present for an observation. The (optional) observation parameter parameter \code{tau} (a 2-vector) scales the \code{x.sd} and \code{y.sd}, respectively, to account for uncertainty in the x- and y-axis standard errors, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis errors.
+}
+\strong{Observation Parameters:}
+\code{fitLangevin} by default fixes the optional observation process parameters to \code{psi=1}, \code{tau=c(1,1)}, and \code{rho_o=0}, but they can be estimated by including them in \code{par}. If included in \code{par}, these parameters can also be fixed or constrained by mapping them using the \code{map} argument (see \code{\link[TMB]{MakeADFun}}).
 }
 \examples{
 # fit underdamped model with measurement error

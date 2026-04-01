@@ -5,5 +5,5 @@
 \alias{exampleDat}
 \title{Example Tracking Data}
 \description{
-A \code{dataLangevin} object containing an example simulated movement track.
+A \code{dataLangevin} object containing example simulated movement tracks.
 }

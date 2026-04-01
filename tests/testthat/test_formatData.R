@@ -13,7 +13,7 @@ get_base_data <- function() {
     lc = c("3", "2", "G", "A", "B"),
     smaj = c(10, 15, NA, NA, NA),
     smin = c(5, 7, NA, NA, NA),
-    eor  = c(45, 90, NA, NA, NA), # Safe degrees
+    eor  = c(45, 90, NA, NA, NA), # degrees from north
     x.sd = c(NA, NA, 5, NA, NA),
     y.sd = c(NA, NA, 5, NA, NA),
     extra_var = c("temp1", "temp2", "temp3", "temp4", "temp5")

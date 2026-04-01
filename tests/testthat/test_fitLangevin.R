@@ -90,3 +90,43 @@ test_that("fitLangevin catches spatial overlap errors from prepareRaster", {
   expect_error(fitLangevin(data = dat, spatialCovs = r, par = p),
                "overlap with 'spatialCovs'")
 })
+
+test_that("fitLangevin validates parameter lengths and map structures", {
+  r <- list(habitat = get_valid_raster()) # 1 covariate
+  p <- get_valid_par()
+  dat <- get_valid_dataLangevin()
+
+  # beta length mismatch (provided 2 coefficients for 1 covariate)
+  p_bad_beta <- p
+  p_bad_beta$beta <- c(0.5, -0.2)
+  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_beta),
+               "beta")
+
+  # tau length mismatch (provided a single scalar instead of a 2-vector)
+  p_bad_tau <- p
+  p_bad_tau$tau <- 1.5
+  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_tau),
+               "tau")
+
+  # rho_o bounds check (correlation must theoretically be bounded, though TMB maps it)
+  # A good checkPar should catch if a user puts a correlation > 1 or < -1 on the natural scale
+  p_bad_rho <- p
+  p_bad_rho$rho_o <- 1.5
+  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_rho),
+               "rho_o")
+
+  nonsense_p <- list(beta=0,gamma=0.5,sigma=1, nonsense=123)
+  expect_error(fitLangevin(data = dat, spatialCovs = r, par = nonsense_p),
+               "par")
+
+  # map mismatch
+  # If a user tries to map out tau (which is intrinsically length 2) but only provides a length-1 factor
+  bad_map <- list(tau = as.factor(1))
+  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p, map = bad_map),
+               "map")
+
+  # If a user tries to map out nonsense
+  nonsense_map <- list(nonsense = as.factor(1))
+  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p, map = nonsense_map),
+               "map")
+})

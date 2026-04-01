@@ -32,18 +32,18 @@ BEGIN_RCPP
 END_RCPP
 }
 // measurementError_rcpp
-DataFrame measurementError_rcpp(DataFrame data, double M, double m, NumericVector c, double psi, int model);
-RcppExport SEXP _langevinSSM_measurementError_rcpp(SEXP dataSEXP, SEXP MSEXP, SEXP mSEXP, SEXP cSEXP, SEXP psiSEXP, SEXP modelSEXP) {
+DataFrame measurementError_rcpp(DataFrame data, double smaj_sd, double smin_sd, NumericVector eor, double psi, int model);
+RcppExport SEXP _langevinSSM_measurementError_rcpp(SEXP dataSEXP, SEXP smaj_sdSEXP, SEXP smin_sdSEXP, SEXP eorSEXP, SEXP psiSEXP, SEXP modelSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< DataFrame >::type data(dataSEXP);
-    Rcpp::traits::input_parameter< double >::type M(MSEXP);
-    Rcpp::traits::input_parameter< double >::type m(mSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type c(cSEXP);
+    Rcpp::traits::input_parameter< double >::type smaj_sd(smaj_sdSEXP);
+    Rcpp::traits::input_parameter< double >::type smin_sd(smin_sdSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type eor(eorSEXP);
     Rcpp::traits::input_parameter< double >::type psi(psiSEXP);
     Rcpp::traits::input_parameter< int >::type model(modelSEXP);
-    rcpp_result_gen = Rcpp::wrap(measurementError_rcpp(data, M, m, c, psi, model));
+    rcpp_result_gen = Rcpp::wrap(measurementError_rcpp(data, smaj_sd, smin_sd, eor, psi, model));
     return rcpp_result_gen;
 END_RCPP
 }

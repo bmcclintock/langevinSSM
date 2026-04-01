@@ -5,8 +5,8 @@ simulate_langevin_cpp <- function(model, nbAnimals, obsPerAnimal, timeStep, gamm
     .Call(`_langevinSSM_simulate_langevin_cpp`, model, nbAnimals, obsPerAnimal, timeStep, gamma, sigma, beta, raster_data, initialPosition)
 }
 
-measurementError_rcpp <- function(data, M, m, c, psi, model) {
-    .Call(`_langevinSSM_measurementError_rcpp`, data, M, m, c, psi, model)
+measurementError_rcpp <- function(data, smaj_sd, smin_sd, eor, psi, model) {
+    .Call(`_langevinSSM_measurementError_rcpp`, data, smaj_sd, smin_sd, eor, psi, model)
 }
 
 measurementError_LS_rcpp <- function(data, x_sd, y_sd, tau_x, tau_y, rho_o, model) {

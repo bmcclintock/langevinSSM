@@ -15,7 +15,7 @@ obsPerAnimal <- 500
 sca <- 200
 examplePar=list(beta=c(-4, 6, 5, -0.1),sigma=5,gamma=0.5)
 ncov <- length(examplePar$beta)
-measurementError <- list(M=1.5,m=0.75,c=c(0,180))
+measurementError <- list(smaj.sd=1.5,smin.sd=0.75,eor=c(0,180))
 exampleCovs <- lapply(rep(sca,ncov-1),simCov)
 coords <- terra::crds(exampleCovs[[1]])
 dist2 <- (coords[, "x"]^2 + coords[, "y"]^2) / sca

@@ -216,9 +216,9 @@ DataFrame simulate_langevin_cpp(int model,
 
 // [[Rcpp::export]]
 DataFrame measurementError_rcpp(DataFrame data,
-                                double M,
-                                double m,
-                                NumericVector c,
+                                double smaj_sd,
+                                double smin_sd,
+                                NumericVector eor,
                                 double psi,
                                 int model) {
 
@@ -231,8 +231,8 @@ DataFrame measurementError_rcpp(DataFrame data,
   NumericVector c_rand(n);
 
   for(int i = 0; i < n; i++) {
-    M_rand[i] = abs(R::rnorm(0.0, M));
-    m_rand[i] = abs(R::rnorm(0.0, m));
+    M_rand[i] = abs(R::rnorm(0.0, smaj_sd));
+    m_rand[i] = abs(R::rnorm(0.0, smin_sd));
     if(M_rand[i] < m_rand[i]){
       double tmpM = M_rand[i];
       double tmpm = m_rand[i];
@@ -240,7 +240,7 @@ DataFrame measurementError_rcpp(DataFrame data,
       m_rand[i] = tmpM;
     }
     // Convert degrees to radians
-    c_rand[i] = R::runif(c[0], c[1]) * M_PI / 180.0;
+    c_rand[i] = R::runif(eor[0], eor[1]) * M_PI / 180.0;
   }
 
   // Constants

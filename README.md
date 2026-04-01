@@ -59,9 +59,9 @@ simDat <- simLangevin(model = "underdamped",
                       spatialCovs = exampleCovs)
 
 # Simulate an underdamped Langevin diffusion path with measurement error
-measurementError <- list(M = 1.5,      # sd of semi-major axis of error ellipse
-                         m = 0.75,     # sd of semi-minor axis of error ellipse
-                         c = c(0,180)) # range oferror ellipse orientation (in degrees)
+measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error ellipse
+                         smin.sd = 0.75,     # sd of semi-minor axis of error ellipse
+                         eor = c(0,180)) # range of ellipse orientation (in degrees from north)
 
 set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_ee <- simLangevin(model = "underdamped",

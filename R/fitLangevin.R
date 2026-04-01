@@ -39,7 +39,7 @@
 #' The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models:
 #' \itemize{
 #'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} This model is used when error ellipse data (\code{smaj}, \code{smin}, and \code{eor}) are present for an observation. The (optional) observation process parameter \code{psi} acts as a scaling multiplier specifically on the semi-minor axis (\code{smin}) to account for uncertainty in the error ellipse.
-#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.sd} and \code{y.sd}) are present for an observation. The (optional) observation parameter parameter \code{tau} (a 2-vector) scales the \code{x.sd} and \code{y.sd}, respectively, to account for uncertainty in the x- and y-axis standard errors, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis errors.
+#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.sd} and \code{y.sd}) are present for an observation. The (optional) observation parameter \code{tau} (a 2-vector) scales the \code{x.sd} and \code{y.sd}, respectively, to account for uncertainty in the x- and y-axis standard errors, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis errors.
 #' }
 #' \strong{Observation Parameters:}
 #' \code{fitLangevin} by default fixes the optional observation process parameters to \code{psi=1}, \code{tau=c(1,1)}, and \code{rho_o=0}, but they can be estimated by including them in \code{par}. If included in \code{par}, these parameters can also be fixed or constrained by mapping them using the \code{map} argument (see \code{\link[TMB]{MakeADFun}}).
@@ -93,14 +93,14 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                times=track_times,
                dt=data$dt)
 
-  dat$M <- data$smaj / scaleFactor
-  dat$m <- data$smin / scaleFactor
-  dat$c <- data$eor
+  dat$smaj <- data$smaj / scaleFactor
+  dat$smin <- data$smin / scaleFactor
+  dat$eor <- data$eor
   dat$K <- as.matrix(data[,c("x.sd","y.sd")] / scaleFactor)
-  dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$M) & !is.na(dat$m) & !is.na(dat$c))))
+  dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))))
   dat$obs_mod <- rep(NA,ncol(dat$Y))
   dat$obs_mod[dat$isd==1 & (!is.na(dat$K[,1]) & !is.na(dat$K[,2]))] <- 0
-  dat$obs_mod[dat$isd==1 & (!is.na(dat$M) & !is.na(dat$m) & !is.na(dat$c))] <- 1
+  dat$obs_mod[dat$isd==1 & (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))] <- 1
   dat$ID <- data$id
   dat$nbObs <- rep(1,ncol(dat$Y))
   dat$scale_factor <- scaleFactor

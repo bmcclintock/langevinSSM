@@ -32,10 +32,10 @@ map <- list(psi=factor(NA)) # map for fixing parameters
 samplingRate <- 1 # for subsampling observations from true continuous-time model (e.g. if samplingRate = 2 then data are roughly thinned by 2); must be >= 1; note bias increases with samplingRate, but relationships largely preserved
 propMissing <- 0 # proportion of missing observations; passed as NA observations to TMB (so corresponding true locations treated as random effects to be estimated)
 
-M <- 1.5 # SD for semi-major error ellipse axis ~ abs(Normal(0,M))
-m <- M/2 # SD for semi-minor error ellipse axis ~ abs(Normal(0,M/2))
-r <- c(0,180) # range for error ellipse orientation (degrees)
-measurementError <- list(M=M,m=m,c=r) # setting measurementError <- NULL adds no measurement error to observations
+smaj.sd <- 1.5 # SD for semi-major error ellipse axis; smaj ~ abs(Normal(0,smaj.sd))
+smin.sd <- smaj.sd/2 # SD for semi-minor error ellipse axis; smin ~ abs(Normal(0,smin.sd))
+eor <- c(0,180) # range for error ellipse orientation (in degrees from north); eor ~ Uniform(eor[1],eor[2])
+measurementError <- list(smaj.sd=smaj.sd,smin.sd=smin.sd,eor=eor) # setting measurementError <- NULL adds no measurement error to observations
 
 ## specify scale and spatial autocorrelation for covariates
 sca <- 200 # bounding box scale
@@ -58,7 +58,7 @@ if(model=="overdamped"){
 } else colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","gamma","BA")
 
 dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_psi",psi,"_sca",sca,"_covRange",paste0(covRange,collapse="_"),
-                   ifelse(!is.null(measurementError),paste0("_M",measurementError$M,"_m",measurementError$m,"_c",paste0(measurementError$c,collapse="_")),""),ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
+                   ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor,collapse="_")),""),ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
 
 set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
 if(!file.exists(paste0("simulation/data/",dataName,".RData"))){

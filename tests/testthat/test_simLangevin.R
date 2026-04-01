@@ -57,3 +57,27 @@ test_that("simLangevin returns a correctly structured dataLangevin object", {
   expect_true(all(c("mu.x", "mu.y") %in% names(res_over)))
   expect_false("vel.x" %in% names(res_over))
 })
+
+test_that("simLangevin validates natural scale parameters in par", {
+  r <- list(habitat = get_valid_raster()) # 1 covariate
+
+  # Missing beta entirely
+  expect_error(simLangevin(par = list(sigma = 5, gamma = 0.5), spatialCovs = r),
+               "beta")
+
+  # beta length mismatch (provided 2 coefficients, but only 1 spatial covariate exists)
+  expect_error(simLangevin(par = list(beta = c(0.5, -0.2), sigma = 5, gamma = 0.5), spatialCovs = r),
+               "beta")
+
+  # Missing sigma
+  expect_error(simLangevin(par = list(beta = c(0.5), gamma = 0.5), spatialCovs = r),
+               "sigma")
+
+  # Missing gamma (required for the default underdamped model)
+  expect_error(simLangevin(model = "underdamped", par = list(beta = c(0.5), sigma = 5), spatialCovs = r),
+               "gamma")
+
+  # Invalid tau length (must be a 2-vector for x and y standard deviations)
+  expect_error(simLangevin(par = list(beta = c(0.5), sigma = 5, gamma = 0.5, tau = 1.5), spatialCovs = r),
+               "tau")
+})

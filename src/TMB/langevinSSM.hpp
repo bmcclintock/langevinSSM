@@ -37,9 +37,9 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_SCALAR(zetaScale);          // scale factor for smooth gradient neighborhood (>1 increases, <1 decreases)
 
   // for KF observation model
-  DATA_VECTOR(m);                 //  m is the semi-minor axis length
-  DATA_VECTOR(M);                 //  M is the semi-major axis length
-  DATA_VECTOR(c);                 //  c is the orientation of the error ellipse
+  DATA_VECTOR(smin);                 //  smin is the semi-minor axis length
+  DATA_VECTOR(smaj);                 //  smaj is the semi-major axis length
+  DATA_VECTOR(eor);                 //  eor is the orientation of the error ellipse
   // for LS/GPS observation model
   DATA_MATRIX(K);                 // error weighting factors for LS obs model
 
@@ -208,13 +208,13 @@ Type langevinSSM(objective_function<Type>* obj)
       } else if(obs_mod(i) == 1) {
         // Argos Kalman Filter observations
         Type z = sqrt(Type(2.0));
-        Type s2c = sin(c(i)) * sin(c(i));
-        Type c2c = cos(c(i)) * cos(c(i));
-        Type M2  = (M(i) / z) * (M(i) / z);
-        Type m2 = (m(i) * psi / z) * (m(i) * psi / z);
+        Type s2c = sin(eor(i)) * sin(eor(i));
+        Type c2c = cos(eor(i)) * cos(eor(i));
+        Type M2  = (smaj(i) / z) * (smaj(i) / z);
+        Type m2 = (smin(i) * psi / z) * (smin(i) * psi / z);
         cov_obs(0,0) = (M2 * s2c + m2 * c2c);
         cov_obs(1,1) = (M2 * c2c + m2 * s2c);
-        cov_obs(0,1) = (0.5 * (M(i) * M(i) - (m(i) * psi * m(i) * psi))) * cos(c(i)) * sin(c(i));
+        cov_obs(0,1) = (0.5 * (smaj(i) * smaj(i) - (smin(i) * psi * smin(i) * psi))) * cos(eor(i)) * sin(eor(i));
         cov_obs(1,0) = cov_obs(0,1);
       }
       nll += MVNORM(cov_obs)(Y.col(i) - mu.col(i));

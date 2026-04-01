@@ -10,11 +10,11 @@ addMeasurementError <- function(model, out, par, measurementError) {
   if (!is.list(measurementError)) stop("'measurementError' must be a list.")
 
   # Check for mutual exclusivity
-  has_KF <- all(c("M", "m") %in% names(measurementError))
+  has_KF <- all(c("smaj.sd", "smin.sd") %in% names(measurementError))
   has_LS <- all(c("x.sd", "y.sd") %in% names(measurementError))
 
   if (has_KF && has_LS) {
-    stop("Cannot provide both Argos KF (M, m, c) and LS/GPS (x.sd, y.sd) error parameters.")
+    stop("Cannot provide both Argos KF (smaj.sd, smin.sd, eor) and LS/GPS (x.sd, y.sd) error parameters.")
   }
 
   n <- nrow(out)
@@ -22,13 +22,13 @@ addMeasurementError <- function(model, out, par, measurementError) {
 
   if (has_KF) {
     # --- Argos KF ---
-    M <- measurementError$M
-    m <- measurementError$m
-    c_range <- if (!is.null(measurementError$c)) measurementError$c else c(0, 180)
+    smaj.sd <- measurementError$smaj.sd
+    smin.sd <- measurementError$smin.sd
+    eor_range <- if (!is.null(measurementError$eor)) measurementError$eor else c(0, 180)
     psi <- if (!is.null(par$l_psi)) exp(par$l_psi) else 1
 
     # Use your existing Rcpp function for KF sampling
-    out <- measurementError_rcpp(out, M = M, m = m, c = c_range, psi = psi,
+    out <- measurementError_rcpp(out, smaj_sd = smaj.sd, smin_sd = smin.sd, eor = eor_range, psi = psi,
                                  model = ifelse(model == "underdamped", 1, 0))
     out$x.sd <- NA
     out$y.sd <- NA

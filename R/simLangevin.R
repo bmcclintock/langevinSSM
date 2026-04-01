@@ -9,7 +9,7 @@
 #' @param initialPosition Initial position(s) for the simulation. This can be a 2-vector providing the x- and y-coordinates of the initial position for all animals. Alternatively, initialPosition can be specified as a list of length \code{nbAnimals} with each element a 2-vector providing the x- and y-coordinates of the initial position for each individual. If \code{NULL} (default), initial positions are randomly generated within the spatial extent of the covariates, with a preference for areas of higher habitat quality (i.e., higher values of the utilization distribution).
 #' @param measurementError List of specifications to add measurement error to the simulated trajectories.
 #' Measurement error can be added in the form of the Argos Kalman Filter error ellipse (i.e., semi-major axis, semi-minor axis, and error ellipse orientation) or in the form of Argos least squares or GPS x- and y-axis errors.
-#' For the error ellipse, the specifications are \code{M} (the standard deviation of the semi-major axis), \code{m} (the standard deviation of the semi-minor axis), and \code{c} (a 2-vector providing the range for the error ellipse orientation in \strong{degrees from north}).
+#' For the error ellipse, the specifications are \code{smaj.sd} (the standard deviation of the semi-major axis), \code{smin.sd} (the standard deviation of the semi-minor axis), and \code{eor} (an optional 2-vector providing the range for the error ellipse orientation in \strong{degrees from north}).
 #' For x- and y-axis errors, the specifications are \code{x.sd} and \code{y.sd} (the standard deviation of the x- and y-axis errors, respectively). Default: \code{NULL} (no measurement error). See Details.
 #' @return A data frame of class \code{dataLangevin} containing the simulated trajectories. The data frame contains the following columns:
 #' \item{id}{Animal ID}
@@ -30,8 +30,8 @@
 #' \strong{Measurement Error Models:}
 #' \code{simLangevin} can generate location measurement error based on two distinct observation models:
 #' \itemize{
-#'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} Activated when \code{M} (semi-major axis), \code{m} (semi-minor axis), and \code{c} (ellipse orientation range) are provided in \code{measurementError}. The (optional) observation process parameter \code{psi} scales the semi-minor axis to simulate uncertainty in the ellipse ellipse data.
-#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} Activated when \code{x.sd} and \code{y.sd} are provided in \code{measurementError}. The optional observation process parameters \code{tau} (a 2-vector) scales these standard deviations to simulate uncertainty in x- and y-axis errors, respectively, and \code{rho_o} simulates correlation between the x- and y-axis errors.
+#'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} Activated when \code{smaj.sd} (semi-major axis), \code{smin.sd} (semi-minor axis), and \code{eor} (ellipse orientation range) are provided in \code{measurementError}. For each observation, the semi-major axis length (``smaj'') is randomly drawn as \code{abs(rnorm(1,0,smaj.sd))}, the semi-minor axis length (``smin'') is randomly drawn as \code{abs(rnorm(1,0,smin.sd))}, and the ellipse orientation (``eor'') is randomly drawn as \code{dunif(1,eor[1],eor[2])}. The (optional) observation process parameter \code{psi} scales the semi-minor axis to simulate uncertainty in the ellipse ellipse data.
+#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} Activated when \code{x.sd} and \code{y.sd} are provided in \code{measurementError}. For each observation, the x- (``x.sd'') and y-axis (``y.sd'') measurement error standard deviations are randomly drawn as \code{abs(rnorm(1,0,x.sd))} and \code{abs(rnorm(1,0,y.sd))}, respectively.  The optional observation process parameters \code{tau} (a 2-vector) scales these standard deviations to simulate uncertainty in x- and y-axis errors, respectively, and \code{rho_o} simulates correlation between the x- and y-axis errors.
 #' }
 #' Any of the observation process parameters (\code{psi}, \code{tau}, \code{rho_o}) not explicitly provided in \code{par} default to \code{psi = 1}, \code{tau = c(1, 1)}, and \code{rho_o = 0}.
 #' @examples
@@ -45,9 +45,9 @@
 #' # exampleCovs included in package; see ?exampleCovs for details
 #' simDat_ee <- simLangevin(par = par,
 #'                       spatialCovs = exampleCovs,
-#'                       measurementError = list(M = 1.5,
-#'                                               m = 0.75,
-#'                                               c = c(0,180)))
+#'                       measurementError = list(smaj.sd = 1.5,
+#'                                               smin.sd = 0.75,
+#'                                               eor = c(0,180)))
 #'
 #' # x- and y-axis errors
 #' # exampleCovs included in package; see ?exampleCovs for details

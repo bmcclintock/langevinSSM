@@ -68,38 +68,13 @@ format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "
 
   stopifnot(`date must be a character string` = is.character(date))
   stopifnot(`lc must be a character string` = is.character(lc))
-  stopifnot(`coord must be a character vector with 1 or 2 elements` = all(is.character(coord)))
-  stopifnot(`epar must be a character vector with 3 elements` = all(is.character(epar)))
-  stopifnot(`sderr must be a character vector with 2 elements` = all(is.character(sderr)))
-
-  if (all(!inherits(x, "sf"), "geometry" %in% names(x))) {
-    if (inherits(x$geometry, "sfc")) x <- sf::st_as_sf(x)
-  }
-  if (inherits(x, "sf")) coord <- "geometry"
+  stopifnot(`coord must be a character vector with 2 elements` = all(is.character(coord)) && length(coord) == 2)
+  stopifnot(`epar must be a character vector with 3 elements` = all(is.character(epar)) && length(epar) == 3)
+  stopifnot(`sderr must be a character vector with 2 elements` = all(is.character(sderr)) && length(sderr) == 2)
 
   stopifnot(`An id variable must be included in the input data` = id %in% names(x))
   stopifnot(`A date/time variable must be included in the input data` = date %in% names(x))
   stopifnot(`Coordinate variables must be included in the input data` = all(coord %in% names(x)))
-
-  if (inherits(x, "sf") & is.na(sf::st_crs(x))) stop("\nCRS info is missing from input data sf object")
-
-  # --- SAFELY GUESS LOCATION CLASS ---
-  if (!lc %in% names(x)) {
-    x[[lc]] <- "G" # Default to GPS
-
-    # If sderr columns exist, tag those specific rows as Generic Locations ("GL")
-    if (any(sderr %in% names(x))) {
-      if (all(!epar %in% names(x))) {
-        x[[lc]] <- "GL"
-        message("Guessing that missing location classes are Generic Locations ('GL').")
-      } else {
-        # Mixed dataset: only flag the rows that actually use sderr
-        x[[lc]][!is.na(x[[sderr[1]]])] <- "GL"
-      }
-    } else {
-      message("Guessing that missing location classes are GPS ('G').")
-    }
-  }
 
   # --- DYNAMIC COLUMN INJECTION ---
   if (all(!epar %in% names(x))) {

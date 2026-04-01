@@ -42,13 +42,13 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{scaleFactor}{Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.}
 
-\item{smoothGradient}{Logical indicating whether or not to smooth the gradients using the approach of Blackwell and Matthiopoulos (2024). Default: \code{FALSE}.}
+\item{smoothGradient}{Logical indicating whether or not to smooth the gradients. See Details. Default: \code{FALSE}.}
 
 \item{npoints}{Number of smoothing points around current cell (4 = diagonal, 8 = queen neighborhood). Ignored unless \code{smoothGradient=TRUE}.}
 
 \item{curweight}{Smoothing weight of current cell location (\code{0 <= curweight < 1}). Ignored unless \code{smoothGradient=TRUE}.}
 
-\item{zetaScale}{Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sigma}, while the neightborhood for the overdamped model is \code{zetaScale * sigma / sqrt(2)}. Ignored unless \code{smoothGradient=TRUE}.}
+\item{zetaScale}{Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). Ignored unless \code{smoothGradient=TRUE}.}
 
 \item{hessian}{Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.}
 
@@ -82,13 +82,22 @@ function using \code{TMB}. Location data can be temporally irregular and/or subj
 }
 \details{
 \strong{Measurement Error Models:}
-The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models:
+The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information:
+\deqn{(x,y) \sim N((\mu_x,\mu_y), \Sigma),}
+where \eqn{(x.y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, and \eqn{\Sigma} is the observation error covariance matrix.
 \itemize{
   \item \strong{Error Ellipse Model (Argos Kalman Filter):} This model is used when error ellipse data (\code{smaj}, \code{smin}, and \code{eor}) are present for an observation. The (optional) observation process parameter \code{psi} acts as a scaling multiplier specifically on the semi-minor axis (\code{smin}) to account for uncertainty in the error ellipse.
-  \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.sd} and \code{y.sd}) are present for an observation. The (optional) observation parameter \code{tau} (a 2-vector) scales the \code{x.sd} and \code{y.sd}, respectively, to account for uncertainty in the x- and y-axis standard errors, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis errors.
+  For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015), with \code{psi} scaling the semi-minor axis.
+  \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.sd} and \code{y.sd}) are present for an observation. The (optional) observation parameter \code{tau} (a 2-vector) scales the \code{x.sd} and \code{y.sd}, respectively, to account for uncertainty in the x- and y-axis standard deviations, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis standard deviations.
+  For the standard deviation model, \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix},}
+  with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.sd}=\sigma_x,\text{y.sd}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for their correlation.
 }
-\strong{Observation Parameters:}
+\strong{Observation Process Parameters:}
 \code{fitLangevin} by default fixes the optional observation process parameters to \code{psi=1}, \code{tau=c(1,1)}, and \code{rho_o=0}, but they can be estimated by including them in \code{par}. If included in \code{par}, these parameters can also be fixed or constrained by mapping them using the \code{map} argument (see \code{\link[TMB]{MakeADFun}}).
+
+\strong{Gradient smoothing:} Setting \code{smoothGradient=TRUE} applies the smoothing approach of Blackwell and Matthiopoulos (2024) to the gradients of the habitat selection covariates (\code{spatialCovs}), which can help reduce attenuation bias in habitat selection coefficients when observations are obtained at a coarser time resolution than the underlying continuous-time movement process.
+This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, where the weights are determined by a Gaussian kernel based on the distance between locations and the specified neighborhood parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
+The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sigma}, while the neightborhood for the overdamped model is \code{zetaScale * sigma / sqrt(2)}. See Blackwell and Matthiopoulos (2024) for more details.
 }
 \examples{
 # fit underdamped model with measurement error
@@ -99,6 +108,8 @@ fit <- fitLangevin(exampleDat,
 }
 \references{
 Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
+
+McClintock BT, London JM, Camneron MF, Boveng PL. 2015. Modelling animal movement using the Argos satellite telemetry location error ellipse. Methods Ecol Evol 6:266–277. doi: 10.1111/2041-210X.12286.
 
 Michelot T, Gloaguen P, Blackwell PG, Etienne M-P. 2019. The Langevin diffusion as a continuous-time model of animal movement and habitat selection. Methods Ecol Evol 10:1894–1907. doi: 10.1111/2041-210X.13275.
 

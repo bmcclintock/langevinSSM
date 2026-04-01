@@ -33,7 +33,7 @@ remotes::install_github("bmcclintock/langevinSSM")
 
 ## Usage
 To simulate animal movement paths using the Langevin diffusion model, one can use the `simLangevin` function. For example:
-```{r,eval=TRUE}
+```{r,eval=TRUE, echo=-15}
 library(langevinSSM)
 library(ggplot2)
 library(terra)
@@ -44,51 +44,50 @@ par <- list(beta = c(-4, 6, 5, -0.1), # habitat selection coefficients
             sigma = 5, # diffusion (or speed) parameter
             gamma = 0.5) # autocorrelation parameter
 
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 ## exampleCovs is a list of four spatial covariates (e.g., habitat features) that loads with the package
 simDat <- simLangevin(model = "underdamped",
                       par = par,
-                      spatialCovs = exampleCovs)
+                      spatialCovs = exampleCovs,
+                      nbAnimals = 3)
 
 # Simulate an underdamped Langevin diffusion path with measurement error
 measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error ellipse
                          smin.sd = 0.75,     # sd of semi-minor axis of error ellipse
                          eor = c(0,180)) # range of ellipse orientation (in degrees from north)
 
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
-simDat_ee <- simLangevin(model = "underdamped",
+set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
+exampleDat <- simLangevin(model = "underdamped",
                          par = par,
                          spatialCovs = exampleCovs,
+                         nbAnimals = 3,
+                         obsPerAnimal = 500,
                          measurementError = measurementError)
 ```                                                 
 To fit the Langevin diffusion model to observed tracking data, one can use the `fitLangevin` function. For example:
 ```{r,eval=TRUE}
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
-## exampleDat is a data frame of simulated tracking data with measurement error that loads with the package
 fit <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
                    silent = TRUE)  
 
-fit$estimates$natural # fixed parameter estimates
+fit
 
-# calculate the estimated utilization distribution
+# calculate the estimated UD
 UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exampleCovs)])
 
-# plot the estimated utilization distribution with the observed and estimated locations
-plotRaster(UD, legend.title = expression(log(pi))) + 
-  geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
-
-# zoom in a bit
-plotRaster(terra::crop(UD,terra::ext(0, 50, -25, 25)), legend.title = expression(log(pi))) + 
-  geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
-  coord_equal(xlim = c(0,50), ylim = c(-25,25))
+# plot the estimated (log) UD with the observed and estimated locations
+plot(fit, spatialCovs = exampleCovs, data = exampleDat)
 
 # calculate the true utiliziation distribution
 trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
 
-# calculate similarity of true and estimated utilization distributions using Bhattacharyya's affinity
+# calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
 ```
+## Citation
+
+If you use `{langevinSSM}` in your research, please cite it as follows:
+
+```{r citation, echo = FALSE, comment = ""}
+print(citation("langevinSSM"), bibtex = TRUE)

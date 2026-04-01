@@ -52,21 +52,22 @@ par <- list(beta = c(-4, 6, 5, -0.1), # habitat selection coefficients
             sigma = 5, # diffusion (or speed) parameter
             gamma = 0.5) # autocorrelation parameter
 
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 ## exampleCovs is a list of four spatial covariates (e.g., habitat features) that loads with the package
 simDat <- simLangevin(model = "underdamped",
                       par = par,
-                      spatialCovs = exampleCovs)
+                      spatialCovs = exampleCovs,
+                      nbAnimals = 3)
 
 # Simulate an underdamped Langevin diffusion path with measurement error
 measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error ellipse
                          smin.sd = 0.75,     # sd of semi-minor axis of error ellipse
                          eor = c(0,180)) # range of ellipse orientation (in degrees from north)
 
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
-simDat_ee <- simLangevin(model = "underdamped",
+exampleDat <- simLangevin(model = "underdamped",
                          par = par,
                          spatialCovs = exampleCovs,
+                         nbAnimals = 3,
+                         obsPerAnimal = 500,
                          measurementError = measurementError)
 ```
 
@@ -75,53 +76,73 @@ use the `fitLangevin` function. For example:
 
 ``` r
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
-## exampleDat is a data frame of simulated tracking data with measurement error that loads with the package
 fit <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
                    silent = TRUE)  
 
-fit$estimates$natural # fixed parameter estimates
-#>         Estimate Std. Error
-#> beta  -3.9594701 1.26147867
-#> beta   5.3510150 1.62107927
-#> beta   2.7943331 1.04202103
-#> beta  -0.1212424 0.07997307
-#> sigma  5.5354852 0.71588476
-#> gamma  0.4743000 0.13127897
-#> rho_o  0.0000000 0.00000000
-#> tau    1.0000000 0.00000000
-#> tau    1.0000000 0.00000000
-#> psi    1.0000000 0.00000000
+fit
+#> 
+#> Habitat-Driven Langevin Diffusion Model
+#> =======================================
+#> Model type:        Underdamped 
+#> Convergence:       Successful 
+#> Max Log-Likelihood: -2061.98 
+#> Optimization time:  2.18 seconds
+#> 
+#> Parameter Estimates (Natural Scale):
+#> ---------------------------------------
+#>        Estimate Std. Error
+#> beta_1  -3.5425      1.250
+#> beta_2   8.6103      2.295
+#> beta_3   7.5081      1.947
+#> beta_4  -0.3084      0.324
+#> sigma    4.3101      0.500
+#> gamma    0.5856      0.145
+#> rho_o    0.0000      0.000
+#> tau_1    1.0000      0.000
+#> tau_2    1.0000      0.000
+#> psi      1.0000      0.000
 
-# calculate the estimated utilization distribution
+# calculate the estimated UD
 UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exampleCovs)])
 
-# plot the estimated utilization distribution with the observed and estimated locations
-plotRaster(UD, legend.title = expression(log(pi))) + 
-  geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) # estimated locations
+# plot the estimated (log) UD with the observed and estimated locations
+plot(fit, spatialCovs = exampleCovs, data = exampleDat)
 ```
 
 ![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
 
 ``` r
 
-# zoom in a bit
-plotRaster(terra::crop(UD,terra::ext(0, 50, -25, 25)), legend.title = expression(log(pi))) + 
-  geom_point(aes(x = x, y = y), data = exampleDat, col = 2) + # observed locations
-  geom_point(aes(x = mu.x, y = mu.y), data = fit$estimates$random$mu$est, col = 4) + # estimated locations
-  coord_equal(xlim = c(0,50), ylim = c(-25,25))
-```
-
-![](man/figures/README-unnamed-chunk-5-2.png)<!-- -->
-
-``` r
-
 # calculate the true utiliziation distribution
 trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
 
-# calculate similarity of true and estimated utilization distributions using Bhattacharyya's affinity
+# calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
-#> [1] 0.9672121
+#> [1] 0.9088364
 ```
+
+## Citation
+
+If you use `{langevinSSM}` in your research, please cite it as follows:
+
+    To cite package 'langevinSSM' in publications use:
+
+      Dupont, F., McClintock, B.T., Fischer, J.-O., Marcoux, M., Hussey,
+      N., and Auger-Méthé, M. (2025). Inferring resource selection and
+      utilization distributions from irregular and error-prone animal
+      tracking data using the habitat-driven Langevin diffusion.
+
+    A BibTeX entry for LaTeX users is
+
+      @Article{,
+        title = {Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion},
+        author = {Fanny Dupont and Brett T. McClintock and Jan-Ole Fischer and Marianne Marcoux and Nigel Hussey and Marie Auger-Méthé},
+        journal = {TBD},
+        year = {2025},
+      }
+
+    Additions and modifications to langevinSSM are frequent, to help with
+    reproducibility of output please cite its version number. This is
+    'langevinSSM' version 0.0.1

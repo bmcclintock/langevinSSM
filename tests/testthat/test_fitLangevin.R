@@ -109,7 +109,6 @@ test_that("fitLangevin validates parameter lengths and map structures", {
                "tau")
 
   # rho_o bounds check (correlation must theoretically be bounded, though TMB maps it)
-  # A good checkPar should catch if a user puts a correlation > 1 or < -1 on the natural scale
   p_bad_rho <- p
   p_bad_rho$rho_o <- 1.5
   expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_rho),

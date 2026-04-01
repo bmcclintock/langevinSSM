@@ -27,16 +27,18 @@ names(exampleCovs) <- c(paste0("cov",1:(ncov-1)),"d2c")
 
 UD <- getUD(exampleCovs,examplePar$beta)
 
+set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAnimals,obsPerAnimal=obsPerAnimal,measurementError = measurementError)
 
 plotRaster(UD)+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
 
 fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1))
-fit$estimates$natural
+fit
+
+plot(fit,spatialCovs=exampleCovs,data=exampleDat)
 
 exampleDat$date <- as.POSIXlt(exampleDat$date*100*60, tz = "UTC")
-exampleDat$lc <- "G"
-exampleDat <- exampleDat[,c("id","date","dt","x","y","lc","smaj","smin","eor","x.sd","y.sd","mu.x","mu.y","vel.x","vel.y")]
+exampleDat <- exampleDat[,c("id","date","dt","x","y","smaj","smin","eor","x.sd","y.sd","mu.x","mu.y","vel.x","vel.y")]
 attr(exampleDat,"time.unit") <- "mins"
 
 lapply(1:ncov,function(x) terra::writeRaster(exampleCovs[[x]], paste0("inst/extdata/exampleCov",x,".tif"),overwrite=TRUE))

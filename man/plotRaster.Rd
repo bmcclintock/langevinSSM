@@ -4,12 +4,12 @@
 \alias{plotRaster}
 \title{Plot Raster}
 \usage{
-plotRaster(rast, legend.title = "")
+plotRaster(rast, legend.title = NULL)
 }
 \arguments{
 \item{rast}{A \code{\link[terra]{SpatRaster-class}} object to plot.}
 
-\item{legend.title}{Character string for the legend title.}
+\item{legend.title}{Character string for the legend title. Default: \code{NULL}, in which case the name of the raster layer will be used as the legend title.}
 }
 \value{
 A ggplot object containing the raster plot.

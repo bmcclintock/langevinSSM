@@ -28,11 +28,19 @@
 #' \item{vel.y}{True y-velocity of the location (if \code{model="underdamped"})}
 #' @details
 #' \strong{Measurement Error Models:}
-#' \code{simLangevin} can generate location measurement error based on two distinct observation models:
+#' \code{simLangevin} can generate location measurement error based on two distinct models with the same underlying structure, but which differ in how the observation error covariance matrix is constructed based on \code{measurementError} specification:
+#' \deqn{(x,y) \sim N((\mu_x,\mu_y), \Sigma),}
+#' where \eqn{(x.y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, and \eqn{\Sigma} is the observation error covariance matrix.
 #' \itemize{
-#'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} Activated when \code{smaj.sd} (semi-major axis), \code{smin.sd} (semi-minor axis), and \code{eor} (ellipse orientation range) are provided in \code{measurementError}. For each observation, the semi-major axis length (``smaj'') is randomly drawn as \code{abs(rnorm(1,0,smaj.sd))}, the semi-minor axis length (``smin'') is randomly drawn as \code{abs(rnorm(1,0,smin.sd))}, and the ellipse orientation (``eor'') is randomly drawn as \code{dunif(1,eor[1],eor[2])}. The (optional) observation process parameter \code{psi} scales the semi-minor axis to simulate uncertainty in the ellipse ellipse data.
-#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} Activated when \code{x.sd} and \code{y.sd} are provided in \code{measurementError}. For each observation, the x- (``x.sd'') and y-axis (``y.sd'') measurement error standard deviations are randomly drawn as \code{abs(rnorm(1,0,x.sd))} and \code{abs(rnorm(1,0,y.sd))}, respectively.  The optional observation process parameters \code{tau} (a 2-vector) scales these standard deviations to simulate uncertainty in x- and y-axis errors, respectively, and \code{rho_o} simulates correlation between the x- and y-axis errors.
+#'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} Activated when \code{smaj.sd} (semi-major axis), \code{smin.sd} (semi-minor axis), and \code{eor} (ellipse orientation range) are provided in \code{measurementError}. For each observation, the semi-major axis length (``smaj'') is randomly drawn as \code{abs(rnorm(1,0,smaj.sd))}, the semi-minor axis length (``smin'') is randomly drawn as \code{abs(rnorm(1,0,smin.sd))}, and the ellipse orientation (``eor'') is randomly drawn as \code{dunif(1,eor[1],eor[2])}.
+#'   The (optional) observation process parameter \code{psi} scales the semi-minor axis to simulate uncertainty in the ellipse ellipse data.
+#'   For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015).
+#'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} Activated when \code{x.sd} and \code{y.sd} are provided in \code{measurementError}. For each observation, the x- (``x.sd'') and y-axis (``y.sd'') measurement error standard deviations are randomly drawn as \code{abs(rnorm(1,0,x.sd))} and \code{abs(rnorm(1,0,y.sd))}, respectively.
+#'   The optional observation process parameters \code{tau} (a 2-vector) scales these standard deviations to simulate uncertainty in x- and y-axis errors, respectively, and \code{rho_o} simulates correlation between the x- and y-axis errors.
+#'   For the standard deviation model, \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix},}
+#'   with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.sd}=\sigma_x,\text{y.sd}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for their correlation.
 #' }
+#' \strong{Observation Process Parameters:}
 #' Any of the observation process parameters (\code{psi}, \code{tau}, \code{rho_o}) not explicitly provided in \code{par} default to \code{psi = 1}, \code{tau = c(1, 1)}, and \code{rho_o = 0}.
 #' @examples
 #' # underdamped model with measurement error
@@ -57,6 +65,8 @@
 #'                                               y.sd = 1.5))
 #' @references
 #' Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
+#'
+#' McClintock BT, London JM, Camneron MF, Boveng PL. 2015. Modelling animal movement using the Argos satellite telemetry location error ellipse. Methods Ecol Evol 6:266–277. doi: 10.1111/2041-210X.12286.
 #'
 #' Michelot T, Gloaguen P, Blackwell PG, Etienne M-P. 2019. The Langevin diffusion as a continuous-time model of animal movement and habitat selection. Methods Ecol Evol 10:1894–1907. doi: 10.1111/2041-210X.13275.
 #'

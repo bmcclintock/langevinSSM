@@ -13,33 +13,32 @@ rasterOverlap <- function(r1, r2) {
     stop("Both inputs must be terra::SpatRaster objects.")
   }
 
-  # Ensure geometries (extent, resolution, CRS) match
   if (!terra::compareGeom(r1, r2, stopOnError = FALSE)) {
     stop("Rasters do not have the same geometry (extent, resolution, or CRS). Please resample/project first.")
   }
 
-  if (min(terra::global(r1, "min", na.rm = TRUE)[[1]]) < 0) {
+  min_r1 <- terra::global(r1, "min", na.rm = TRUE)[[1]]
+  if (!is.na(min_r1) && min_r1 < 0) {
     warning("Negative values found in r1. Assuming log-scale and exponentiating.")
     r1 <- exp(r1)
   }
-  if (min(terra::global(r2, "min", na.rm = TRUE)[[1]]) < 0) {
+
+  min_r2 <- terra::global(r2, "min", na.rm = TRUE)[[1]]
+  if (!is.na(min_r2) && min_r2 < 0) {
     warning("Negative values found in r2. Assuming log-scale and exponentiating.")
     r2 <- exp(r2)
   }
 
-  # Calculate global sums to normalize into probability distributions
   sum_r1 <- terra::global(r1, "sum", na.rm = TRUE)[[1]]
   sum_r2 <- terra::global(r2, "sum", na.rm = TRUE)[[1]]
 
-  if (sum_r1 == 0 || sum_r2 == 0 || is.na(sum_r1) || is.na(sum_r2)) {
+  if (is.na(sum_r1) || is.na(sum_r2) || sum_r1 == 0 || sum_r2 == 0) {
     stop("One or both rasters sum to 0 or NA. Cannot normalize into a probability distribution.")
   }
 
-  # Normalize to probabilities (sum of all cells = 1)
   p <- r1 / sum_r1
   q <- r2 / sum_r2
 
-  # Calculate affinity
   pq_sqrt <- sqrt(p * q)
   bc_val <- terra::global(pq_sqrt, "sum", na.rm = TRUE)[[1]]
 

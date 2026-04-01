@@ -51,25 +51,6 @@ test_that("Custom error parameter names are successfully standardized", {
   expect_true(all(c("smaj", "smin", "eor", "x.sd", "y.sd") %in% names(res3)))
 })
 
-test_that("Missing location class (lc) guessing logic works", {
-  dat4 <- get_base_data()
-  dat4$lc <- NULL
-
-  # Suppress messages so they don't clutter the test output log
-  res4 <- suppressMessages(formatData(dat4, lc = "missing_lc_col"))
-
-  # Row 3 has SDs, so it should be GL. Rest should be G.
-  expect_equal(as.character(res4$lc[3]), "GL")
-  expect_true(all(res4$lc[c(1, 2, 4, 5)] == "G"))
-
-  # Test pure GPS guessing (no errors at all)
-  dat4_gps <- dat4
-  dat4_gps$smaj <- dat4_gps$smin <- dat4_gps$eor <- dat4_gps$x.sd <- dat4_gps$y.sd <- NULL
-  res4_gps <- suppressMessages(formatData(dat4_gps, lc = "missing_lc_col", epar=c("a","b","c"), sderr=c("d","e")))
-
-  expect_true(all(res4_gps$lc == "G"))
-})
-
 test_that("EMF integration accurately fills missing NA errors", {
   dat5 <- get_base_data()
   my_emf <- get_emf()
@@ -170,4 +151,21 @@ test_that("Argos classes preserve user-specified errors and selectively bypass E
   # Row 3 (LC B): Had no errors, so it SHOULD be filled by the EMF table
   expect_false(is.na(res9$x.sd[3]))
   expect_equal(res9$x.sd[3], my_emf$emf.x[my_emf$lc == "B"])
+})
+
+test_that("Missing 'lc' column is assigned NA without guessing", {
+  dat10 <- get_base_data()
+  dat10$lc <- NULL # Completely omit the location class column
+
+  res10 <- formatData(dat10)
+
+  expect_true("lc" %in% names(res10))
+  expect_true(all(is.na(res10$lc)))
+})
+
+test_that("Invalid 'lc' classes throw an error", {
+  dat11 <- get_base_data()
+  dat11$lc[1] <- "INVALID"
+
+  expect_error(formatData(dat11), "Invalid location classes detected")
 })

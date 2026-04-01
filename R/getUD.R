@@ -42,13 +42,13 @@ getUD <- function(spatialCovs, beta, log = TRUE) {
     z_times <- terra::time(spatialCovs[[dyn_idx]])
 
     if (!is.null(z_times)) {
-      names(ud_rast) <- paste0("UD_time_", z_times)
+      names(ud_rast) <- paste0(ifelse(log, "log_", ""),"UD_", z_times)
       terra::time(ud_rast) <- z_times
     } else {
-      names(ud_rast) <- paste0("UD_layer_", 1:max_layers)
+      names(ud_rast) <- paste0(ifelse(log, "log_", ""),"UD_layer_", 1:max_layers)
     }
   } else {
-    names(ud_rast) <- "UD_static"
+    names(ud_rast) <- paste0(ifelse(log, "log_", ""), "UD")
   }
 
   return(ud_rast)

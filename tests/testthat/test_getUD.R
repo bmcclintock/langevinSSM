@@ -24,27 +24,7 @@ test_that("getUD enforces matching covariate and beta lengths", {
                "length\\(spatialCovs\\) must equal length\\(beta\\)")
 })
 
-test_that("getUD normalizes probabilities when log = FALSE", {
-  covs <- list(hab = get_static_raster())
-  beta <- c(0.5)
-
-  # Calculate raw log-UD
-  ud_log <- getUD(spatialCovs = covs, beta = beta, log = TRUE)
-
-  # Calculate normalized probability UD
-  ud_prob <- getUD(spatialCovs = covs, beta = beta, log = FALSE)
-
-  # 1. The probability UD should sum exactly to 1 (accounting for tiny floating point differences)
-  sum_prob <- terra::global(ud_prob, "sum", na.rm = TRUE)$sum
-  expect_equal(sum_prob, 1, tolerance = 1e-6)
-
-  # 2. The log-UD should NOT sum to 1
-  sum_log <- terra::global(ud_log, "sum", na.rm = TRUE)$sum
-  expect_false(isTRUE(all.equal(sum_log, 1)))
-})
-
 test_that("getUD handles multiple covariates successfully", {
-  # This explicitly tests the fix we made earlier to avoid the 2:length(x) bug
   covs_single <- list(hab1 = get_static_raster())
   covs_multi <- list(hab1 = get_static_raster(), hab2 = get_static_raster())
 
@@ -52,11 +32,39 @@ test_that("getUD handles multiple covariates successfully", {
   expect_s4_class(getUD(covs_multi, beta = c(0.5, -0.2)), "SpatRaster")
 })
 
-test_that("getUD properly formats dynamic (time-varying) rasters", {
+test_that("getUD computes static log UD correctly", {
+  covs <- list(hab = get_static_raster())
+  ud <- getUD(spatialCovs = covs, beta = c(1), log = TRUE)
+
+  expect_s4_class(ud, "SpatRaster")
+  expect_equal(terra::nlyr(ud), 1)
+  expect_equal(names(ud), "log_UD")
+})
+
+test_that("getUD normalizes static probabilities when log = FALSE", {
+  covs <- list(hab = get_static_raster())
+  beta <- c(0.5)
+
+  # Calculate raw log-UD and normalized probability UD
+  ud_log <- getUD(spatialCovs = covs, beta = beta, log = TRUE)
+  ud_prob <- getUD(spatialCovs = covs, beta = beta, log = FALSE)
+
+  # The probability UD should sum exactly to 1
+  sum_prob <- terra::global(ud_prob, "sum", na.rm = TRUE)$sum
+  expect_equal(sum_prob, 1, tolerance = 1e-6)
+
+  # The log-UD should NOT sum to 1
+  sum_log <- terra::global(ud_log, "sum", na.rm = TRUE)$sum
+  expect_false(isTRUE(all.equal(sum_log, 1)))
+
+  expect_equal(names(ud_prob), "UD")
+})
+
+test_that("getUD properly formats dynamic (time-varying) log UDs", {
   covs_dyn <- list(hab = get_dynamic_raster())
   beta <- c(0.5)
 
-  ud_dyn <- getUD(spatialCovs = covs_dyn, beta = beta)
+  ud_dyn <- getUD(spatialCovs = covs_dyn, beta = beta, log = TRUE)
 
   # The resulting UD should have the same number of layers as the dynamic covariate
   expect_equal(terra::nlyr(ud_dyn), 2)
@@ -65,4 +73,16 @@ test_that("getUD properly formats dynamic (time-varying) rasters", {
   ud_times <- terra::time(ud_dyn)
   expect_false(is.null(ud_times))
   expect_equal(length(ud_times), 2)
+  expect_true(all(grepl("log_UD_2023", names(ud_dyn))))
+})
+
+test_that("getUD dynamic probability UD layers individually sum to 1", {
+  covs_dyn <- list(hab = get_dynamic_raster())
+  ud_prob_dyn <- getUD(spatialCovs = covs_dyn, beta = c(0.5), log = FALSE)
+
+  sums_ud <- terra::global(ud_prob_dyn, "sum", na.rm = TRUE)$sum
+
+  # Ensure normalization applies across all time slices
+  expect_equal(sums_ud[1], 1, tolerance = 1e-6)
+  expect_equal(sums_ud[2], 1, tolerance = 1e-6)
 })

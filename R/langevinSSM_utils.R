@@ -57,128 +57,107 @@ rasterList <- function (rast)
   return(list(x = xgrid, y = ygrid, z = z))
 }
 
-## modified from aniMotum version 1.2-15 (https://github.com/ianjonsen/aniMotum)
+## modified from aniMotum version 1.2-15
 #' @importFrom sf st_as_sf st_crs
 #' @importFrom dplyr tibble
-format_data <- function (x, id = "id", date = "date", lc = "lc", coord = c("x", "y"), epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), tz = "UTC") {
+format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "y"), epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), tz = "UTC") {
 
   if (id %in% names(x))
     stopifnot(`id must be a character string` = is.character(id))
-  else {
-    stop("An 'id' variable must be included in the input data\n")
-  }
+  else stop("An 'id' variable must be included in the input data\n")
+
   stopifnot(`date must be a character string` = is.character(date))
   stopifnot(`lc must be a character string` = is.character(lc))
   stopifnot(`coord must be a character vector with 1 or 2 elements` = all(is.character(coord)))
   stopifnot(`epar must be a character vector with 3 elements` = all(is.character(epar)))
   stopifnot(`sderr must be a character vector with 2 elements` = all(is.character(sderr)))
+
   if (all(!inherits(x, "sf"), "geometry" %in% names(x))) {
-    if (inherits(x$geometry, "sfc")) {
-      x <- sf::st_as_sf(x)
-    }
+    if (inherits(x$geometry, "sfc")) x <- sf::st_as_sf(x)
   }
-  if (inherits(x, "sf")) {
-    coord <- "geometry"
-  }
-  stopifnot(`An id variable must be included in the input data; \n            see vignette('Overview', package = 'aniMotum')` = id %in%
-              names(x))
-  stopifnot(`A date/time variable must be included in the input data; \n            see vignette('Overview', package = 'aniMotum')` = date %in%
-              names(x))
-  stopifnot(`Coordinate variables must be included in the input data; \n            see vignette('Overview', package = 'aniMotum')` = all(coord %in%
-                                                                                                                                            names(x)))
-  if (inherits(x, "sf") & is.na(sf::st_crs(x))) {
-    stop("\nCRS info is missing from input data sf object")
-  }
+  if (inherits(x, "sf")) coord <- "geometry"
+
+  stopifnot(`An id variable must be included in the input data` = id %in% names(x))
+  stopifnot(`A date/time variable must be included in the input data` = date %in% names(x))
+  stopifnot(`Coordinate variables must be included in the input data` = all(coord %in% names(x)))
+
+  if (inherits(x, "sf") & is.na(sf::st_crs(x))) stop("\nCRS info is missing from input data sf object")
+
+  # --- SAFELY GUESS LOCATION CLASS ---
   if (!lc %in% names(x)) {
-    if (all(!epar %in% names(x)) & all(sderr %in% names(x))) {
-      if (inherits(x, "data.frame", which = TRUE) == 1) {
-        x <- data.frame(x, lc = rep("GL", nrow(x)))
+    x[[lc]] <- "G" # Default to GPS
+
+    # If sderr columns exist, tag those specific rows as Generic Locations ("GL")
+    if (any(sderr %in% names(x))) {
+      if (all(!epar %in% names(x))) {
+        x[[lc]] <- "GL"
+        message("Guessing that missing location classes are Generic Locations ('GL').")
+      } else {
+        # Mixed dataset: only flag the rows that actually use sderr
+        x[[lc]][!is.na(x[[sderr[1]]])] <- "GL"
       }
-      else if (inherits(x, "tbl_df", which = TRUE) == 1) {
-        x <- tibble(x, lc = "GL")
-      }
-      else if (inherits(x, "sf", which = TRUE) == 1) {
-        x$lc <- rep("GL", nrow(x))
-      }
-      x <- x[, c(id, date, "lc", coord, sderr)]
-    }
-    else if (all(!epar %in% names(x)) & all(!sderr %in% names(x))) {
-      message("Guessing that all observations are GPS locations.")
-      if (inherits(x, "data.frame", which = TRUE) == 1) {
-        x <- data.frame(x, lc = rep("G", nrow(x)))
-      }
-      else if (inherits(x, "tbl_df", which = TRUE) == 1) {
-        x <- dplyr::tibble(x, lc = rep("G", nrow(x)))
-      }
-      else if (inherits(x, "sf", which = TRUE) == 1) {
-        x$lc <- rep("G", nrow(x))
-      }
-      x <- x[, c(id, date, "lc", coord)]
+    } else {
+      message("Guessing that missing location classes are GPS ('G').")
     }
   }
-  xx <- x
-  xt.vars <- names(x)[!names(x) %in% c(id, date, lc, coord,
-                                       epar, sderr)]
-  if (all(!c("lon", "lat") %in% coord, coord != "geometry")) {
-    pos1 <- grepl("lon", coord, ignore.case = TRUE)
-    pos2 <- grepl("lat", coord, ignore.case = TRUE)
-    if (!any(pos1)) {
-      pos1 <- grepl("x", coord, ignore.case = TRUE)
-      pos2 <- grepl("y", coord, ignore.case = TRUE)
-    }
-    coord <- coord[c(which(pos1), which(pos2))]
+
+  # --- DYNAMIC COLUMN INJECTION ---
+  if (all(!epar %in% names(x))) {
+    x[[epar[1]]] <- as.double(NA)
+    x[[epar[2]]] <- as.double(NA)
+    x[[epar[3]]] <- as.double(NA)
   }
-  if (all(!epar %in% names(x), !sderr %in% names(x))) {
-    x$smaj <- x$smin <- x$eor <- as.double(NA)
-    x$x.sd <- x$y.sd <- as.double(NA)
-    xx <- x[, c(id, date, lc, coord, epar, sderr, xt.vars)]
-    if (all(!inherits(x, "sf"), all(coord %in% c("lon", "lat")))) {
-      names(xx)[1:5] <- c("id", "date", "lc", coord)
-      names(xx)[4:5] <- c("lon", "lat")
-    }
-    else if (all(!inherits(x, "sf"), any(!coord %in% c("lon",
-                                                       "lat")))) {
-      names(xx)[1:5] <- c("id", "date", "lc", "lon", "lat")
-    }
-    else if (inherits(x, "sf")) {
-      names(xx)[1:4] <- c("id", "date", "lc", coord)
-    }
+  if (all(!sderr %in% names(x))) {
+    x[[sderr[1]]] <- as.double(NA)
+    x[[sderr[2]]] <- as.double(NA)
   }
-  if (all(epar %in% names(x), !sderr %in% names(x))) {
-    x$x.sd <- x$y.sd <- as.double(NA)
-    xx <- x[, c(id, date, lc, coord, epar, sderr, xt.vars)]
-    if (all(!inherits(x, "sf"), coord != "geometry")) {
-      names(xx)[1:8] <- c("id", "date", "lc", coord, "smaj",
-                          "smin", "eor")
-      names(xx)[4:5] <- c("lon", "lat")
-    }
-    else if (inherits(x, "sf")) {
-      names(xx)[1:7] <- c("id", "date", "lc", coord, "smaj",
-                          "smin", "eor")
-    }
-  }
-  if (all(!epar %in% names(x), sderr %in% names(x))) {
-    x$smaj <- x$smin <- x$eor <- as.double(NA)
-    xx <- x[, c(id, date, lc, coord, epar, sderr, xt.vars)]
-    if (!inherits(x, "sf")) {
-      names(xx)[c(1:5, 9:10)] <- c("id", "date", "lc",
-                                   coord, "x.sd", "y.sd")
-    }
-    else if (inherits(x, "sf")) {
-      names(xx)[c(1:4, 8:9)] <- c("id", "date", "lc", coord,
-                                  "x.sd", "y.sd")
-    }
-  }
-  if (is.factor(xx$id))
-    xx$id <- droplevels(xx$id)
+
+  xt.vars <- names(x)[!names(x) %in% c(id, date, lc, coord, epar, sderr)]
+
+  # Subset cleanly
+  xx <- x[, c(id, date, lc, coord, epar, sderr, xt.vars)]
+
+  # Force standard names
+  new_names <- c("id", "date", "lc", coord, "smaj", "smin", "eor", "x.sd", "y.sd", xt.vars)
+  names(xx) <- new_names
+
+  if (is.factor(xx$id)) xx$id <- droplevels(xx$id)
   xx$id <- as.character(xx$id)
+
   if (!inherits(xx$date, "POSIXt")) {
     xx$date <- try(as.POSIXct(xx$date, tz = tz), silent = TRUE)
     if (inherits(xx$date, "try-error"))
       stop("dates must be in a standard format: YYYY-MM-DD HH:MM:SS")
   }
+
   xx <- xx[order(xx$date), ]
   return(xx)
+}
+
+# modfied from aniMotum version 1.2-15
+#' Error multiplication factors
+#'
+#' A function to generate a data frame of error multiplication factors (EMF) for different location classes, which can be used to account for measurement error for observations that lack error information but have a known location quality class. The default values are based on the EMF values for Argos satellite telemetry data, but users can specify their own EMF values for different location classes as needed. It is a modified version of the \code{emf} function from the \href{https://ianjonsen.github.io/aniMotum/}{aniMotum} package.
+#'
+#' @param gps A numeric value or a vector of length 2 specifying the error multiplication factor for GPS locations. If a single value is provided, it will be used for both x and y axes. Default is 0.1 (i.e. GPS errors are 10x more accurate than Argos \code{lc} 3.
+#' @param emf.x A numeric vector of length 6 specifying the error multiplication factors for the x-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
+#' @param emf.y A numeric vector of length 6 specifying the error multiplication factors for the y-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
+#' @return A data frame with columns \code{lc}, \code{x.sd}, and \code{y.sd} containing the error multiplication factors for each location class. The location classes included are "G" for GPS and "3", "2", "1", "0", "A", "B", and "Z" for Argos satellite telemetry data.
+#' @export
+get_emf <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
+                     emf.y = c(1, 1.29, 2.55, 14.99, 22, 32.53))
+{
+  if (!length(gps) %in% 1:2)
+    stop("GPS emf must be a vector of length 1 or 2")
+  if (length(emf.x) != 6)
+    stop("Argos emf.x must be a vector of length 6")
+  if (length(emf.y) != 6)
+    stop("Argos emf.y must be a vector of length 6")
+  if (length(gps) == 1)
+    gps <- c(gps, gps)
+  data.frame(emf.x = c(gps[1], emf.x, emf.x[6]), emf.y = c(gps[2],
+                                                           emf.y, emf.y[6]), lc = as.character(c("G", "3", "2",
+                                                                                                 "1", "0", "A", "B", "Z")))
 }
 
 checkErrorData <- function(data, coord=c("x","y")){

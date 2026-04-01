@@ -63,7 +63,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   time.unit <- attr(data,"time.unit")
 
   # Prepare raster data
-  raster_data <- prepareRaster(spatialCovs,data=data,scaleFactor=scaleFactor,time.unit=time.unit)
+  raster_data <- prepareRaster(spatialCovs,scaleFactor=scaleFactor,time.unit=time.unit,data=data,coord=coord)
 
   if(!all(coord %in% colnames(data))) stop("coord not found in data.")
 

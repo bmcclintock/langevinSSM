@@ -35,8 +35,9 @@ fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list
 fit$estimates$natural
 
 exampleDat$date <- as.POSIXlt(exampleDat$date*100*60, tz = "UTC")
-attr(exampleDat,"time.unit") <- "mins"
 exampleDat$lc <- "G"
+exampleDat <- exampleDat[,c("id","date","dt","x","y","lc","smaj","smin","eor","x.sd","y.sd","mu.x","mu.y","vel.x","vel.y")]
+attr(exampleDat,"time.unit") <- "mins"
 
 lapply(1:ncov,function(x) terra::writeRaster(exampleCovs[[x]], paste0("inst/extdata/exampleCov",x,".tif"),overwrite=TRUE))
 usethis::use_data(exampleDat,compress="xz",overwrite=TRUE)

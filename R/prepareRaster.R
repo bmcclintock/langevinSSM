@@ -13,8 +13,8 @@ getRasterTimes <- function(r, time.unit) {
   }
 }
 
-#' @importFrom terra rast values nlyr time as.array crds res
-prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = NULL) {
+#' @importFrom terra rast values nlyr time as.array crds res ext compareGeom
+prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = NULL, coord = NULL) {
 
   if(!is.list(spatialCovs)) stop('spatialCovs must be a list')
   spatialcovnames <- names(spatialCovs)
@@ -25,7 +25,35 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
   #  stop("Package \"terra\" needed for spatial covariates. Please install it.", call. = FALSE)
   #}
 
+  if (nbSpatialCovs > 1) {
+    base_rast <- spatialCovs[[1]]
+    for (j in 2:nbSpatialCovs) {
+      # compareGeom checks CRS, extent, and resolution natively
+      if (!terra::compareGeom(base_rast, spatialCovs[[j]], stopOnError = FALSE)) {
+        stop("All rasters in the 'spatialCovs' list must share the exact same projection (CRS), extent, and resolution. Mismatch detected in: ", spatialcovnames[j])
+      }
+    }
+  }
+
   rasterStack <- terra::rast(spatialCovs)
+
+  if (!is.null(data) && all(coord %in% names(data))) {
+    cov_ext <- as.vector(terra::ext(rasterStack)) # Returns c(xmin, xmax, ymin, ymax)
+    data_xmin <- min(data[[coord[1]]], na.rm = TRUE)
+    data_xmax <- max(data[[coord[1]]], na.rm = TRUE)
+    data_ymin <- min(data[[coord[2]]], na.rm = TRUE)
+    data_ymax <- max(data[[coord[2]]], na.rm = TRUE)
+
+    if (data_xmin > cov_ext["xmax"] || data_xmax < cov_ext["xmin"] ||
+        data_ymin > cov_ext["ymax"] || data_ymax < cov_ext["ymin"]) {
+      stop("The tracking data does not overlap with 'spatialCovs'. Please ensure they share the same metric projection and cover the same area.")
+    }
+
+    if (data_xmin < cov_ext["xmin"] || data_xmax > cov_ext["xmax"] ||
+        data_ymin < cov_ext["ymin"] || data_ymax > cov_ext["ymax"]) {
+      stop("Some tracking locations fall outside the boundaries of 'spatialCovs'. Expand the extent of the rasters.")
+    }
+  }
 
   for(j in 1:nbSpatialCovs) {
     if(!inherits(spatialCovs[[j]], "SpatRaster")) {

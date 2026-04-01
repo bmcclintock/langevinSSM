@@ -6,7 +6,15 @@ getInitialPosition <- function(nbAnimals,initialPosition,spatialCovs,beta){
   if(missing(initialPosition)){
     message("   Randomly drawing initial positions from UD...")
     UD <- getUD(spatialCovs, beta=beta,log=TRUE)
-    initPos <- matrix(sample(terra::ncell(UD[[1]]),nbAnimals,replace=FALSE,prob=exp(terra::values(UD[[1]]))/sum(exp(terra::values(UD[[1]])))),
+
+    log_ud_vals <- as.numeric(terra::values(UD[[1]]))
+    max_log_ud <- max(log_ud_vals, na.rm = TRUE)
+
+    prob_vals <- exp(log_ud_vals - max_log_ud)
+    prob_vals[is.na(prob_vals)] <- 0
+    prob_vals <- prob_vals / sum(prob_vals)
+
+    initPos <- matrix(sample(terra::ncell(UD[[1]]),nbAnimals,replace=FALSE,prob=prob_vals),
                       1,nbAnimals,byrow=TRUE)
     initialPosition <- t(mapply(function(x) terra::xyFromCell(UD,initPos[,x]),1:nbAnimals,SIMPLIFY = FALSE))
   } else {

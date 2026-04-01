@@ -32,7 +32,7 @@
 #' \item{iterations}{See \code{\link[stats]{nlminb}}}
 #' \item{evaluations}{See \code{\link[stats]{nlminb}}}
 #' \item{elapsedTime}{Run time of the optimization}
-#' \item{estimates}{List containing point estimates and standard error for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates for the true locations (``mu'') and/or the true velocities (``vel'').}
+#' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing estimates point estimates (``est'') and standard error (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
 #' \item{conditions}{List containing the optimization settings}
 #'
 #' @examples

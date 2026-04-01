@@ -21,43 +21,16 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
   if(is.null(spatialcovnames)) stop('spatialCovs must be a named list')
   nbSpatialCovs <- length(spatialcovnames)
 
-  #if (!requireNamespace("terra", quietly = TRUE)) {
-  #  stop("Package \"terra\" needed for spatial covariates. Please install it.", call. = FALSE)
-  #}
-
-  if (nbSpatialCovs > 1) {
-    base_rast <- spatialCovs[[1]]
-    for (j in 2:nbSpatialCovs) {
-      # compareGeom checks CRS, extent, and resolution natively
-      if (!terra::compareGeom(base_rast, spatialCovs[[j]], stopOnError = FALSE)) {
-        stop("All rasters in the 'spatialCovs' list must share the exact same projection (CRS), extent, and resolution. Mismatch detected in: ", spatialcovnames[j])
-      }
-    }
-  }
-
-  rasterStack <- terra::rast(spatialCovs)
-
-  if (!is.null(data) && all(coord %in% names(data))) {
-    cov_ext <- as.vector(terra::ext(rasterStack)) # Returns c(xmin, xmax, ymin, ymax)
-    data_xmin <- min(data[[coord[1]]], na.rm = TRUE)
-    data_xmax <- max(data[[coord[1]]], na.rm = TRUE)
-    data_ymin <- min(data[[coord[2]]], na.rm = TRUE)
-    data_ymax <- max(data[[coord[2]]], na.rm = TRUE)
-
-    if (data_xmin > cov_ext["xmax"] || data_xmax < cov_ext["xmin"] ||
-        data_ymin > cov_ext["ymax"] || data_ymax < cov_ext["ymin"]) {
-      stop("The tracking data does not overlap with 'spatialCovs'. Please ensure they share the same metric projection and cover the same area.")
-    }
-
-    if (data_xmin < cov_ext["xmin"] || data_xmax > cov_ext["xmax"] ||
-        data_ymin < cov_ext["ymin"] || data_ymax > cov_ext["ymax"]) {
-      stop("Some tracking locations fall outside the boundaries of 'spatialCovs'. Expand the extent of the rasters.")
-    }
-  }
-
   for(j in 1:nbSpatialCovs) {
+
     if(!inherits(spatialCovs[[j]], "SpatRaster")) {
       stop("spatialCovs$", spatialcovnames[j], " must be of class 'SpatRaster'")
+    }
+
+    if (j > 1) {
+      if (!terra::compareGeom(spatialCovs[[1]], spatialCovs[[j]], stopOnError = FALSE)) {
+        stop("All rasters in the 'spatialCovs' list must share the exact same projection (CRS), extent, and resolution. Mismatch detected in: ", spatialcovnames[j])
+      }
     }
 
     if(any(is.na(terra::values(spatialCovs[[j]])))) {
@@ -65,16 +38,49 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
     }
 
     if(terra::nlyr(spatialCovs[[j]]) > 1) {
-
       t_vals <- terra::time(spatialCovs[[j]])
 
-      # Check if time/Z values are set
       if(is.null(t_vals) || all(is.na(t_vals))) {
         stop("spatialCovs$", spatialcovnames[j], " is a multi-layer raster that must have time values set (see ?terra::time)")
-      }
-
-      else if(!is.null(data) && !("date" %in% names(data))) {
+      } else if(!is.null(data) && !("date" %in% names(data))) {
         stop("spatialCovs$", spatialcovnames[j], " requires a 'date' column in 'data' to match the raster's dynamic layers")
+      }
+    }
+  }
+
+  rasterStack <- terra::rast(spatialCovs)
+
+  if (!is.null(data) && all(coord %in% names(data))) {
+    cov_ext <- as.vector(terra::ext(rasterStack))
+    data_xmin <- min(data[[coord[1]]], na.rm = TRUE)
+    data_xmax <- max(data[[coord[1]]], na.rm = TRUE)
+    data_ymin <- min(data[[coord[2]]], na.rm = TRUE)
+    data_ymax <- max(data[[coord[2]]], na.rm = TRUE)
+
+    if (data_xmin > cov_ext["xmax"] || data_xmax < cov_ext["xmin"] ||
+        data_ymin > cov_ext["ymax"] || data_ymax < cov_ext["ymin"]) {
+      stop("The tracking data do not overlap with 'spatialCovs'. Please ensure they share the same metric projection and cover the same area.")
+    }
+
+    if (data_xmin < cov_ext["xmin"] || data_xmax > cov_ext["xmax"] ||
+        data_ymin < cov_ext["ymin"] || data_ymax > cov_ext["ymax"]) {
+      stop("Some tracking locations fall outside the boundaries of 'spatialCovs'. Expand the extent of the rasters.")
+    }
+
+    err_x_vals <- c(data$x.sd, data$smaj)
+    err_y_vals <- c(data$y.sd, data$smaj)
+
+    max_err_x <- if (all(is.na(err_x_vals))) 0 else max(err_x_vals, na.rm = TRUE)
+    max_err_y <- if (all(is.na(err_y_vals))) 0 else max(err_y_vals, na.rm = TRUE)
+
+    # Use a 3-sigma (approx 99% CI) buffer
+    buffer_x <- 3 * max_err_x
+    buffer_y <- 3 * max_err_y
+
+    if (max_err_x > 0 || max_err_y > 0) {
+      if ((data_xmin - buffer_x) < cov_ext["xmin"] || (data_xmax + buffer_x) > cov_ext["xmax"] ||
+          (data_ymin - buffer_y) < cov_ext["ymin"] || (data_ymax + buffer_y) > cov_ext["ymax"]) {
+        warning("Some tracking locations are close to the edge of 'spatialCovs' relative to their measurement error. Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates, the model may attempt to push locations outside the raster extent during fitting, causing convergence failures or crashes. Consider expanding the spatial extent of your rasters.")
       }
     }
   }

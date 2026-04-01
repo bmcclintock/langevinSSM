@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# {langevinSSM}
+# {langevinSSM} <img src="man/figures/langevinSSM_hex.png" align="right" style="height:170px; width:auto;">
 
 #### Habitat-driven Langevin Diffusion with Spatial Uncertainty
 
@@ -83,12 +83,12 @@ fit <- fitLangevin(model = "underdamped",
 
 fit$estimates$natural # fixed parameter estimates
 #>         Estimate Std. Error
-#> beta  -3.9594701 1.26147867
-#> beta   5.3510150 1.62107927
-#> beta   2.7943331 1.04202103
-#> beta  -0.1212424 0.07997307
-#> sigma  5.5354852 0.71588476
-#> gamma  0.4743000 0.13127897
+#> beta  -3.9594706 1.26148565
+#> beta   5.3510158 1.62128186
+#> beta   2.7943335 1.04215359
+#> beta  -0.1212424 0.07997633
+#> sigma  5.5354848 0.71596207
+#> gamma  0.4743000 0.13129113
 #> rho_o  0.0000000 0.00000000
 #> tau    1.0000000 0.00000000
 #> tau    1.0000000 0.00000000

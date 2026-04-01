@@ -14,7 +14,6 @@ knitr::opts_chunk$set(
 ```
 
 
-
 # {langevinSSM} <img src="man/figures/langevinSSM_hex.png" align="right" style="height:170px; width:auto;">
 
 ####  Habitat-driven Langevin Diffusion with Spatial Uncertainty

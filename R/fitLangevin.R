@@ -272,6 +272,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                          control = control,
                          calcOSA = calcOSA)
 
-  class(fit) <- append("fitLangevin",class(fit))
+  fit <- class_fitLangevin(fit)
+
   return(fit)
 }

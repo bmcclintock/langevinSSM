@@ -193,8 +193,7 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
 
   checkErrorData(out, coord = c("x", "y"))
 
-  attr(out, "time.unit") <- time.unit
-  if(!inherits(out, "dataLangevin")) class(out) <- append(class(out), "dataLangevin")
+  out <- class_dataLangevin(out, time.unit = time.unit)
 
   return(out)
 }

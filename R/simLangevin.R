@@ -124,6 +124,8 @@ simLangevin <- function(model = c("underdamped","overdamped"),
   if(model=="underdamped") out <- out %>% dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd,mu.x,mu.y,vel.x,vel.y)
   else if(model=="overdamped") out <- out %>% dplyr::select(id,date,dt,x,y,smaj,smin,eor,x.sd,y.sd,mu.x,mu.y)
   #out$eor <- out$eor * 180 / pi # convert error ellipse orientation from radians to degrees
-  class(out) <- append("dataLangevin",class(out))
+
+  out <- class_dataLangevin(out)
+
   return(out)
 }

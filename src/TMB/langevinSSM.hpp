@@ -167,9 +167,11 @@ Type langevinSSM(objective_function<Type>* obj)
             s2*h(i)/gamma * (Type(1.0) - exp_gdt);
 
           // Construct variance-covariance matrix
+          // Added 1e-6 nugget to the diagonal to prevent floating-point
+          // FMA underflow crashes on Linux/GCC during nlminb exploration
           matrix<Type> Sigma(2,2);
-          Sigma(0,0) = var_x;
-          Sigma(1,1) = var_v;
+          Sigma(0,0) = var_x + Type(1e-6);
+          Sigma(1,1) = var_v + Type(1e-6);
           Sigma(0,1) = cov_xv;
           Sigma(1,0) = cov_xv;
 
@@ -219,11 +221,12 @@ Type langevinSSM(objective_function<Type>* obj)
       }
 
       // TMB oneStepPredict Bivariate Decomposition
-      Type varX = cov_obs(0,0);
-      Type varY = cov_obs(1,1);
+      // Added 1e-6 nugget to variances to prevent floating-point underflow from passing a negative number to sqrt() on Linux/GCC architectures
+      Type varX = cov_obs(0,0) + Type(1e-6);
+      Type varY = cov_obs(1,1) + Type(1e-6);
       Type covXY = cov_obs(0,1);
 
-      Type sdX = sqrt(varX); // Only 1 square root needed instead of 3!
+      Type sdX = sqrt(varX);
 
       Type x_obs = Y(0,i);
       Type y_obs = Y(1,i);
@@ -237,10 +240,10 @@ Type langevinSSM(objective_function<Type>* obj)
       nll -= kX * dnorm(x_obs, mu_x, sdX, true);
 
       // 2. Conditional Likelihood of Y
-      // Optimized algebra: Completely bypasses calculating sdY and rho.
-      // If kX == 0, the (covXY/varX) terms are zeroed out, and the math
-      // perfectly reverts to the marginal distribution of Y!
       Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
+
+      // Because we added 1e-6 to varX and varY above, this term is mathematically
+      // guaranteed to be strictly positive, making the sqrt() perfectly safe.
       Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
 
       nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);

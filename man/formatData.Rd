@@ -13,6 +13,7 @@ formatData(
   epar = c("smaj", "smin", "eor"),
   sderr = c("x.sd", "y.sd"),
   emf = NULL,
+  predTimes = NULL,
   time.unit = "hours",
   tz = "UTC"
 )
@@ -22,7 +23,7 @@ formatData(
 
 \item{id}{Character string specifying the column name for the animal ID. Default: ``id''.}
 
-\item{date}{Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}}. Default: ``date''.}
+\item{date}{Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}} or a character string parseable to a date/time (e.g., "YYYY-MM-DD HH:MM:SS"). Default: ``date''.}
 
 \item{coord}{Character vector of length 2 specifying the column names for the (projected) coordinates. Default: c("x", "y").}
 
@@ -33,6 +34,8 @@ formatData(
 \item{sderr}{Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.sd", "y.sd").}
 
 \item{emf}{An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{get_emf}}). If provided, these values will be used to fill in \code{x.sd} and \code{y.sd} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.}
+
+\item{predTimes}{An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all other columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.}
 
 \item{time.unit}{Character string specifying the time unit for the time steps. Default: ``hours''.}
 
@@ -68,6 +71,9 @@ For x- and y-axis error data, the columns specified in \code{sderr} should conta
   \item \strong{Generic Locations (GL):} Locations where standard deviations (\code{x.sd}, \code{y.sd}) are explicitly provided by the user. If \code{emf} is specified but no \code{x.sd} and \code{y.sd} are provided, these rows are not filled unless \code{emf} includes an entry for \code{GL} (otherwise an error is returned).
   \item \strong{No Measurement Error:} If the \code{emf} argument is \code{NULL} (the default), observations with \code{NA} for all \code{epar} columns and \code{NA} for all \code{sderr} columns are assumed to have no measurement error. Their existing location class is preserved.
 }
+
+\strong{Predicting Locations at Specific Times:}
+The \code{predTimes} argument allows users to specify custom times at which they want the model to output predictions of the animal's true trajectory (e.g., to standardize the temporal resolution of the track). When formatting the data, \code{formatData} pads the dataset with these requested times, assigning \code{NA} to the coordinates and measurement error columns. During model fitting, whenever a coordinate is \code{NA} (either natively in the dataset or injected via \code{predTimes}), \code{\link{fitLangevin}} bypasses the observation error model evaluation for that time step. Instead, it relies purely on the Langevin diffusion state process model to predict the true (latent) location.
 }
 \examples{
 # exampleDat included in package; see ?exampleDat for details

@@ -4,12 +4,13 @@
 #'
 #' @param data A data frame or \code{\link[sf]{sf}} object containing the tracking data to be formatted. The data must contain columns for the animal ID (``id''), date/time (``date''), location quality class (``lc''; if applicable), coordinates (``coord''), and measurement error (``epar'' and/or ``sderr''; if applicable). The column names can be specified using the corresponding arguments of this function.
 #' @param id Character string specifying the column name for the animal ID. Default: ``id''.
-#' @param date Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}}. Default: ``date''.
+#' @param date Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}} or a character string parseable to a date/time (e.g., "YYYY-MM-DD HH:MM:SS"). Default: ``date''.
 #' @param coord Character vector of length 2 specifying the column names for the (projected) coordinates. Default: c("x", "y").
 #' @param lc Character string specifying the column name for the location quality class. Default: ``lc''.
 #' @param epar Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). See Details. Default: c("smaj", "smin", "eor").
 #' @param sderr Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.sd", "y.sd").
 #' @param emf An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{get_emf}}). If provided, these values will be used to fill in \code{x.sd} and \code{y.sd} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.
+#' @param predTimes An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all other columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.
 #' @param time.unit Character string specifying the time unit for the time steps. Default: ``hours''.
 #' @param tz Character string specifying the time zone for the date/time column. Default: ``UTC''.
 #' @return A data frame of class \code{dataLangevin} containing the formatted tracking data. The data frame contains the following columns:
@@ -39,6 +40,9 @@
 #'   \item \strong{No Measurement Error:} If the \code{emf} argument is \code{NULL} (the default), observations with \code{NA} for all \code{epar} columns and \code{NA} for all \code{sderr} columns are assumed to have no measurement error. Their existing location class is preserved.
 #' }
 #'
+#' \strong{Predicting Locations at Specific Times:}
+#' The \code{predTimes} argument allows users to specify custom times at which they want the model to output predictions of the animal's true trajectory (e.g., to standardize the temporal resolution of the track). When formatting the data, \code{formatData} pads the dataset with these requested times, assigning \code{NA} to the coordinates and measurement error columns. During model fitting, whenever a coordinate is \code{NA} (either natively in the dataset or injected via \code{predTimes}), \code{\link{fitLangevin}} bypasses the observation error model evaluation for that time step. Instead, it relies purely on the Langevin diffusion state process model to predict the true (latent) location.
+#'
 #' @examples
 #' # exampleDat included in package; see ?exampleDat for details
 #' head(exampleDat)
@@ -52,7 +56,7 @@
 #' @importFrom dplyr rename arrange select all_of everything
 #' @importFrom sf st_coordinates st_drop_geometry st_is_longlat
 #' @export
-formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), emf = NULL, time.unit = "hours", tz = "UTC"){
+formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), emf = NULL, predTimes = NULL, time.unit = "hours", tz = "UTC"){
 
   if (inherits(data, "sf")) {
     if (sf::st_is_longlat(data)) {
@@ -75,7 +79,7 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
   }
 
   if(!inherits(data[[date]],"POSIXt") && !is.character(data[[date]])) {
-    stop("data$date must be of class 'POSIXt' or a character string parseable to a date.")
+    stop(paste0("data$", date, " must be of class 'POSIXt' or a character string parseable to a date."))
   }
 
   if (!(lc %in% names(data))) {
@@ -90,11 +94,54 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
     }
   }
 
+  if (!is.null(predTimes)) {
+    if (!is.data.frame(predTimes)) stop("'predTimes' must be a data frame.")
+    if (!all(c(id, date) %in% names(predTimes))) stop(paste0("'predTimes' must contain '", id, "' and '", date, "' columns to match 'data'."))
+    if (!all(predTimes[[id]] %in% data[[id]])) stop(paste0("All track ID's in 'predTimes[[", id, "]]' must exist in 'data[[", id, "]]'."))
+    is_posix <- inherits(data[[date]], "POSIXt") && inherits(predTimes[[date]], "POSIXt")
+    is_char <- is.character(data[[date]]) && is.character(predTimes[[date]])
+    if (!(is_posix || is_char)) {
+      stop(paste0("The '", date, "' column in 'predTimes' must be of the same type (POSIXt or character) as the '", date, "' column in 'data'."))
+    }
+  }
+
   out <- format_data(x = data, id = id, date = date, coord = coord, lc = lc, epar = epar, sderr = sderr, tz = tz)
 
   out <- out %>%
     dplyr::rename(x = dplyr::all_of(coord[1]), y = dplyr::all_of(coord[2])) %>%
     dplyr::arrange(id, date)
+
+  first_obs <- out[!duplicated(out$id), ]
+  if(any(is.na(first_obs$x) | is.na(first_obs$y))) {
+    stop("The first observation for each track in 'data' cannot have missing (NA) coordinates.")
+  }
+
+  if (!is.null(predTimes)) {
+    pt_dates <- predTimes[[date]]
+    if (!inherits(pt_dates, "POSIXt")) {
+      pt_dates <- try(as.POSIXct(pt_dates, tz = tz), silent = TRUE)
+      if (inherits(pt_dates, "try-error")) stop("'predTimes' dates must be in a standard format: YYYY-MM-DD HH:MM:SS")
+    }
+
+    pt_ids <- as.character(predTimes[[id]])
+
+    for (uid in unique(pt_ids)) {
+      first_time <- first_obs$date[first_obs$id == uid]
+      if (length(first_time) > 0 && any(pt_dates[pt_ids == uid] < first_time)) {
+        stop(paste0("In 'predTimes', track '", uid, "' contains dates prior to its first observation in 'data'."))
+      }
+    }
+
+    pt_pad <- data.frame(id = pt_ids, date = pt_dates)
+    missing_cols <- setdiff(names(out), names(pt_pad))
+    for (col in missing_cols) {
+      pt_pad[[col]] <- NA
+    }
+    pt_pad <- pt_pad[, names(out)]
+
+    out <- rbind(out, pt_pad)
+    out <- out %>% dplyr::arrange(id, date)
+  }
 
   dt_list <- lapply(split(out$date, out$id), function(t) {
     c(0, as.numeric(difftime(t[-1], t[-length(t)], units = time.unit)))

@@ -129,3 +129,33 @@ test_that("fitLangevin validates parameter lengths and map structures", {
   expect_error(fitLangevin(data = dat, spatialCovs = r, par = p, map = nonsense_map),
                "map")
 })
+
+test_that("fitLangevin rejects observation parameters when data lacks corresponding errors", {
+  r <- list(habitat = get_valid_raster())
+  dat <- get_valid_dataLangevin() # This mock has x.sd/y.sd, but NO smaj/smin/eor
+  p <- get_valid_par()
+
+  # attempt to pass psi (should fail because there is no ellipse data)
+  p_bad_psi <- p
+  p_bad_psi$psi <- 1.5
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p_bad_psi)),
+               "error ellipse observations")
+
+  # map psi should also fail
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, map = list(psi = as.factor(NA)))),
+               "error ellipse observations")
+
+  # now strip LS/GPS data to test tau/rho rejection
+  dat_no_err <- dat
+  dat_no_err$x.sd <- NA
+  dat_no_err$y.sd <- NA
+
+  p_bad_tau <- p
+  p_bad_tau$tau <- c(1, 1)
+  expect_error(suppressMessages(fitLangevin(data = dat_no_err, spatialCovs = r, par = p_bad_tau)),
+               "standard deviation observations")
+
+  # map rho_o should fail
+  expect_error(suppressMessages(fitLangevin(data = dat_no_err, spatialCovs = r, par = p, map = list(rho_o = as.factor(NA)))),
+               "standard deviation observations")
+})

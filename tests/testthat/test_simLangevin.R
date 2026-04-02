@@ -37,17 +37,20 @@ test_that("simLangevin returns a correctly structured dataLangevin object", {
   r <- list(habitat = get_valid_raster())
   p <- get_valid_par()
 
-  res <- simLangevin(model = "underdamped", par = p, spatialCovs = r,
-                     nbAnimals = 1, obsPerAnimal = 5, timeStep = 0.1,
-                     initialPosition = c(50, 50))
+  res <- suppressMessages(simLangevin(model = "underdamped", par = p, spatialCovs = r,
+                                      nbAnimals = 1, obsPerAnimal = 5, timeStep = 0.1,
+                                      initialPosition = c(50, 50)))
 
   expect_s3_class(res, "dataLangevin")
   expect_true(all(c("id", "date", "dt", "x", "y", "mu.x", "mu.y", "vel.x", "vel.y") %in% names(res)))
   expect_equal(nrow(res), 5)
 
-  res_over <- simLangevin(model = "overdamped", par = p, spatialCovs = r,
-                          nbAnimals = 1, obsPerAnimal = 5, timeStep = 0.1,
-                          initialPosition = c(50, 50))
+  # Remove gamma for the overdamped model!
+  p_overdamped <- list(beta = p$beta, sigma = p$sigma)
+
+  res_over <- suppressMessages(simLangevin(model = "overdamped", par = p_overdamped, spatialCovs = r,
+                                           nbAnimals = 1, obsPerAnimal = 5, timeStep = 0.1,
+                                           initialPosition = c(50, 50)))
   expect_true(all(c("mu.x", "mu.y") %in% names(res_over)))
   expect_false("vel.x" %in% names(res_over))
 })

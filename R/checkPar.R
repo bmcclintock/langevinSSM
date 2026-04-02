@@ -12,6 +12,24 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL){
     }
   } else map <- list()
 
+  if (model == "overdamped") {
+    if (any(c("gamma", "vel") %in% names(par)) || any(c("gamma", "vel") %in% names(map))) {
+      stop("Cannot specify 'gamma' or 'vel' in 'par' or 'map' when model = 'overdamped'.")
+    }
+  }
+
+  if(!is.null(dat)) {
+    has_ee <- any(!is.na(dat$smaj))
+    has_ls <- any(!is.na(dat$K[,1]))
+
+    if (!has_ee && ("psi" %in% names(par) || "psi" %in% names(map))) {
+      stop("Cannot specify 'psi' in 'par' or 'map' because the data does not contain error ellipse observations.")
+    }
+    if (!has_ls && (any(c("tau", "rho_o") %in% names(par)) || any(c("tau", "rho_o") %in% names(map)))) {
+      stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard deviation observations.")
+    }
+  }
+
   if(model=="underdamped"){
     if(!is.null(par$gamma)){
       if(any(!is.finite(par$gamma)) || any(par$gamma <= 0)){

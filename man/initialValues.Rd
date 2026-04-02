@@ -17,7 +17,7 @@ initialValues(
 
 \item{model}{Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".}
 
-\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. Default: NULL.}
+\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
 
 \item{spatialCovs}{A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.}
 
@@ -37,4 +37,22 @@ And, if provided in \code{par}, the following observation process parameters:
 }
 \description{
 This function generates initial parameter values for fitting the Langevin movement model. It uses empirical estimates from the data to provide reasonable starting values for the optimization algorithm. The user can also specify initial values for any parameters, which will override the empirical estimates.
+}
+\details{
+\strong{Movement Process Parameters:}
+If not provided in \code{par}, the initial values for the movement process parameters are generated as follows:
+\itemize{
+ \item \code{beta}: Initialized as a vector of zeros with length equal to the number of spatial covariates.
+ \item \code{sigma}: Initialized as a ``neutral'' empirical estimate of the diffusion (or speed) parameter, calculated as \eqn{\sqrt{\text{mean}(R^2 / (2 * \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step between those observations.
+ \item \code{gamma} (``underdamped'' model only): Initialized as a ``neutral'' empirical estimate of the friction parameter, calculated as \eqn{1 / \text{median}(\Delta)}, where \eqn{\Delta} is the time step between consecutive non-missing observations.
+ \item \code{mu}: Initialized at the locations in \code{data} as a matrix with 2 columns corresponding to the x and y coordinates. If there are missing values (\code{NA}) in \code{data[,coord]}, these are filled in using linear interpolation separately for each track (see \code{\link[stats]{approx}}).
+ \item \code{vel} (``underdamped'' model only): Initialized as a matrix of zeros with the same number of rows as \code{data} and 2 columns corresponding to the x and y velocity components.
+}
+\strong{Observation Process Parameters:}
+If not provided in \code{par}, the initial values for the observation process parameters are set to default values as follows:
+\itemize{
+ \item \code{psi}: Initialized to 1, which means no scaling of the error ellipse.
+ \item \code{tau}: Initialized to c(1, 1), which means no scaling of the x and y standard deviations.
+ \item \code{rho_o}: Initialized to 0, which means no correlation between the x and y errors.
+}
 }

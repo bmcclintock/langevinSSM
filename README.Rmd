@@ -33,7 +33,7 @@ remotes::install_github("bmcclintock/langevinSSM")
 
 ## Usage
 To simulate animal movement paths using the Langevin diffusion model, one can use the `simLangevin` function. For example:
-```{r,eval=TRUE, echo=-15}
+```{r,eval=TRUE, echo=c(-10,-19)}
 library(langevinSSM)
 library(ggplot2)
 library(terra)
@@ -45,11 +45,14 @@ par <- list(beta = c(-4, 6, 5, -0.1), # habitat selection coefficients
             sigma = 5, # diffusion (or speed) parameter
             gamma = 0.5) # autocorrelation parameter
 
+set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 ## exampleCovs is a list of four spatial covariates (e.g., habitat features) that loads with the package
 simDat <- simLangevin(model = "underdamped",
                       par = par,
                       spatialCovs = exampleCovs,
                       nbAnimals = 3)
+
+head(simDat)
 
 # Simulate an underdamped Langevin diffusion path with measurement error
 measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error ellipse
@@ -63,6 +66,8 @@ exampleDat <- simLangevin(model = "underdamped",
                          nbAnimals = 3,
                          obsPerAnimal = 500,
                          measurementError = measurementError)
+
+head(exampleDat)
 ```                                                 
 To fit the Langevin diffusion model to observed tracking data, one can use the `fitLangevin` function. For example:
 ```{r,eval=TRUE,cache=TRUE}

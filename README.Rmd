@@ -37,6 +37,7 @@ To simulate animal movement paths using the Langevin diffusion model, one can us
 library(langevinSSM)
 library(ggplot2)
 library(terra)
+library(patchwork)
 
 # Simulate an underdamped Langevin diffusion path
 
@@ -66,10 +67,12 @@ exampleDat <- simLangevin(model = "underdamped",
 To fit the Langevin diffusion model to observed tracking data, one can use the `fitLangevin` function. For example:
 ```{r,eval=TRUE}
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
+## setting calcOSA = TRUE will calculate one-step-ahead residuals for model diagnostics
 fit <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE)  
+                   silent = TRUE,
+                   calcOSA = TRUE)  
 
 fit
 
@@ -78,6 +81,10 @@ UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exa
 
 # plot the estimated (log) UD with the observed and estimated locations
 plot(fit, spatialCovs = exampleCovs, data = exampleDat)
+
+# plot residuals to check model fit
+p <- plotResiduals(fit)
+p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 
 # calculate the true utiliziation distribution
 trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)

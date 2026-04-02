@@ -23,6 +23,7 @@
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
 #' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
+#' @param calcOSA Logical indicating whether or not to calculate one-step-ahead (OSA) residuals. See \code{\link[TMB]{oneStepPredict}}. Note this can take a while for large data sets. Default: \code{FALSE}.
 #'
 #' @return \code{fitLangevin} object, i.e., a list of:
 #' \item{par}{See \code{\link[stats]{nlminb}}}
@@ -32,7 +33,8 @@
 #' \item{iterations}{See \code{\link[stats]{nlminb}}}
 #' \item{evaluations}{See \code{\link[stats]{nlminb}}}
 #' \item{elapsedTime}{Run time of the optimization}
-#' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
+#' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel''), as well as the joint precision matrix (``jointPrecision'') if \code{getJointPrecision=TRUE}.}
+#' \item{osa}{One-step-ahead residuals (if \code{calcOSA=TRUE})}
 #' \item{conditions}{List containing the optimization settings}
 #' @details
 #' \strong{Measurement Error Models:}
@@ -71,9 +73,9 @@
 #'
 #' @rawNamespace useDynLib(langevinSSM, .registration=TRUE); useDynLib(langevinSSM_TMBExports)
 #' @importFrom stats nlminb
-#' @importFrom TMB MakeADFun sdreport
+#' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE, calcOSA = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
@@ -194,12 +196,78 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
     if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport$jointPrecision
   }
+
+  # --- OSA Pseudo-Residual Calculation ---
+  if(calcOSA) {
+    message("   Calculating one-step-ahead pseudo-residuals...")
+
+    res_x <- rep(NA_real_, ncol(dat$Y))
+    res_y <- rep(NA_real_, ncol(dat$Y))
+
+    unique_ids <- unique(data$id)
+
+    for (uid in unique_ids) {
+      # Find column indices (1-based) for this specific track
+      track_cols <- which(dat$ID == uid)
+
+      # TMB unrolls the 2xN Y array into a 1D vector (X1, Y1, X2, Y2...).
+      # Map the column indices to the 1D elements in the unrolled array.
+      track_elements <- sort(c(2 * track_cols - 1, 2 * track_cols))
+
+      # Conditional elements are all OTHER tracks.
+      # This forces TMB to condition on them instead of dropping them,
+      # preventing the unanchored Hessian crash!
+      cond_elements <- setdiff(1:length(dat$Y), track_elements)
+      message("      track ID: ", uid, "...")
+      track_osa <- tryCatch({
+        TMB::oneStepPredict(
+          obj = obj2,
+          observation.name = "Y",
+          data.term.indicator = "keep",
+          method = "oneStepGaussianOffMode",
+          trace = FALSE,
+          discrete = FALSE,
+          subset = track_elements,
+          conditional = cond_elements
+        )
+      }, error = function(e) {
+        warning("OSA residual calculation failed for track ID ", uid, ". Error: ", e$message)
+        return(NULL)
+      })
+
+      if (!is.null(track_osa)) {
+        # Identify which columns in THIS track actually had data evaluated
+        valid_track_cols <- which(dat$ID == uid & dat$isd == 1)
+
+        # oneStepPredict returns rows exactly matching the evaluated subset
+        idx_x <- seq(1, nrow(track_osa), by = 2)
+        idx_y <- seq(2, nrow(track_osa), by = 2)
+
+        if (length(valid_track_cols) == length(idx_x)) {
+          res_x[valid_track_cols] <- track_osa$residual[idx_x]
+          res_y[valid_track_cols] <- track_osa$residual[idx_y]
+        } else {
+          warning("Mismatch in evaluated observations for track ID ", uid)
+        }
+      }
+    }
+
+    fit$osa <- data.frame(
+      date = data$date,
+      id = data$id,
+      residual.x = res_x,
+      residual.y = res_y
+    )
+  }
+
   fit$conditions <- list(hessian = hessian,
                          method = method,
                          silent = silent,
                          initialInner = initialInner,
                          inner.control =  inner.control,
-                         control = control)
+                         control = control,
+                         calcOSA = calcOSA)
+
   class(fit) <- append("fitLangevin",class(fit))
   return(fit)
 }

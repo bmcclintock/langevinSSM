@@ -22,7 +22,8 @@ fitLangevin(
   initialInner = TRUE,
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
-  getJointPrecision = FALSE
+  getJointPrecision = FALSE,
+  calcOSA = FALSE
 )
 }
 \arguments{
@@ -63,6 +64,8 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{control}{A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.}
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
+
+\item{calcOSA}{Logical indicating whether or not to calculate one-step-ahead (OSA) residuals. See \code{\link[TMB]{oneStepPredict}}. Note this can take a while for large data sets. Default: \code{FALSE}.}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:
@@ -73,7 +76,8 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{iterations}{See \code{\link[stats]{nlminb}}}
 \item{evaluations}{See \code{\link[stats]{nlminb}}}
 \item{elapsedTime}{Run time of the optimization}
-\item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
+\item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel''), as well as the joint precision matrix (``jointPrecision'') if \code{getJointPrecision=TRUE}.}
+\item{osa}{One-step-ahead residuals (if \code{calcOSA=TRUE})}
 \item{conditions}{List containing the optimization settings}
 }
 \description{

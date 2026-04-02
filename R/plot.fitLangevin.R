@@ -131,7 +131,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
     layer_names <- setdiff(names(ud_df), c("x", "y"))
 
     ud_long <- do.call(rbind, lapply(layer_names, function(lyr) {
-      data.frame(x = ud_df$x, y = ud_df$y, time_layer = lyr, UD = ud_df[[lyr]])
+      data.frame("x" = ud_df$x, "y" = ud_df$y, "time_layer" = lyr, "UD" = ud_df[[lyr]])
     }))
 
     title_text <- if (compact) "Estimated utilization distribution and tracks" else paste("Estimated utilization distribution and tracks - ID:", pid)

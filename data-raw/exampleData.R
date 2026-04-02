@@ -6,6 +6,7 @@
 library(ggplot2)
 library(usethis)
 library(langevinSSM)
+library(patchwork)
 
 set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 
@@ -32,10 +33,13 @@ exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAni
 
 plotRaster(UD)+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
 
-fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1))
+fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1),calcOSA=TRUE)
 fit
 
 plot(fit,spatialCovs=exampleCovs,data=exampleDat)
+
+p <- plotResiduals(fit)
+p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 
 exampleDat$date <- as.POSIXlt(exampleDat$date*100*60, tz = "UTC")
 exampleDat <- exampleDat[,c("id","date","dt","x","y","smaj","smin","eor","x.sd","y.sd","mu.x","mu.y","vel.x","vel.y")]

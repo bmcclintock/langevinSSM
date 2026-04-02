@@ -14,7 +14,8 @@ template<class Type>
 Type langevinSSM(objective_function<Type>* obj)
 {
   DATA_INTEGER(process_model);      // 0 = overdamped, 1 = underdamped
-  DATA_MATRIX(Y);           // Matrix of observed locations
+  DATA_ARRAY(Y);           // Array of observed locations
+  DATA_ARRAY_INDICATOR(keep, Y); // used for TMB oneStepPredict bivariate decomposition
   DATA_VECTOR(dt);          // Time steps
   DATA_IVECTOR(isd);        // indexes observations vs. interpolation points
   DATA_IVECTOR(obs_mod);    // indicates which obs error model to be used
@@ -215,9 +216,34 @@ Type langevinSSM(objective_function<Type>* obj)
         cov_obs(0,0) = (M2 * s2c + m2 * c2c);
         cov_obs(1,1) = (M2 * c2c + m2 * s2c);
         cov_obs(0,1) = (0.5 * (smaj(i) * smaj(i) - (smin(i) * psi * smin(i) * psi))) * cos(eor(i)) * sin(eor(i));
-        cov_obs(1,0) = cov_obs(0,1);
       }
-      nll += MVNORM(cov_obs)(Y.col(i) - mu.col(i));
+
+      // TMB oneStepPredict Bivariate Decomposition
+      Type varX = cov_obs(0,0);
+      Type varY = cov_obs(1,1);
+      Type covXY = cov_obs(0,1);
+
+      Type sdX = sqrt(varX); // Only 1 square root needed instead of 3!
+
+      Type x_obs = Y(0,i);
+      Type y_obs = Y(1,i);
+      Type mu_x = mu(0,i);
+      Type mu_y = mu(1,i);
+
+      Type kX = keep(0,i);
+      Type kY = keep(1,i);
+
+      // 1. Marginal Likelihood of X
+      nll -= kX * dnorm(x_obs, mu_x, sdX, true);
+
+      // 2. Conditional Likelihood of Y
+      // Optimized algebra: Completely bypasses calculating sdY and rho.
+      // If kX == 0, the (covXY/varX) terms are zeroed out, and the math
+      // perfectly reverts to the marginal distribution of Y!
+      Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
+      Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
+
+      nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);
     }
   }
 

@@ -9,9 +9,7 @@
 \arguments{
 \item{x}{A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.}
 
-\item{...}{Additional arguments passed to \code{print}.
-
-importFrom stats printCoefmat}
+\item{...}{Additional arguments passed to \code{print}.}
 }
 \description{
 Print a fitLangevin object

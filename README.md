@@ -45,6 +45,7 @@ one can use the `simLangevin` function. For example:
 library(langevinSSM)
 library(ggplot2)
 library(terra)
+library(patchwork)
 
 # Simulate an underdamped Langevin diffusion path
 
@@ -62,7 +63,7 @@ simDat <- simLangevin(model = "underdamped",
 measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error ellipse
                          smin.sd = 0.75,     # sd of semi-minor axis of error ellipse
                          eor = c(0,180)) # range of ellipse orientation (in degrees from north)
-
+set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 exampleDat <- simLangevin(model = "underdamped",
                          par = par,
                          spatialCovs = exampleCovs,
@@ -76,10 +77,12 @@ use the `fitLangevin` function. For example:
 
 ``` r
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
+## setting calcOSA = TRUE will calculate one-step-ahead residuals for model diagnostics
 fit <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE)  
+                   silent = TRUE,
+                   calcOSA = TRUE)  
 
 fit
 #> 
@@ -88,14 +91,14 @@ fit
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.98 
-#> Optimization time:  2.18 seconds
+#> Optimization time:  2.12 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>        Estimate Std. Error
 #> beta_1  -3.5425      1.250
-#> beta_2   8.6103      2.295
-#> beta_3   7.5081      1.947
+#> beta_2   8.6103      2.294
+#> beta_3   7.5081      1.946
 #> beta_4  -0.3084      0.324
 #> sigma    4.3101      0.500
 #> gamma    0.5856      0.145
@@ -112,6 +115,15 @@ plot(fit, spatialCovs = exampleCovs, data = exampleDat)
 ```
 
 ![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
+
+``` r
+
+# plot residuals to check model fit
+p <- plotResiduals(fit)
+p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
+```
+
+![](man/figures/README-unnamed-chunk-5-2.png)<!-- -->
 
 ``` r
 

@@ -4,7 +4,7 @@
 #' @param x A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
 #' @param ... Additional arguments passed to \code{print}.
 #'
-#' importFrom stats printCoefmat
+#' @importFrom stats printCoefmat
 #' @export
 print.fitLangevin <- function(x, ...) {
   cat("\nHabitat-Driven Langevin Diffusion Model\n")
@@ -38,7 +38,7 @@ print.fitLangevin <- function(x, ...) {
   tau_idx <- which(rownames(nat_est) == "tau")
   rownames(nat_est)[tau_idx] <- paste0("tau_", 1:length(tau_idx))
 
-  printCoefmat(nat_est, digits = 4, signif.stars = FALSE, na.print = "NA", ...)
+  stats::printCoefmat(nat_est, digits = 4, signif.stars = FALSE, na.print = "NA", ...)
 
   invisible(x)
 }

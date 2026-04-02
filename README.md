@@ -91,14 +91,14 @@ fit
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.97 
-#> Optimization time:  1.76 seconds
+#> Optimization time:  1.85 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>        Estimate Std. Error
 #> beta_1  -3.5438      1.250
-#> beta_2   8.6136      2.295
-#> beta_3   7.5114      1.947
+#> beta_2   8.6137      2.295
+#> beta_3   7.5114      1.948
 #> beta_4  -0.3084      0.324
 #> sigma    4.3092      0.500
 #> gamma    0.5850      0.145

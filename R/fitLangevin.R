@@ -140,7 +140,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
   message("   Fitting ",model," Langevin model...")
   if(initialInner){
-    obj1 <-
+    obj1 <- try({
       TMB::MakeADFun(
         c(model="langevinSSM",dat),
         par,
@@ -152,6 +152,11 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
         silent = silent,
         inner.control =  inner.control
       )
+    }, silent = TRUE)
+
+    if (inherits(obj1, "try-error")) {
+      stop("Initial inner optimization (obj1) failed during TMB::MakeADFun. Check parameter initial values or data.\nError details: ", attr(obj1, "condition")$message)
+    }
 
     obj1$fn()
 
@@ -162,7 +167,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
   }
 
-  obj2 <-
+  obj2 <- try({
     TMB::MakeADFun(
       c(model="langevinSSM",dat),
       par,
@@ -174,31 +179,107 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       silent = silent,
       inner.control =  inner.control
     )
+  }, silent = TRUE)
+
+  if (inherits(obj2, "try-error")) {
+    stop("TMB::MakeADFun failed to construct the objective function. Check parameter initial values or data constraints.\nError details: ", attr(obj2, "condition")$message)
+  }
 
   start <- proc.time()
-  fit <- do.call(stats::nlminb,args = list(
-    start = obj2$par,
-    objective = obj2$fn,
-    gradient = obj2$gr,
-    control=control))
+  fit <- try({
+    do.call(stats::nlminb,args = list(
+      start = obj2$par,
+      objective = obj2$fn,
+      gradient = obj2$gr,
+      control=control))
+  }, silent = TRUE)
   fit$elapsedTime <- proc.time()-start
+
+  if (inherits(fit, "try-error") || !is.list(fit)) {
+    stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
+  }
+
+  # Check for non-convergence (nlminb convergence code != 0)
+  if (fit$convergence != 0) {
+    warning("nlminb optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
+  }
 
   message("   Calculating SEs...")
   #fit$report <- obj2$report()
-  sdreport <- TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
+  sdreport_out <- try({
+    TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
+  }, silent = TRUE)
+
   fit$estimates <- list()
-  fit$estimates$natural <- summary(sdreport,"report") # get SEs
-  fit$estimates$working <- summary(sdreport,"fixed") # get SEs
-  if(length(re)) {
-    ran_est <- summary(sdreport, "random")
-    fit$estimates$random <- list()
-    for(i in 1:length(re)){
-      fit$estimates$random[[re[i]]] <- list()
-      fit$estimates$random[[re[i]]]$est <- data.frame(cbind(data$id,t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),1],nrow=2) * scaleFactor)))
-      fit$estimates$random[[re[i]]]$se <- data.frame(cbind(data$id,t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2],nrow=2) * scaleFactor)))
-      colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- c("id",paste0(re[i],".",c("x","y")))
+
+  if (inherits(sdreport_out, "try-error")) {
+    warning("TMB::sdreport failed to calculate standard errors. Trajectory and point estimates were recovered from the report, but SEs are unavailable.")
+
+    # 1. working scale
+    name_counts <- table(names(fit$par))
+    working_names <- names(fit$par)
+    is_dup <- working_names %in% names(name_counts[name_counts > 1])
+    if (any(is_dup)) {
+      suffix <- ave(working_names, working_names, FUN = seq_along)
+      working_names[is_dup] <- paste0(working_names[is_dup], "_", suffix[is_dup])
     }
-    if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport$jointPrecision
+    fit$estimates$working <- data.frame(
+      "Estimate" = as.numeric(fit$par),
+      "Std. Error" = NA_real_,
+      check.names = FALSE
+    )
+    rownames(fit$estimates$working) <- working_names
+
+    # natural scale
+    rep_vals <- obj2$report()
+    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi")
+    existing_names <- nat_names[nat_names %in% names(rep_vals)]
+    nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
+    names(nat_list) <- existing_names
+    nat_est <- unlist(nat_list, use.names=FALSE)
+    fit$estimates$natural <- data.frame(
+      "Estimate" = as.numeric(nat_est),
+      "Std. Error" = NA_real_,
+      check.names = FALSE
+    )
+    rownames(fit$estimates$natural) <- unlist(lapply(names(nat_list),function(x) {
+      if (length((nat_list[[x]]))==1) {
+        return(x)
+      } else return(paste0(x, "_", 1:length(nat_list[[x]])))
+
+    }))
+
+    # random effects (mu/vel)
+    if(length(re)) {
+      fit$estimates$random <- list()
+      for(i in seq_along(re)) {
+        node <- re[i] # "mu" or "vel"
+        fit$estimates$random[[node]] <- list(
+          est = data.frame(
+            id = data$id,
+            t(rep_vals[[node]]) * scaleFactor
+          ),
+          se = NULL # No SEs available
+        )
+        colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
+      }
+    }
+  } else {
+
+    fit$estimates$natural <- summary(sdreport_out, "report")
+    fit$estimates$working <- summary(sdreport_out, "fixed")
+
+    if(length(re)) {
+      ran_est <- summary(sdreport_out, "random")
+      fit$estimates$random <- list()
+      for(i in 1:length(re)){
+        fit$estimates$random[[re[i]]] <- list()
+        fit$estimates$random[[re[i]]]$est <- data.frame(cbind(data$id,t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),1],nrow=2) * scaleFactor)))
+        fit$estimates$random[[re[i]]]$se <- data.frame(cbind(data$id,t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2],nrow=2) * scaleFactor)))
+        colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- c("id",paste0(re[i],".",c("x","y")))
+      }
+      if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport_out$jointPrecision
+    }
   }
 
   # --- OSA Pseudo-Residual Calculation ---

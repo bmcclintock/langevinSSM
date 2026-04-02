@@ -257,6 +257,16 @@ Type langevinSSM(objective_function<Type>* obj)
   ADREPORT(tau);
   ADREPORT(psi);
 
+  // Backup in case sdreport fails
+  REPORT(beta);
+  REPORT(sigma);
+  if(process_model == 1) REPORT(gamma);
+  REPORT(rho_o);
+  REPORT(tau);
+  REPORT(psi);
+  REPORT(mu);
+  if(process_model == 1) REPORT(vel);
+
   return nll;
 }
 

@@ -10,3 +10,4 @@
 ^README\.Rmd$
 ^README-.*\.png$
 .Renviron
+^README_cache$

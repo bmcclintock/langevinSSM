@@ -3,6 +3,9 @@ CXX_STD = CXX17
 # Enables large object compilation for Windows
 CXX17FLAGS += -Wa,-mbig-obj
 
+# Force zero debug symbols for Windows GHA runners
+PKG_CXXFLAGS = -g0
+
 # Explicitly link BLAS and LAPACK for RcppArmadillo
 PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 

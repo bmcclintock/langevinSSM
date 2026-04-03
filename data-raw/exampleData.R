@@ -26,6 +26,9 @@ terra::values(exampleCovs[[4]]) <- dist2
 
 names(exampleCovs) <- c(paste0("cov",1:(ncov-1)),"d2c")
 
+# shift covariates so coordinates don't look like they could be lat/long
+exampleCovs <- lapply(exampleCovs,terra::shift, dx=1000, dy=1000)
+
 UD <- getUD(exampleCovs,examplePar$beta)
 
 set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
@@ -33,7 +36,7 @@ exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAni
 
 plotRaster(UD)+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
 
-fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1),calcOSA=TRUE)
+fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1),calcOSA = TRUE)
 fit
 
 plot(fit,spatialCovs=exampleCovs,data=exampleDat)
@@ -41,13 +44,31 @@ plot(fit,spatialCovs=exampleCovs,data=exampleDat)
 p <- plotResiduals(fit)
 p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 
-exampleDat$date <- as.POSIXlt(exampleDat$date*100*60, tz = "UTC")
-exampleDat <- exampleDat[,c("id","date","dt","x","y","smaj","smin","eor","x.sd","y.sd","mu.x","mu.y","vel.x","vel.y")]
-#exampleDat$dt <- NULL
-#exampleDat$eor <- exampleDat$eor * 180 / pi
-attr(exampleDat,"time.unit") <- "mins"
+
+
+start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")
+exampleDat$date <- start_time + (exampleDat$date * 3600)
+exampleDat$lc <- NA_character_
+exampleDat$mu.x <- exampleDat$mu.y <- exampleDat$vel.x <- exampleDat$vel.y <- NULL
+exampleDat <- exampleDat[,c("id","date","dt","x","y","lc","smaj","smin","eor","x.sd","y.sd")]
+exampleDat$lc <- as.factor(exampleDat$lc)
+exampleDat$id <- as.factor(exampleDat$id)
+attr(exampleDat,"time.unit") <- "hours"
+class(exampleDat) <- c("dataLangevin","data.frame")
+
+unformatDat <- exampleDat
+unformatDat$dt <- unformatDat$lc <- NULL
+unformatDat$mu.x <- unformatDat$mu.y <- unformatDat$vel.x <- unformatDat$vel.y <- NULL
+unformatDat$eor <- unformatDat$eor * 180 / pi
+class(unformatDat) <- "data.frame"
+attr(unformatDat,"time.unit") <- NULL
+
+reformatDat <- formatData(unformatDat, time.unit="hours")
+
+if(!all.equal(exampleDat,reformatDat)) stop("example data sets don't match")
+
 
 lapply(1:ncov,function(x) terra::writeRaster(exampleCovs[[x]], paste0("inst/extdata/exampleCov",x,".tif"),overwrite=TRUE))
-usethis::use_data(exampleDat,compress="xz",overwrite=TRUE)
+usethis::use_data(exampleDat,unformatDat,compress="xz",overwrite=TRUE)
 
 

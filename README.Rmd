@@ -69,8 +69,16 @@ exampleDat <- simLangevin(model = "underdamped",
 
 head(exampleDat)
 ```                                                 
-To fit the Langevin diffusion model to observed tracking data, one can use the `fitLangevin` function. For example:
-```{r,eval=TRUE,cache=TRUE}
+To fit the Langevin diffusion model to observed tracking data, one can use the `formatData` and `fitLangevin` functions. For example:
+```{r,eval=TRUE}
+# unformatDat is example data appropriate for formatData that loads with the package
+head(unformatDat)
+
+# format the data for fitLangevin
+exampleDat <- formatData(unformatDat, time.unit = "hours")
+
+head(exampleDat)
+
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
 ## setting calcOSA = TRUE will calculate one-step-ahead residuals for model diagnostics
 fit <- fitLangevin(model = "underdamped",

@@ -35,11 +35,19 @@ NULL
   }, env)
 }
 
-#' Example Tracking Data
+#' Example formatted tracking data
 #'
-#' A \code{dataLangevin} object containing example simulated movement tracks.
+#' A \code{dataLangevin} object containing formatted movement tracks appropriate for \code{\link{fitLangevin}}..
 #'
 #' @name exampleDat
+#' @docType data
+NULL
+
+#' Example unformatted tracking Data
+#'
+#' A data frame containing example movement tracks appropriate for \code{\link{formatData}}.
+#'
+#' @name unformatDat
 #' @docType data
 NULL
 
@@ -174,7 +182,7 @@ mapDuplicatedTimes <- function(dat, map, par, re) {
       }
     }
     map$mu <- factor(mu_map, levels = unique(mu_map[!is.na(mu_map)]))
-    if("vel" %in% re) map$vel <- factor(vel_map)
+    if("vel" %in% re) map$vel <- factor(vel_map, levels = unique(vel_map[!is.na(vel_map)]))
   }
   return(map)
 }

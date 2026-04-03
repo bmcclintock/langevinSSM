@@ -43,20 +43,23 @@
 #' \strong{Predicting Locations at Specific Times:}
 #' The \code{predTimes} argument allows users to specify custom times at which they want the model to output predictions of the animal's true trajectory (e.g., to standardize the temporal resolution of the track). When formatting the data, \code{formatData} pads the dataset with these requested times, assigning \code{NA} to the coordinates and measurement error columns. During model fitting, whenever a coordinate is \code{NA} (either natively in the dataset or injected via \code{predTimes}), \code{\link{fitLangevin}} bypasses the observation error model evaluation for that time step. Instead, it relies purely on the Langevin diffusion state process model to predict the true (latent) location.
 #'
-# #' @examples
-# #' # exampleDat included in package; see ?exampleDat for details
-# #' head(exampleDat)
-# #'
-# #' formatDat <- formatData(exampleDat, time.unit = "mins")
-# #'
-# #' \dontrun{
-# #' # exampleCovs included in package; see ?exampleCovs for details
-# #' fit <- fitLangevin(formatDat, spatialCovs = exampleCovs)
-# #' }
+#' @examples
+#' # unformatDat included in package; see ?unformatDat for details
+#' head(unformatDat)
+#'
+#' formatDat <- formatData(unformatDat, time.unit = "hours")
+#' head(formatDat)
+#'
+#' \dontrun{
+#' # exampleCovs included in package; see ?exampleCovs for details
+#' fit <- fitLangevin(formatDat, spatialCovs = exampleCovs, silent=TRUE)
+#' }
 #' @importFrom dplyr rename arrange select all_of everything group_by ungroup filter row_number n
 #' @importFrom sf st_coordinates st_drop_geometry st_is_longlat
 #' @export
 formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), emf = NULL, predTimes = NULL, time.unit = "hours", tz = "UTC"){
+
+  if(inherits(data,"simLangevin") | inherits(data,"dataLangevin")) stop('data is already formatted for fitLangevin')
 
   if (inherits(data, "sf")) {
     if (sf::st_is_longlat(data)) {

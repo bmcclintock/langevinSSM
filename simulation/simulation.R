@@ -31,6 +31,7 @@ map <- list(psi=factor(NA)) # map for fixing parameters
 ## sampling rate, missing data, and measurement error
 samplingRate <- 1 # for subsampling observations from true continuous-time model (e.g. if samplingRate = 2 then data are roughly thinned by 2); must be >= 1; note bias increases with samplingRate, but relationships largely preserved
 propMissing <- 0 # proportion of missing observations; passed as NA observations to TMB (so corresponding true locations treated as random effects to be estimated)
+use_aniMotum <- FALSE # logical indicating whether or not to use aniMotum to impute missing locations; if FALSE, langevinSSM uses linear interpolation
 
 smaj.sd <- 1.5 # SD for semi-major error ellipse axis; smaj ~ abs(Normal(0,smaj.sd))
 smin.sd <- smaj.sd/2 # SD for semi-minor error ellipse axis; smin ~ abs(Normal(0,smin.sd))
@@ -50,7 +51,7 @@ curweight <- 1/2 # smoothing weight of current cell location; ignored if npoints
 weights <- c(curweight,rep((1-curweight)/npoints,npoints)) # smoothing weights (must be of length 5 or 9 and sum to 1); ignored if npoints=0
 zetaScale <- 2 # scale factor for smooth gradient neighborhood (>1 increases, <1 decreases neighborhood); underdamped Langevin neighborhood = zetaScale * sqrt(2*pi) * sigma; overdamped langevin neighborhood = zetaScale * sigma / sqrt(2); ignored if npoints=0
 
-langSim <- subDat <- langTMB <- list()
+langSim <- subDat <- langFit <- list()
 spatialCovs <- list()
 parMat <- matrix(NA,nrow=nsims,6+ifelse(model=="underdamped",1,0))
 if(model=="overdamped"){
@@ -149,7 +150,7 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
 # subsample data
 set.seed(1, kind="Mersenne-Twister", normal.kind = "Inversion")
 for(isim in 1:nsims){
-  subDat[[isim]] <- subSample(langSim[[isim]], samplingRate = samplingRate, propMissing = propMissing)
+  subDat[[isim]] <- subSampleData(langSim[[isim]], samplingRate = samplingRate, propMissing = propMissing)
 }
 
 for(isim in 1:nsims){
@@ -165,38 +166,34 @@ for(isim in 1:nsims){
   c3plot <- plotRaster(spatialCovs[[isim]][[3]], legend.title = expression(c[3])) + ggtheme
   UDplot <- plotRaster(UD, legend.title = expression(pi)) + ggtheme
 
-  if(useInitialValues){
-    par <- list(psi=psi)
-  }
-
   # generate missing data using aniMotum
   if(propMissing>0 && any(is.na(subDat[[isim]]$x))){
-    message("   Fitting aniMotum separately to each track...")
-    notNA <- which(!is.na(subDat[[isim]]$x))
-    future::plan(future::multisession,workers=min(nbAnimals,parallel::detectCores()-1))  # workers sets number of cores to use
-    init.mu <- init.mu_aniMotum(subDat[[isim]][notNA,],model="rw",timeSteps=data.frame(id=as.character(subDat[[isim]]$id),date=as.POSIXlt(subDat[[isim]]$date * 1000))) # fit_ssm doesn't like very small \Delta_t
-    par$mu=init.mu
-  } else {
-    #init.mu <- subDat[[isim]][,c("mu.x","mu.y")] # true values
-    init.mu <- subDat[[isim]][,c("x","y")] # with measurement error
+    if(use_aniMotum){
+      message("   Fitting aniMotum separately to each track...")
+      notNA <- which(!is.na(subDat[[isim]]$x))
+      future::plan(future::multisession,workers=min(nbAnimals,parallel::detectCores()-1))  # workers sets number of cores to use
+      init.mu <- init.mu_aniMotum(subDat[[isim]][notNA,],model="rw",timeSteps=data.frame(id=as.character(subDat[[isim]]$id),date=as.POSIXlt(subDat[[isim]]$date * 1000))) # fit_ssm doesn't like very small \Delta_t
+      #init.mu <- subDat[[isim]][,c("mu.x","mu.y")] # true values
+      par$mu=init.mu
+
+      if(model=="underdamped"){
+        init.vel <- matrix(0,nrow(subDat[[isim]]),2)
+        #init.vel <- subDat[[isim]][,c("vel.x","vel.y")] # true values
+        par$vel = init.vel
+      }
+    }
   }
 
-  if(model=="underdamped"){
-    #init.vel <- subDat[[isim]][,c("vel.x","vel.y")] # true values
-    init.vel <- matrix(0,nrow(subDat[[isim]]),2)
-    if(!useInitialValues) par$vel = init.vel
-  }
+  if(useInitialValues) par <- initialValues(subDat[[isim]],model,par=list(psi=psi),spatialCovs=spatialCovs[[isim]])
 
-  if(useInitialValues) par <- initialValues(subDat[[isim]],model,par=par,spatialCovs=spatialCovs[[isim]])
-
-  langTMB[[isim]] <- fitLangevin(subDat[[isim]],model=model,par=par,spatialCovs=spatialCovs[[isim]],
+  langFit[[isim]] <- fitLangevin(subDat[[isim]],model=model,par=par,spatialCovs=spatialCovs[[isim]],
                                  map=map,
                                  smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale,
                                  silent=TRUE, control=list(trace=0),initialInner=initialInner)
 
-  parMat[isim,1:(5+ifelse(model=="underdamped",1,0))] <- langTMB[[isim]]$par
-  parMat[isim,"sigma"] <- langTMB[[isim]]$estimates$natural["sigma",1]
-  if(model=="underdamped") parMat[isim,"gamma"] <- langTMB[[isim]]$estimates$natural["gamma",1]
+  parMat[isim,1:(5+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
+  parMat[isim,"sigma"] <- langFit[[isim]]$estimates$natural["sigma",1]
+  if(model=="underdamped") parMat[isim,"gamma"] <- langFit[[isim]]$estimates$natural["gamma",1]
 
   zoom_ext <- terra::ext(-100, 100, -100, 100)
 
@@ -208,13 +205,13 @@ for(isim in 1:nsims){
   }
   plot(subDat[[isim]]$x,subDat[[isim]]$y,col=2,asp=1) # observed locations
   for(i in 1:nbAnimals){
-    lines(langTMB[[isim]]$report$mu[1,subDat[[isim]]$id==i],langTMB[[isim]]$report$mu[2,subDat[[isim]]$id==i],type="o",pch=20,col=3) # estimated path
+    lines(langFit[[isim]]$report$mu[1,subDat[[isim]]$id==i],langFit[[isim]]$report$mu[2,subDat[[isim]]$id==i],type="o",pch=20,col=3) # estimated path
   }
   for(i in 1:nbAnimals){
     lines(langSim[[isim]]$mu.x[langSim[[isim]]$id==i],langSim[[isim]]$mu.y[langSim[[isim]]$id==i]) # true path
   }
   plot(terra::crop(UD,zoom_ext),main="True UD",col=viridis::viridis(100))
-  estUD <- getUD(spatialCovs[[isim]],langTMB[[isim]]$par[1:4],log=TRUE)
+  estUD <- getUD(spatialCovs[[isim]],langFit[[isim]]$par[1:4],log=TRUE)
   plot(terra::crop(estUD,zoom_ext),main="Estimated UD",col=viridis::viridis(100))
 
   parMat[isim,"BA"] <- rasterOverlap(exp(estUD),exp(UD)) # Calculate Bhattacharyya's Affinity between estimated and true UDs
@@ -226,4 +223,4 @@ for(isim in 1:nsims){
 }
 
 if(!dir.exists("simulation/results")) dir.create("simulation/results")
-save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langTMB,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,"_samplingRate",samplingRate,"_propMissing",propMissing,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))

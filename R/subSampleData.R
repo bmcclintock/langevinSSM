@@ -2,19 +2,19 @@
 #'
 #' This function subsamples tracking data by a specified sampling rate and randomly introduces missing values in specified columns. It ensures that the first observation of each track is always included in the subsample.
 #'
-#' @param data A \code{dataLangevin} object (see \code{\link{formatData}}) containing tracking data to subsample.
+#' @param data A \code{dataLangevin} object (as returned by \code{\link{simLangevin}} and \code{\link{formatData}}) containing tracking data to subsample.
 #' @param samplingRate A numeric value specifying the desired sampling rate. For example, a value of 2 will on average keep every second observation. Must be \code{>=1}. Default is 1 (no subsampling).
 #' @param propMissing A numeric value between 0 and 1 specifying the proportion of observations to randomly set as missing (NA) in the subsample. Default is 0 (no missing values).
 #' @param col_to_na A character vector of column names in the data frame for which to introduce missing values. Default is \code{c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd")}. Ignored unless \code{propMissing > 0}.
 #' @return A subsampled \code{dataLangevin} object with the same structure as \code{data}, but with fewer rows (if \code{samplingRate>1}) and missing values (if \code{propMissing>0}) in the \code{col_to_na} columns.
 #' @examples
-#' # Subsample with a sampling rate of 10 and 10% missing values
+#' # subsample with a sampling rate of 10 and 10% missing values
 #' # exampleDat is an example dataLangevin object included in the package
-#' exampleSub <- subSample(exampleDat, samplingRate =  10, propMissing = 0.1)
+#' exampleSub <- subSampleData(exampleDat, samplingRate =  10, propMissing = 0.1)
 #'
 #' @importFrom stats rbinom
 #' @export
-subSample <- function(data, samplingRate = 1, propMissing = 0, col_to_na = c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd")){
+subSampleData <- function(data, samplingRate = 1, propMissing = 0, col_to_na = c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd")){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   if(!is.numeric(samplingRate) || samplingRate < 1) stop("samplingRate should be an integer >= 1")

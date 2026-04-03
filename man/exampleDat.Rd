@@ -3,7 +3,7 @@
 \docType{data}
 \name{exampleDat}
 \alias{exampleDat}
-\title{Example Tracking Data}
+\title{Example formatted tracking data}
 \description{
-A \code{dataLangevin} object containing example simulated movement tracks.
+A \code{dataLangevin} object containing formatted movement tracks appropriate for \code{\link{fitLangevin}}..
 }

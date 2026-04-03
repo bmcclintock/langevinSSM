@@ -11,6 +11,7 @@
 #' Measurement error can be added in the form of the Argos Kalman Filter error ellipse (i.e., semi-major axis, semi-minor axis, and error ellipse orientation) or in the form of Argos least squares or GPS x- and y-axis errors.
 #' For the error ellipse, the specifications are \code{smaj.sd} (the standard deviation of the semi-major axis), \code{smin.sd} (the standard deviation of the semi-minor axis), and \code{eor} (an optional 2-vector providing the range for the error ellipse orientation in \strong{degrees from north}).
 #' For x- and y-axis errors, the specifications are \code{x.sd} and \code{y.sd} (the standard deviation of the x- and y-axis errors, respectively). Default: \code{NULL} (no measurement error). See Details.
+#' @param subSample List of specifications for subsampling data from the continuous-time process model that can include \code{samplingRate} (specifying the desired sampling rate) and/or \code{propMissing} (specifying the proportion of observations to randomly set as missing). See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).
 #' @return A data frame of class \code{dataLangevin} containing the simulated trajectories. The data frame contains the following columns:
 #' \item{id}{Animal ID}
 #' \item{date}{Date of observation}
@@ -81,7 +82,8 @@ simLangevin <- function(model = c("underdamped","overdamped"),
                         obsPerAnimal = 500,
                         timeStep = 0.01,
                         initialPosition,
-                        measurementError = NULL){
+                        measurementError = NULL,
+                        subSample = NULL){
 
   model <- match.arg(model)
 
@@ -102,6 +104,16 @@ simLangevin <- function(model = c("underdamped","overdamped"),
   gamma <- exp(par$log_gamma)
   sigma <- exp(par$log_sigma)
   beta <- par$beta
+
+  if(!is.null(subSample)){
+    if(!is.list(subSample) || !all(names(subSample) %in% c("samplingRate","propMissing"))) stop("subSample must be a list with elements 'samplingRate' and/or 'propMissing'")
+    if(!is.null(subSample$samplingRate)){
+      if(length(subSample$samplingRate)!=1 || (!is.numeric(subSample$samplingRate) | subSample$samplingRate < 1)) stop("subSample$samplingRate must be a numeric of length 1 that is > 1")
+    } else subSample$samplingRate <- 1
+    if(!is.null(subSample$propMissing)){
+      if(length(subSample$propMissing)!=1 || (!is.numeric(subSample$propMissing) | subSample$propMissing < 0 | subSample$propMissing >= 1)) stop("subSample$propMissing must be a numeric of length 1 that is >= 0 and < 1")
+    } else subSample$propMissing <- 0
+  }
 
   initialPosition <- getInitialPosition(nbAnimals,initialPosition,spatialCovs,beta)
 
@@ -128,6 +140,10 @@ simLangevin <- function(model = c("underdamped","overdamped"),
   class(out) <- append("simLangevin",class(out))
 
   out <- class_dataLangevin(out)
+
+  if(!is.null(subSample)){
+    out <- subSampleData(out,samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
+  }
 
   return(out)
 }

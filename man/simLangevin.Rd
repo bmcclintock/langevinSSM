@@ -12,7 +12,8 @@ simLangevin(
   obsPerAnimal = 500,
   timeStep = 0.01,
   initialPosition,
-  measurementError = NULL
+  measurementError = NULL,
+  subSample = NULL
 )
 }
 \arguments{
@@ -35,6 +36,8 @@ If \code{measurementError} is specified, optional observation process parameters
 Measurement error can be added in the form of the Argos Kalman Filter error ellipse (i.e., semi-major axis, semi-minor axis, and error ellipse orientation) or in the form of Argos least squares or GPS x- and y-axis errors.
 For the error ellipse, the specifications are \code{smaj.sd} (the standard deviation of the semi-major axis), \code{smin.sd} (the standard deviation of the semi-minor axis), and \code{eor} (an optional 2-vector providing the range for the error ellipse orientation in \strong{degrees from north}).
 For x- and y-axis errors, the specifications are \code{x.sd} and \code{y.sd} (the standard deviation of the x- and y-axis errors, respectively). Default: \code{NULL} (no measurement error). See Details.}
+
+\item{subSample}{List of specifications for subsampling data from the continuous-time process model that can include \code{samplingRate} (specifying the desired sampling rate) and/or \code{propMissing} (specifying the proportion of observations to randomly set as missing). See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
 }
 \value{
 A data frame of class \code{dataLangevin} containing the simulated trajectories. The data frame contains the following columns:

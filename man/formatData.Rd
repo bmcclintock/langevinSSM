@@ -75,3 +75,15 @@ For x- and y-axis error data, the columns specified in \code{sderr} should conta
 \strong{Predicting Locations at Specific Times:}
 The \code{predTimes} argument allows users to specify custom times at which they want the model to output predictions of the animal's true trajectory (e.g., to standardize the temporal resolution of the track). When formatting the data, \code{formatData} pads the dataset with these requested times, assigning \code{NA} to the coordinates and measurement error columns. During model fitting, whenever a coordinate is \code{NA} (either natively in the dataset or injected via \code{predTimes}), \code{\link{fitLangevin}} bypasses the observation error model evaluation for that time step. Instead, it relies purely on the Langevin diffusion state process model to predict the true (latent) location.
 }
+\examples{
+# unformatDat included in package; see ?unformatDat for details
+head(unformatDat)
+
+formatDat <- formatData(unformatDat, time.unit = "hours")
+head(formatDat)
+
+\dontrun{
+# exampleCovs included in package; see ?exampleCovs for details
+fit <- fitLangevin(formatDat, spatialCovs = exampleCovs, silent=TRUE)
+}
+}

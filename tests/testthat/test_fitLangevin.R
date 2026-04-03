@@ -289,6 +289,7 @@ test_that("fitLangevin successfully fits end-to-end with duplicated times", {
   # Because we added a row at 15, the original 25th observation is now row 26
   pt <- data.frame(id = "A", date = dates[25])
 
+  class(dat) <- "data.frame"
   # 4. Format Data (Expect our custom warning)
   expect_warning(
     fmt_dat <- formatData(dat, predTimes = pt, time.unit = "hours"),
@@ -367,6 +368,8 @@ test_that("fitLangevin respects user-defined map with duplicated times", {
   dup_row$y <- dup_row$y - 1.0
   dat <- rbind(dat, dup_row)
   dat <- dat[order(dat$date), ] # Total 31 rows
+
+  class(dat) <- "data.frame"
 
   # 4. Format Data
   expect_warning(
@@ -504,6 +507,7 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   # C. True Interpolation Point (NA coordinates)
   pt <- data.frame(id = dat$id[1], date = dat$date[10] + 1800)
 
+  class(dat) <- "data.frame"
   fmt_dat <- suppressWarnings(formatData(dat, predTimes = pt, time.unit = "hours"))
 
   # 4. Fit Model with calcOSA = TRUE
@@ -599,6 +603,7 @@ test_that("overdamped fitLangevin calculates OSA residuals correctly with duplic
   # C. True Interpolation Point (NA coordinates)
   pt <- data.frame(id = dat$id[1], date = dat$date[10] + 1800)
 
+  class(dat) <- "data.frame"
   fmt_dat <- suppressWarnings(formatData(dat, predTimes = pt, time.unit = "hours"))
 
   # 4. Fit Model with calcOSA = TRUE

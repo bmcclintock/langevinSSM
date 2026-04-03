@@ -52,7 +52,10 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 
   track_df$type <- factor(track_df$type, levels = c("Observed", "Estimated"))
 
-  beta_est <- x$estimates$natural[rownames(x$estimates$natural) == "beta", "Estimate"]
+  rn <- rownames(x$estimates$natural)
+  beta_idx <- which(grepl("^beta", rn))
+  beta_est <- x$estimates$natural[beta_idx, "Estimate"]
+
   ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log)
 
   if (!is.null(time)) {

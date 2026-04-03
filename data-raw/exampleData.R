@@ -29,7 +29,7 @@ names(exampleCovs) <- c(paste0("cov",1:(ncov-1)),"d2c")
 # shift covariates so coordinates don't look like they could be lat/long
 exampleCovs <- lapply(exampleCovs,terra::shift, dx=1000, dy=1000)
 
-UD <- getUD(exampleCovs,examplePar$beta)
+UD <- getUD(exampleCovs, beta = examplePar$beta)
 
 set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAnimals,obsPerAnimal=obsPerAnimal,measurementError = measurementError)

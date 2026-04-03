@@ -200,10 +200,10 @@ Type langevinSSM(objective_function<Type>* obj)
 
 
   // OBSERVATION MODEL
-  matrix<Type> cov_obs(2, 2);
-  cov_obs.setZero();
   for(int i = 0; i < timeSteps; ++i) {
     if(isd(i) == 1) {
+      matrix<Type> cov_obs(2, 2);
+      cov_obs.setZero();
       if(obs_mod(i) == 0) {
         // Argos Least Squares and GPS observations
         Type s = tau(0) * K(i,0);

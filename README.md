@@ -159,24 +159,24 @@ fit
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.97 
-#> Optimization time:  2.17 seconds
+#> Optimization time:  0.67 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
-#>        Estimate Std. Error
-#> beta_1  -3.5437      1.251
-#> beta_2   8.6136      2.295
-#> beta_3   7.5113      1.948
-#> beta_4  -0.3084      0.324
-#> sigma    4.3092      0.500
-#> gamma    0.5850      0.145
-#> rho_o    0.0000      0.000
-#> tau_1    1.0000      0.000
-#> tau_2    1.0000      0.000
-#> psi      1.0000      0.000
+#>           Estimate Std. Error
+#> beta_cov1  -3.5437      1.250
+#> beta_cov2   8.6136      2.295
+#> beta_cov3   7.5113      1.948
+#> beta_d2c   -0.3084      0.324
+#> sigma       4.3092      0.500
+#> gamma       0.5850      0.145
+#> rho_o       0.0000      0.000
+#> tau_1       1.0000      0.000
+#> tau_2       1.0000      0.000
+#> psi         1.0000      0.000
 
 # calculate the estimated UD
-UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exampleCovs)])
+UD <- getUD(spatialCovs = exampleCovs, fit = fit)
 
 # plot the estimated (log) UD with the observed and estimated locations
 plot(fit, spatialCovs = exampleCovs, data = exampleDat)
@@ -200,7 +200,7 @@ trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
 
 # calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
-#> [1] 0.9088082
+#> [1] 0.9088081
 ```
 
 ## Citation

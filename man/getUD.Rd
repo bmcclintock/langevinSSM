@@ -4,10 +4,12 @@
 \alias{getUD}
 \title{Compute Utilization Distribution}
 \usage{
-getUD(spatialCovs, beta, log = TRUE)
+getUD(spatialCovs, fit, beta, log = TRUE)
 }
 \arguments{
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
+
+\item{fit}{A \code{fitLangevin} object return by \code{\link{fitLangevin}}.}
 
 \item{beta}{Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.}
 

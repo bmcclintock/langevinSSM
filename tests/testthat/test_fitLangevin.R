@@ -10,7 +10,7 @@ get_valid_raster <- function() {
 
 get_valid_dataLangevin <- function() {
   df <- data.frame(
-    id = as.factor(rep("A", 5)), # FIXED: Must be a factor to mimic formatData
+    id = as.factor(rep("A", 5)), # must be a factor to mimic formatData
     date = as.POSIXct(c("2023-01-01 10:00:00", "2023-01-01 11:00:00", "2023-01-01 12:00:00",
                         "2023-01-01 13:00:00", "2023-01-01 14:00:00"), tz = "UTC"),
     dt = rep(1, 5),
@@ -21,7 +21,7 @@ get_valid_dataLangevin <- function() {
     smaj = rep(NA, 5),
     smin = rep(NA, 5),
     eor = rep(NA, 5),
-    lc = as.factor(rep("G", 5)) # FIXED: Also made factor for consistency
+    lc = as.factor(rep("G", 5)) # also made factor for consistency
   )
   attr(df, "time.unit") <- "hours"
   class(df) <- append("dataLangevin", class(df))

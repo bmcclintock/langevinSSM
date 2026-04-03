@@ -50,8 +50,6 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
   TYPE x_prop = (x - (VEC_ELT(raster_extent, 0) + VEC_ELT(raster_resolution, 0)/TYPE(2.0))) / VEC_ELT(raster_resolution, 0);
   TYPE y_prop = (y - (VEC_ELT(raster_extent, 2) + VEC_ELT(raster_resolution, 1)/TYPE(2.0))) / VEC_ELT(raster_resolution, 1);
 
-  // CRITICAL FIX: Strip AD type using AS_DOUBLE before calling floor()
-  // This calculates the cell index without crashing the CppAD tape
   int col = static_cast<int>(floor(AS_DOUBLE(x_prop)));
   int row = static_cast<int>(floor(AS_DOUBLE(y_prop)));
 

@@ -222,8 +222,6 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
         control=control))
     }, silent = TRUE)
 
-    # FIX: Check for try-error BEFORE appending new list elements
-    # to prevent R from silently coercing the error into a list
     if (inherits(fit, "try-error") || !is.list(fit)) {
       stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
     }
@@ -248,8 +246,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     warning("TMB::sdreport failed to calculate standard errors. Trajectory and point estimates were recovered from the report, but SEs are unavailable.")
 
     # 1. working scale
-    name_counts <- table(names(fit$par))
     working_names <- names(fit$par)
+    name_counts <- table(working_names)
     is_dup <- working_names %in% names(name_counts[name_counts > 1])
     if (any(is_dup)) {
       suffix <- ave(working_names, working_names, FUN = seq_along)
@@ -262,36 +260,37 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     )
     rownames(fit$estimates$working) <- working_names
 
-    # natural scale
+    # 2. natural scale
     rep_vals <- obj2$report()
     nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi")
     existing_names <- nat_names[nat_names %in% names(rep_vals)]
     nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
     names(nat_list) <- existing_names
     nat_est <- unlist(nat_list, use.names=FALSE)
+
+    nat_rn <- unlist(lapply(names(nat_list), function(x) {
+      if (length((nat_list[[x]])) == 1) return(x)
+      else return(paste0(x, "_", 1:length(nat_list[[x]])))
+    }))
+
     fit$estimates$natural <- data.frame(
       "Estimate" = as.numeric(nat_est),
       "Std. Error" = NA_real_,
       check.names = FALSE
     )
-    rownames(fit$estimates$natural) <- unlist(lapply(names(nat_list),function(x) {
-      if (length((nat_list[[x]]))==1) {
-        return(x)
-      } else return(paste0(x, "_", 1:length(nat_list[[x]])))
+    rownames(fit$estimates$natural) <- nat_rn
 
-    }))
-
-    # random effects (mu/vel)
+    # 3. random effects (mu/vel)
     if(length(re)) {
       fit$estimates$random <- list()
       for(i in seq_along(re)) {
-        node <- re[i] # "mu" or "vel"
+        node <- re[i]
         fit$estimates$random[[node]] <- list(
           est = data.frame(
             id = data$id,
             t(rep_vals[[node]]) * scaleFactor
           ),
-          se = NULL # No SEs available
+          se = NULL
         )
         colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
       }
@@ -300,46 +299,46 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     fit$estimates$natural <- summary(sdreport_out, "report")
     fit$estimates$working <- summary(sdreport_out, "fixed")
 
+    for (est_type in c("natural", "working")) {
+      rn <- rownames(fit$estimates[[est_type]])
+      name_counts <- table(rn)
+      is_dup <- rn %in% names(name_counts[name_counts > 1])
+      if (any(is_dup)) {
+        suffix <- ave(rn, rn, FUN = seq_along)
+        rn[is_dup] <- paste0(rn[is_dup], "_", suffix[is_dup])
+      }
+      fit$estimates[[est_type]] <- as.data.frame(fit$estimates[[est_type]])
+      rownames(fit$estimates[[est_type]]) <- rn
+    }
+
+    # 3. random effects
     if(length(re)) {
       ran_est <- summary(sdreport_out, "random")
-
-      # Populate report buffer for point estimates (safest way to get full mapped matrices)
       obj2$fn(fit$par)
       rep_vals <- obj2$report()
-
       fit$estimates$random <- list()
 
       for(i in seq_along(re)) {
-        node <- re[i] # "mu" or "vel"
-
-        # Point Estimates (automatically expanded by TMB report)
+        node <- re[i]
         est_mat <- t(matrix(rep_vals[[node]], nrow = 2)) * scaleFactor
-
-        # Standard Errors (expanded manually using the map)
         node_ran_est <- ran_est[rownames(ran_est) == node, , drop = FALSE]
-        se_full <- rep(NA_real_, length(rep_vals[[node]])) # Initialize with NAs
+        se_full <- rep(NA_real_, length(rep_vals[[node]]))
 
         if (!is.null(map[[node]])) {
-          # Expand the reduced SEs using the factor integers
           map_int <- as.integer(map[[node]])
           valid_idx <- !is.na(map_int)
           se_full[valid_idx] <- node_ran_est[map_int[valid_idx], "Std. Error"]
         } else {
-          # No map used, just copy directly
           se_full <- node_ran_est[, "Std. Error"]
         }
 
         se_mat <- t(matrix(se_full, nrow = 2)) * scaleFactor
-
-        # Assemble final data frames
         fit$estimates$random[[node]] <- list()
         fit$estimates$random[[node]]$est <- data.frame(id = data$id, est_mat)
         fit$estimates$random[[node]]$se  <- data.frame(id = data$id, se_mat)
-
         colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
         colnames(fit$estimates$random[[node]]$se)  <- c("id", paste0(node, ".", c("x", "y")))
       }
-
       if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport_out$jointPrecision
     }
   }
@@ -350,22 +349,16 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     res_x <- rep(NA_real_, ncol(dat$Y))
     res_y <- rep(NA_real_, ncol(dat$Y))
-
     unique_ids <- unique(data$id)
-
     # Globally valid columns (isd == 1 means non-NA)
     all_valid_cols <- which(dat$isd == 1)
 
     for (uid in unique_ids) {
       # Find column indices (1-based) for this specific track
       track_cols <- which(dat$ID == uid)
-
       # Intersect to get ONLY valid columns for this track
       valid_track_cols <- intersect(track_cols, all_valid_cols)
 
-      # THE FIX: A one-step-ahead prediction for the very first observation
-      # is mathematically undefined without a proper spatial prior. We remove it
-      # from the prediction subset and move it to the conditional subset!
       if (length(valid_track_cols) > 1) {
         eval_track_cols <- valid_track_cols[-1]
       } else {
@@ -375,9 +368,6 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
       # Map ONLY the evaluated column indices to the 1D elements
       track_elements <- sort(c(2 * eval_track_cols - 1, 2 * eval_track_cols))
-
-      # Conditional elements are all OTHER tracks' valid observations
-      # PLUS the first valid observation of THIS track!
       other_valid_cols <- setdiff(all_valid_cols, eval_track_cols)
       cond_elements <- sort(c(2 * other_valid_cols - 1, 2 * other_valid_cols))
 
@@ -405,7 +395,6 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
         if (length(eval_track_cols) == length(idx_x)) {
           # Map residuals back to their correct original columns.
-          # The first observation (and NA gaps) natively remain NA!
           res_x[eval_track_cols] <- track_osa$residual[idx_x]
           res_y[eval_track_cols] <- track_osa$residual[idx_y]
         } else {
@@ -420,6 +409,20 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       residual.x = res_x,
       residual.y = res_y
     )
+  }
+
+  for (est_type in c("natural", "working")) {
+    if (!is.null(fit$estimates[[est_type]])) {
+      rn <- rownames(fit$estimates[[est_type]])
+
+      # Catch native "beta" or appended "beta_1" formats safely in either path
+      beta_idx <- which(rn == "beta" | grepl("^beta_[0-9]+$", rn))
+
+      if (length(beta_idx) == length(spatialCovs) && !is.null(names(spatialCovs))) {
+        rn[beta_idx] <- paste0("beta_", names(spatialCovs))
+        rownames(fit$estimates[[est_type]]) <- rn
+      }
+    }
   }
 
   fit$conditions <- list(hessian = hessian,

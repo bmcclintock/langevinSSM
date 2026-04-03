@@ -90,7 +90,7 @@ fit <- fitLangevin(model = "underdamped",
 fit
 
 # calculate the estimated UD
-UD <- getUD(spatialCovs = exampleCovs, beta = fit$estimates$natural[1:length(exampleCovs)])
+UD <- getUD(spatialCovs = exampleCovs, fit = fit)
 
 # plot the estimated (log) UD with the observed and estimated locations
 plot(fit, spatialCovs = exampleCovs, data = exampleDat)

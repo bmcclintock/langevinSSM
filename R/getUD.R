@@ -1,5 +1,6 @@
 #' Compute Utilization Distribution
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
+#' @param fit A \code{fitLangevin} object return by \code{\link{fitLangevin}}.
 #' @param beta Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.
 #' @param log Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.
 #' @return A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization distribution. If the covariates in \code{spatialCovs} have time information (see \code{\link[terra]{time}}), the resulting time-dependent ``utilization distribution'' will also have time information, and each layer will correspond to a different time point.
@@ -7,7 +8,20 @@
 #'
 #' @importFrom terra global nlyr
 #' @export
-getUD <- function(spatialCovs, beta, log = TRUE) {
+getUD <- function(spatialCovs, fit, beta, log = TRUE) {
+
+  if((missing(fit) & missing(beta)) | (!missing(fit) & !missing(beta))) stop("Either 'fit' or 'beta' must be provided")
+
+  if(!missing(fit)){
+    if(!inherits(fit,"fitLangevin")) stop ("'fit' must be a fitLangevin object")
+  }
+
+  if(missing(beta)) {
+    rn <- rownames(fit$estimates$natural)
+    beta_idx <- which(grepl("^beta", rn))
+    beta <- fit$estimates$natural[beta_idx, "Estimate"]
+  }
+
   if(length(spatialCovs) != length(beta)) stop("length(spatialCovs) must equal length(beta)")
 
   ud_rast <- spatialCovs[[1]] * beta[1]

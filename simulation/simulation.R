@@ -211,7 +211,7 @@ for(isim in 1:nsims){
     lines(langSim[[isim]]$mu.x[langSim[[isim]]$id==i],langSim[[isim]]$mu.y[langSim[[isim]]$id==i]) # true path
   }
   plot(terra::crop(UD,zoom_ext),main="True UD",col=viridis::viridis(100))
-  estUD <- getUD(spatialCovs[[isim]],langFit[[isim]]$par[1:4],log=TRUE)
+  estUD <- getUD(spatialCovs[[isim]],langFit[[isim]],log=TRUE)
   plot(terra::crop(estUD,zoom_ext),main="Estimated UD",col=viridis::viridis(100))
 
   parMat[isim,"BA"] <- rasterOverlap(exp(estUD),exp(UD)) # Calculate Bhattacharyya's Affinity between estimated and true UDs

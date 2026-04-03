@@ -144,3 +144,37 @@ checkErrorData <- function(data, coord=c("x","y")){
   if(any((!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor)) & (!is.na(data$x.sd) & !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms. If using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA. If using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
   if(isTRUE(any(data$eor<0 | data$eor > pi))) stop("Error ellipse orientation (eor) must be between 0 and pi radians.")
 }
+
+mapDuplicatedTimes <- function(dat, map, par, re) {
+  if (any(dat$dt < 1.e-6)) {
+    # extract current maps (or initialize 1:N if NULL)
+    mu_map <- if(is.null(map$mu)) 1:length(par$mu) else as.character(map$mu)
+    vel_map <- if(is.null(map$vel)) 1:length(par$vel) else as.character(map$vel)
+
+    for(i in 2:ncol(dat$Y)) {
+      # if same track and dt is near 0, map current state to previous state
+      if(dat$ID[i] == dat$ID[i-1] && dat$dt[i] < 1.e-6) {
+
+        if(dat$dt[i] > 0){
+          warning("Extremely small (0 < dt < 1.e-6) time step detected. Mapping states together (i.e. no change in location or velocity) to prevent numerical instability.")
+        }
+
+        # matrix indexing in TMB is column-major:
+        # col 1 = elements 1 & 2; col 2 = elements 3 & 4
+        idx_curr_x <- 2 * i - 1
+        idx_curr_y <- 2 * i
+        idx_prev_x <- 2 * (i - 1) - 1
+        idx_prev_y <- 2 * (i - 1)
+
+        mu_map[idx_curr_x] <- mu_map[idx_prev_x]
+        mu_map[idx_curr_y] <- mu_map[idx_prev_y]
+
+        vel_map[idx_curr_x] <- vel_map[idx_prev_x]
+        vel_map[idx_curr_y] <- vel_map[idx_prev_y]
+      }
+    }
+    map$mu <- factor(mu_map, levels = unique(mu_map[!is.na(mu_map)]))
+    if("vel" %in% re) map$vel <- factor(vel_map)
+  }
+  return(map)
+}

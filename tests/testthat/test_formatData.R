@@ -281,3 +281,35 @@ test_that("NA coordinates in the first observation of any track throws an error"
 
   expect_error(formatData(dat16), "The first observation for each track in 'data' cannot have missing \\(NA\\) coordinates.")
 })
+
+test_that("formatData handles duplicated times and predTimes padding safely", {
+
+  # Create a self-contained mock dataset with clearly PROJECTED coordinates
+  # to avoid the lat/lon warning
+  dat <- data.frame(
+    id = rep("A", 3),
+    date = as.POSIXct(c("2023-01-01 10:00:00", "2023-01-01 11:00:00", "2023-01-01 12:00:00"), tz = "UTC"),
+    x = c(500000, 505000, 510000),
+    y = c(4000000, 4005000, 4010000),
+    lc = rep("G", 3)
+  )
+
+  # 1. Test Warning on true duplicates (two actual observations at the same time)
+  dat_dup <- rbind(dat, dat[2, ])
+  expect_warning(
+    fmt_dup <- formatData(dat_dup, time.unit = "hours"),
+    "Duplicated times with observed"
+  )
+  # Ensure neither observation was deleted (3 original + 1 duplicate = 4 rows)
+  expect_equal(nrow(fmt_dup), 4)
+  expect_true(any(fmt_dup$dt == 0))
+
+  # 2. Test NA padding safely collapses
+  # Create predTimes that perfectly overlaps with existing tracking data
+  pt <- data.frame(id = "A", date = dat$date[c(1, 3)])
+  fmt_pad <- formatData(dat, predTimes = pt, time.unit = "hours")
+
+  # It should not increase the row count because the NAs should collapse into the real obs
+  expect_equal(nrow(fmt_pad), 3)
+  expect_true(all(!is.na(fmt_pad$x))) # No NA coordinates should have survived
+})

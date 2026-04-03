@@ -123,7 +123,7 @@ fit
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.97 
-#> Optimization time:  1.85 seconds
+#> Optimization time:  1.78 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------

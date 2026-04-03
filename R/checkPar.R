@@ -168,11 +168,29 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL){
       re <- c("mu","vel")
     }
 
-    if(all(is.na(dat$obs_mod))){
-      if(model=="overdamped") re <- NULL
-      else re <- "vel"
-      par$mu <- dat$Y
-      map$mu <- factor(rep(NA, length(dat$Y)))
+    if (all(is.na(dat$obs_mod))) {
+      has_nas <- any(is.na(dat$Y))
+
+      if (model == "overdamped") {
+        re <- if (has_nas) "mu" else NULL
+      } else {
+        re <- if (has_nas) c("mu", "vel") else "vel"
+      }
+
+      # Lock known locations to dat$Y, but preserve interpolated par$mu for NAs
+      valid_Y <- !is.na(dat$Y)
+      par$mu[valid_Y] <- dat$Y[valid_Y]
+
+      if (has_nas) {
+        # Create a partial map: fix known locations (NA), estimate missing locations (1:N)
+        mu_map <- rep(NA, length(dat$Y))
+        na_idx <- which(is.na(dat$Y))
+        mu_map[na_idx] <- 1:length(na_idx)
+        map$mu <- factor(mu_map)
+      } else {
+        # No missing data, completely freeze mu
+        map$mu <- factor(rep(NA, length(dat$Y)))
+      }
     }
 
     if(is.null(par$mu)) stop("par$mu is missing, with no default.")

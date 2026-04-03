@@ -110,6 +110,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                times=track_times,
                dt=data$dt)
 
+  dat$skip_step <- as.integer(dat$dt < 1.e-6) # very small dt's assume the animal didn't move between the corresponding observations
+
   dat$smaj <- data$smaj / scaleFactor
   dat$smin <- data$smin / scaleFactor
   dat$eor <- data$eor
@@ -133,6 +135,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   map <- cp$map
   re <- cp$re
 
+  map <- mapDuplicatedTimes(dat, map, par, re)
+
   # scale parameters
   par$log_sigma <- par$log_sigma - log(scaleFactor)
   par$mu <- par$mu / scaleFactor
@@ -140,11 +144,19 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
   message("   Fitting ",model," Langevin model...")
   if(initialInner){
+
+    # Create the map to freeze fixed effects for the inner optimization
+    map_inner <- lapply(par[names(par)[!names(par) %in% c("mu","vel")]], function(x) factor(rep(NA,length(x))))
+
+    # Preserve the user's map (and duplicate time map) for the random effects
+    if(!is.null(map$mu)) map_inner$mu <- map$mu
+    if(!is.null(map$vel)) map_inner$vel <- map$vel
+
     obj1 <- try({
       TMB::MakeADFun(
         c(model="langevinSSM",dat),
         par,
-        map = lapply(par[names(par)[!names(par) %in% c("mu","vel")]],function(x) factor(rep(NA,length(x)))),
+        map = map_inner,
         random = re,
         DLL = "langevinSSM_TMBExports",
         hessian = hessian,
@@ -161,10 +173,13 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     obj1$fn()
 
     smoothed_pars <- obj1$env$parList()
+
     if("mu" %in% re) par$mu <- smoothed_pars$mu
-    if ("vel" %in% re) {
-      par$vel <- smoothed_pars$vel
-    }
+    if("vel" %in% re) par$vel <- smoothed_pars$vel
+
+    # re-inject the fixed values
+    if(!is.null(map$mu)) par$mu[is.na(map$mu)] <- (cp$par$mu / scaleFactor)[is.na(map$mu)]
+    if(!is.null(map$vel)) par$vel[is.na(map$vel)] <- (cp$par$vel / scaleFactor)[is.na(map$vel)]
   }
 
   obj2 <- try({
@@ -185,23 +200,40 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     stop("TMB::MakeADFun failed to construct the objective function. Check parameter initial values or data constraints.\nError details: ", attr(obj2, "condition")$message)
   }
 
-  start <- proc.time()
-  fit <- try({
-    do.call(stats::nlminb,args = list(
-      start = obj2$par,
-      objective = obj2$fn,
-      gradient = obj2$gr,
-      control=control))
-  }, silent = TRUE)
-  fit$elapsedTime <- proc.time()-start
+  if (length(obj2$par) == 0) {
+    # Edge case: All fixed parameters are mapped out (frozen)
+    start <- proc.time()
+    fit <- list(
+      par = obj2$par,
+      objective = obj2$fn(obj2$par),
+      convergence = 0,
+      message = "All parameters fixed; no outer optimization required",
+      iterations = 0,
+      evaluations = c("function" = 1, "gradient" = 0)
+    )
+    fit$elapsedTime <- proc.time() - start
+  } else {
+    start <- proc.time()
+    fit <- try({
+      do.call(stats::nlminb,args = list(
+        start = obj2$par,
+        objective = obj2$fn,
+        gradient = obj2$gr,
+        control=control))
+    }, silent = TRUE)
 
-  if (inherits(fit, "try-error") || !is.list(fit)) {
-    stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
-  }
+    # FIX: Check for try-error BEFORE appending new list elements
+    # to prevent R from silently coercing the error into a list
+    if (inherits(fit, "try-error") || !is.list(fit)) {
+      stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
+    }
 
-  # Check for non-convergence (nlminb convergence code != 0)
-  if (fit$convergence != 0) {
-    warning("nlminb optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
+    fit$elapsedTime <- proc.time() - start
+
+    # Check for non-convergence (nlminb convergence code != 0)
+    if (!is.null(fit$convergence) && fit$convergence != 0) {
+      warning("nlminb optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
+    }
   }
 
   message("   Calculating SEs...")
@@ -265,19 +297,49 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       }
     }
   } else {
-
     fit$estimates$natural <- summary(sdreport_out, "report")
     fit$estimates$working <- summary(sdreport_out, "fixed")
 
     if(length(re)) {
       ran_est <- summary(sdreport_out, "random")
+
+      # Populate report buffer for point estimates (safest way to get full mapped matrices)
+      obj2$fn(fit$par)
+      rep_vals <- obj2$report()
+
       fit$estimates$random <- list()
-      for(i in 1:length(re)){
-        fit$estimates$random[[re[i]]] <- list()
-        fit$estimates$random[[re[i]]]$est <- data.frame(cbind(data$id,t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),1],nrow=2) * scaleFactor)))
-        fit$estimates$random[[re[i]]]$se <- data.frame(cbind(data$id,t(matrix(ran_est[(i-1)*2*ncol(dat$Y)+1:(2*ncol(dat$Y)),2],nrow=2) * scaleFactor)))
-        colnames(fit$estimates$random[[re[i]]]$est) <- colnames(fit$estimates$random[[re[i]]]$se) <- c("id",paste0(re[i],".",c("x","y")))
+
+      for(i in seq_along(re)) {
+        node <- re[i] # "mu" or "vel"
+
+        # Point Estimates (automatically expanded by TMB report)
+        est_mat <- t(matrix(rep_vals[[node]], nrow = 2)) * scaleFactor
+
+        # Standard Errors (expanded manually using the map)
+        node_ran_est <- ran_est[rownames(ran_est) == node, , drop = FALSE]
+        se_full <- rep(NA_real_, length(rep_vals[[node]])) # Initialize with NAs
+
+        if (!is.null(map[[node]])) {
+          # Expand the reduced SEs using the factor integers
+          map_int <- as.integer(map[[node]])
+          valid_idx <- !is.na(map_int)
+          se_full[valid_idx] <- node_ran_est[map_int[valid_idx], "Std. Error"]
+        } else {
+          # No map used, just copy directly
+          se_full <- node_ran_est[, "Std. Error"]
+        }
+
+        se_mat <- t(matrix(se_full, nrow = 2)) * scaleFactor
+
+        # Assemble final data frames
+        fit$estimates$random[[node]] <- list()
+        fit$estimates$random[[node]]$est <- data.frame(id = data$id, est_mat)
+        fit$estimates$random[[node]]$se  <- data.frame(id = data$id, se_mat)
+
+        colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
+        colnames(fit$estimates$random[[node]]$se)  <- c("id", paste0(node, ".", c("x", "y")))
       }
+
       if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport_out$jointPrecision
     }
   }
@@ -291,18 +353,34 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     unique_ids <- unique(data$id)
 
+    # Globally valid columns (isd == 1 means non-NA)
+    all_valid_cols <- which(dat$isd == 1)
+
     for (uid in unique_ids) {
       # Find column indices (1-based) for this specific track
       track_cols <- which(dat$ID == uid)
 
-      # TMB unrolls the 2xN Y array into a 1D vector (X1, Y1, X2, Y2...).
-      # Map the column indices to the 1D elements in the unrolled array.
-      track_elements <- sort(c(2 * track_cols - 1, 2 * track_cols))
+      # Intersect to get ONLY valid columns for this track
+      valid_track_cols <- intersect(track_cols, all_valid_cols)
 
-      # Conditional elements are all OTHER tracks.
-      # This forces TMB to condition on them instead of dropping them,
-      # preventing the unanchored Hessian crash!
-      cond_elements <- setdiff(1:length(dat$Y), track_elements)
+      # THE FIX: A one-step-ahead prediction for the very first observation
+      # is mathematically undefined without a proper spatial prior. We remove it
+      # from the prediction subset and move it to the conditional subset!
+      if (length(valid_track_cols) > 1) {
+        eval_track_cols <- valid_track_cols[-1]
+      } else {
+        warning("Track ID ", uid, " does not have enough valid observations for OSA calculation.")
+        next
+      }
+
+      # Map ONLY the evaluated column indices to the 1D elements
+      track_elements <- sort(c(2 * eval_track_cols - 1, 2 * eval_track_cols))
+
+      # Conditional elements are all OTHER tracks' valid observations
+      # PLUS the first valid observation of THIS track!
+      other_valid_cols <- setdiff(all_valid_cols, eval_track_cols)
+      cond_elements <- sort(c(2 * other_valid_cols - 1, 2 * other_valid_cols))
+
       message("      track ID: ", uid, "...")
       track_osa <- tryCatch({
         TMB::oneStepPredict(
@@ -321,16 +399,15 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       })
 
       if (!is.null(track_osa)) {
-        # Identify which columns in THIS track actually had data evaluated
-        valid_track_cols <- which(dat$ID == uid & dat$isd == 1)
-
         # oneStepPredict returns rows exactly matching the evaluated subset
         idx_x <- seq(1, nrow(track_osa), by = 2)
         idx_y <- seq(2, nrow(track_osa), by = 2)
 
-        if (length(valid_track_cols) == length(idx_x)) {
-          res_x[valid_track_cols] <- track_osa$residual[idx_x]
-          res_y[valid_track_cols] <- track_osa$residual[idx_y]
+        if (length(eval_track_cols) == length(idx_x)) {
+          # Map residuals back to their correct original columns.
+          # The first observation (and NA gaps) natively remain NA!
+          res_x[eval_track_cols] <- track_osa$residual[idx_x]
+          res_y[eval_track_cols] <- track_osa$residual[idx_y]
         } else {
           warning("Mismatch in evaluated observations for track ID ", uid)
         }

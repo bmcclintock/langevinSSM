@@ -43,6 +43,8 @@ p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 
 exampleDat$date <- as.POSIXlt(exampleDat$date*100*60, tz = "UTC")
 exampleDat <- exampleDat[,c("id","date","dt","x","y","smaj","smin","eor","x.sd","y.sd","mu.x","mu.y","vel.x","vel.y")]
+#exampleDat$dt <- NULL
+#exampleDat$eor <- exampleDat$eor * 180 / pi
 attr(exampleDat,"time.unit") <- "mins"
 
 lapply(1:ncov,function(x) terra::writeRaster(exampleCovs[[x]], paste0("inst/extdata/exampleCov",x,".tif"),overwrite=TRUE))

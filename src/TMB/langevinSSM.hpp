@@ -22,6 +22,7 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_IVECTOR(ID);         // Track IDs
   DATA_IVECTOR(nbObs);      // Number of observations per step
   DATA_SCALAR(scale_factor);
+  DATA_IVECTOR(skip_step);  // indicator to skip extremely small (or 0) time steps (assumes no movement between the observations)
 
   // Raster covariate data
   DATA_ARRAY(raster_vals);         // 3D array of raster values [layer, nrow, ncol]
@@ -111,6 +112,8 @@ Type langevinSSM(objective_function<Type>* obj)
 
       int idx = start_idx + t;
       Type dt_step = dt(idx+1);
+
+      if(skip_step(idx+1) == 1) continue;
 
       // Get current locations and absolute time
       Type x_prev = mu(0,idx);

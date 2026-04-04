@@ -1,8 +1,5 @@
 CXX_STD = CXX17
 
-# Force zero debug symbols for Rcpp/Armadillo files to prevent GHA bloat
-PKG_CXXFLAGS = -g0
-
 # Explicitly link BLAS and LAPACK for RcppArmadillo
 PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 

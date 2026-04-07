@@ -7,13 +7,19 @@
 rasterOverlap(r1, r2)
 }
 \arguments{
-\item{r1}{A \code{\link[terra]{SpatRaster-class}} objects object. If any values are negative, \code{rasterOverlap} assumes \code{r1} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).}
+\item{r1}{A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r1} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).}
 
-\item{r2}{A \code{\link[terra]{SpatRaster-class}} objects object. If any values are negative, \code{rasterOverlap} assumes \code{r2} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).}
+\item{r2}{A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r2} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).}
 }
 \value{
-A numeric value between 0 (no overlap) and 1 (identical distributions).
+A numeric vector containing the Bhattacharyya's affinity for each layer, with values between 0 (no overlap) and 1 (identical distributions).
 }
 \description{
 This function calculates the Bhattacharyya's affinity (also known as the Bhattacharyya coefficient) between two rasters, which is a measure of similarity between two probability distributions. The rasters are first normalized to sum to 1 (to represent probability distributions), and then the affinity is calculated as the sum of the square root of the product of the two distributions across all cells.
+If multi-layer rasters are provided, the affinity is calculated pairwise for each corresponding layer.
+}
+\examples{
+r1 <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1), log = FALSE)
+r2 <- getUD(exampleCovs, beta = c(-3, 5, 4, -0.1), log = FALSE)
+rasterOverlap(r1,r2)
 }

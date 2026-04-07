@@ -53,14 +53,16 @@ simCov <- function(sca = 100,
   # Simulate and scale by the standard deviation
   grf_fields <- sqrt(sigma2) * fields::sim.rf(obj)
 
-  # Convert to SpatRaster and orient correctly
-  spatialCov <- terra::flip(
-    terra::rast(
-      t(grf_fields),
-      extent = terra::ext(min(grid_list$x), max(grid_list$x),
-                          min(grid_list$y), max(grid_list$y))
-    ),
-    direction = "vertical"
+  # Transpose the matrix to match spatial orientation
+  grf_matrix <- t(grf_fields)
+
+  grf_flipped <- grf_matrix[nrow(grf_matrix):1, ]
+
+  # Convert directly to a standalone SpatRaster
+  spatialCov <- terra::rast(
+    grf_flipped,
+    extent = terra::ext(min(grid_list$x), max(grid_list$x),
+                        min(grid_list$y), max(grid_list$y))
   )
 
   return(spatialCov)

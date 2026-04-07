@@ -70,6 +70,8 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
     #######################
     # Generate ncov spatial covariates
     message("   Generating covariates...")
+
+    covNames <- c("cov1","cov2","cov3","d2c")
     spatialCovs[[isim]] <- list()
 
     for(i in 1:ncov) {
@@ -79,12 +81,14 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
           irange <- runif(1,covRange[1],covRange[2])
           spatialCovs[[isim]][[i]][[ztime]] <- simCov(sca = sca, irange=irange, sigma2 = 0.1, kappa = 0.5)
           terra::time(spatialCovs[[isim]][[i]][[ztime]]) <- ztimes[ztime]
+          names(spatialCovs[[isim]][[i]][[ztime]]) <- covNames[i]
           # terra::crs(spatialCovs[[isim]][[i]]) <- "epsg:3416"
         }
         spatialCovs[[isim]][[i]] <- terra::rast(spatialCovs[[isim]][[i]])
       } else {
         irange <- runif(1,covRange[1],covRange[2])
         spatialCovs[[isim]][[i]] <- simCov(sca = sca, irange=irange, sigma2 = 0.1, kappa = 0.5)
+        names(spatialCovs[[isim]][[i]]) <- paste0("cov",i)
         # terra::crs(spatialCovs[[isim]][[i]]) <- "epsg:3416"
       }
     }
@@ -92,9 +96,9 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
     coords <- terra::crds(spatialCovs[[isim]][[1]])
     dist2 <- (coords[, "x"]^2 + coords[, "y"]^2) / sca
 
-    spatialCovs[[isim]][[4]] <- spatialCovs[[isim]][[1]]
-    terra::values(spatialCovs[[isim]][[4]]) <- dist2
-    names(spatialCovs[[isim]]) <- c("cov1","cov2","cov3","d2c")
+    spatialCovs[[isim]][[4]] <- terra::setValues(spatialCovs[[isim]][[1]][[1]], dist2)
+    names(spatialCovs[[isim]][[4]]) <- covNames[4]
+    names(spatialCovs[[isim]]) <- covNames
 
     if(model=="underdamped"){
       par <- list(beta=beta,sigma=sigma,gamma=gamma,psi=psi)
@@ -214,7 +218,7 @@ for(isim in 1:nsims){
   estUD <- getUD(spatialCovs[[isim]],langFit[[isim]],log=TRUE)
   plot(terra::crop(estUD,zoom_ext),main="Estimated UD",col=viridis::viridis(100))
 
-  parMat[isim,"BA"] <- rasterOverlap(exp(estUD),exp(UD)) # Calculate Bhattacharyya's Affinity between estimated and true UDs
+  parMat[isim,"BA"] <- mean(rasterOverlap(exp(estUD),exp(UD))) # Calculate Bhattacharyya's Affinity between estimated and true UDs
 
   print(paste0("            ",paste0(colnames(parMat),collapse="    ")))
   print(paste0("current ",paste0(round(parMat[isim,],6),collapse=" ")))

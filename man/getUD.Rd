@@ -21,6 +21,10 @@ A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization 
 \description{
 Compute Utilization Distribution
 }
+\examples{
+# exampleCovs included in package; see ?exampleCovs for details
+UD <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1) )
+}
 \seealso{
 \code{\link{plotRaster}} for plotting the utilization distribution and covariates.
 }

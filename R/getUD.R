@@ -5,8 +5,10 @@
 #' @param log Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.
 #' @return A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization distribution. If the covariates in \code{spatialCovs} have time information (see \code{\link[terra]{time}}), the resulting time-dependent ``utilization distribution'' will also have time information, and each layer will correspond to a different time point.
 #' @seealso \code{\link{plotRaster}} for plotting the utilization distribution and covariates.
-#'
-#' @importFrom terra global nlyr
+#' @examples
+#' # exampleCovs included in package; see ?exampleCovs for details
+#' UD <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1) )
+#' @importFrom terra global nlyr varnames
 #' @export
 getUD <- function(spatialCovs, fit, beta, log = TRUE) {
 
@@ -14,6 +16,7 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE) {
 
   if(!missing(fit)){
     if(!inherits(fit,"fitLangevin")) stop ("'fit' must be a fitLangevin object")
+    verify_signatures(fit, spatialCovs = spatialCovs)
   }
 
   if(missing(beta)) {
@@ -56,14 +59,16 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE) {
     z_times <- terra::time(spatialCovs[[dyn_idx]])
 
     if (!is.null(z_times)) {
-      names(ud_rast) <- paste0(ifelse(log, "log_", ""),"UD_", z_times)
+      names(ud_rast) <- rep(paste0(ifelse(log, "log_", ""),"UD"),terra::nlyr(ud_rast)) #_", z_times)
       terra::time(ud_rast) <- z_times
     } else {
-      names(ud_rast) <- paste0(ifelse(log, "log_", ""),"UD_layer_", 1:max_layers)
+      names(ud_rast) <- rep(paste0(ifelse(log, "log_", ""),"UD"),terra::nlyr(ud_rast)) #_layer_", 1:max_layers)
     }
+
   } else {
     names(ud_rast) <- paste0(ifelse(log, "log_", ""), "UD")
   }
+  terra::varnames(ud_rast) <- ""
 
   return(ud_rast)
 }

@@ -30,15 +30,14 @@ print.fitLangevin <- function(x, ...) {
   # Clean up the rownames for the natural estimates matrix
   nat_est <- x$estimates$natural
 
-  # Number the betas for clarity (e.g., beta_1, beta_2)
-  beta_idx <- which(rownames(nat_est) == "beta")
-  if (length(beta_idx) > 1) {
-    rownames(nat_est)[beta_idx] <- paste0("beta_", 1:length(beta_idx))
-  }
-  tau_idx <- which(rownames(nat_est) == "tau")
-  rownames(nat_est)[tau_idx] <- paste0("tau_", 1:length(tau_idx))
-
   stats::printCoefmat(nat_est, digits = 4, signif.stars = FALSE, na.print = "NA", ...)
+
+  tests_df <- attr(x$osa,"tests")
+  if(!is.null(tests_df)){
+    cat("\n--- OSA Goodness-of-Fit Results ---\n")
+    print(tests_df, row.names = FALSE)
+    cat("-----------------------------------\n")
+  }
 
   invisible(x)
 }

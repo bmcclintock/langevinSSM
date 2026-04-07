@@ -12,6 +12,15 @@
 #' @param ... Additional arguments (currently ignored, kept for S3 compatibility).
 #'
 #' @return A \code{\link[ggplot2]{ggplot}} object containing the plot (or a list of \code{\link[ggplot2]{ggplot}} objects if \code{compact = FALSE}), which can be further modified by the user.
+#' @examples
+#' \dontrun{
+#' # exampleDat included in package; see ?exampleDat for details
+#' # exampleCovs included in package; see ?exampleCovs for details
+#' fit <- fitLangevin(exampleDat, spatialCovs = exampleCovs, silent=TRUE)
+#' p <- plot(fit, spatialCovs = exampleCovs, data = exampleDat)
+#' p
+#' p + ggplot2::labs(title = "New Plot Title", subtitle = "Optional Subtitle")
+#' }
 #'
 #' @method plot fitLangevin
 #' @importFrom terra as.data.frame nlyr time crop ext
@@ -25,6 +34,8 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("Package \"ggplot2\" needed for plotting rasters. Please install it.", call. = FALSE)
   }
+
+  verify_signatures(x, data = data, spatialCovs = spatialCovs)
 
   track_id <- x$estimates$random$mu$est$id
   if (is.null(track_id)) track_id <- rep("1", nrow(x$estimates$random$mu$est))

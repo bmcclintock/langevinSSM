@@ -73,7 +73,7 @@ test_that("getUD properly formats dynamic (time-varying) log UDs", {
   ud_times <- terra::time(ud_dyn)
   expect_false(is.null(ud_times))
   expect_equal(length(ud_times), 2)
-  expect_true(all(grepl("log_UD_2023", names(ud_dyn))))
+  expect_true(all(grepl("^log_UD$", names(ud_dyn))))
 })
 
 test_that("getUD dynamic probability UD layers individually sum to 1", {

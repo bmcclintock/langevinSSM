@@ -38,3 +38,14 @@ A \code{\link[ggplot2]{ggplot}} object containing the plot (or a list of \code{\
 \description{
 Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu) using \code{ggplot2}. If the original data is provided, the observed locations are also plotted for comparison.
 }
+\examples{
+\dontrun{
+# exampleDat included in package; see ?exampleDat for details
+# exampleCovs included in package; see ?exampleCovs for details
+fit <- fitLangevin(exampleDat, spatialCovs = exampleCovs, silent=TRUE)
+p <- plot(fit, spatialCovs = exampleCovs, data = exampleDat)
+p
+p + ggplot2::labs(title = "New Plot Title", subtitle = "Optional Subtitle")
+}
+
+}

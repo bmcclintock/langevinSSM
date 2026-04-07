@@ -65,7 +65,7 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
 
-\item{calcOSA}{Logical indicating whether or not to calculate one-step-ahead (OSA) residuals. See \code{\link[TMB]{oneStepPredict}}. Note this can take a while for large data sets. Default: \code{FALSE}.}
+\item{calcOSA}{Logical or character string. If \code{TRUE}, calculates one-step-ahead (OSA) residuals using the default \code{"oneStepGaussianOffMode"} method (see \code{\link{getOSA}}). Alternatively, a character string can be provided to specify a different method (see \code{\link[TMB]{oneStepPredict}}). Note this can take a while for large data sets. Default: \code{FALSE}.}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:
@@ -77,8 +77,10 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{evaluations}{See \code{\link[stats]{nlminb}}}
 \item{elapsedTime}{Run time of the optimization}
 \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel''), as well as the joint precision matrix (``jointPrecision'') if \code{getJointPrecision=TRUE}.}
-\item{osa}{One-step-ahead residuals (if \code{calcOSA=TRUE})}
 \item{conditions}{List containing the optimization settings}
+\item{signatures}{List containing lightweight fingerprints for \code{data} and \code{spatialCovs} to protect downstream functions}
+\item{tmb_setup}{Blueprint for reconstructing TMB objective function}
+\item{osa}{One-step-ahead residuals (if \code{calcOSA} is not \code{FALSE})}
 }
 \description{
 Fit the underdamped or overdamped Langevin model to the location data provided, via numerical optimization of the log-likelihood
@@ -111,8 +113,15 @@ The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sig
 # fit underdamped model with measurement error
 # exampleDat included in package; see ?exampleDat for details
 # exampleCovs included in package; see ?exampleCovs for details
-fit <- fitLangevin(exampleDat,
-                   spatialCovs = exampleCovs)
+fit <- fitLangevin(data = exampleDat,
+                   spatialCovs = exampleCovs,
+                   silent = TRUE)
+
+# fit overdamped model with measurement error
+fit_od <- fitLangevin(data = exampleDat,
+                      model = "overdamped",
+                      spatialCovs = exampleCovs,
+                      silent = TRUE)
 }
 \references{
 Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.

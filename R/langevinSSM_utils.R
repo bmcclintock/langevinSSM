@@ -15,6 +15,8 @@ NULL
   makeActiveBinding("exampleCovs", function() {
 
     cov_names <- c("exampleCov1", "exampleCov2", "exampleCov3", "exampleCov4")
+    lyr_names <- c("cov1","cov2","cov3","d2c")
+    names(lyr_names) <- cov_names
 
     cov_list <- lapply(cov_names, function(cov) {
 
@@ -25,10 +27,12 @@ NULL
         stop(paste("Could not find", paste0(cov, ".tif"), "in the extdata/ folder."))
       }
 
-      terra::rast(file_path)
+      r <- terra::rast(file_path)
+      names(r) <- lyr_names[cov]
+      return(r)
     })
 
-    names(cov_list) <- c("cov1","cov2","cov3","d2c")
+    names(cov_list) <- lyr_names
 
     return(cov_list)
 
@@ -185,4 +189,91 @@ mapDuplicatedTimes <- function(dat, map, par, re) {
     if("vel" %in% re) map$vel <- factor(vel_map, levels = unique(vel_map[!is.na(vel_map)]))
   }
   return(map)
+}
+
+get_data_signature <- function(data, coord = c("x", "y")) {
+  if (is.null(data)) return(NULL)
+  list(
+    nrow = nrow(data),
+    # Summing coordinates is a fast, unique identifier for the specific track path
+    coord_sum = round(sum(data[[coord[1]]], data[[coord[2]]], na.rm = TRUE), 4),
+    date_range = as.numeric(range(data$date, na.rm = TRUE))
+  )
+}
+
+get_covs_signature <- function(spatialCovs) {
+  if (is.null(spatialCovs)) return(NULL)
+
+  # 1. Define fixed, deterministic cell locations
+  n_cells <- terra::ncell(spatialCovs[[1]])
+  first_cell  <- 1
+  center_cell <- ceiling(n_cells / 2)
+  last_cell   <- n_cells
+
+  target_cells <- c(first_cell, center_cell, last_cell)
+
+  list(
+    names = names(spatialCovs),
+    extent = round(as.vector(terra::ext(spatialCovs[[1]])), 4),
+    nlyr = unname(sapply(spatialCovs, terra::nlyr)),
+
+    # extract values for all target cells across all layers
+    val_check = round(as.numeric(unlist(lapply(spatialCovs, function(x) x[target_cells]))), 6)
+  )
+}
+
+verify_signatures <- function(fit, data = NULL, spatialCovs = NULL) {
+  if (!is.null(data) && !is.null(fit$signatures$data)) {
+    coord <- if (!is.null(fit$conditions$coord)) fit$conditions$coord else c("x", "y")
+    current_data_sig <- get_data_signature(data, coord)
+
+    if (!isTRUE(all.equal(fit$signatures$data, current_data_sig, tolerance = 1e-5))) {
+      stop("Safeguard triggered: the 'data' provided does not match the 'data' originally used to fit the model. Did you pass a filtered or otherwise modified dataset?")
+    }
+  }
+
+  if (!is.null(spatialCovs) && !is.null(fit$signatures$covs)) {
+    current_covs_sig <- get_covs_signature(spatialCovs)
+
+    if (!isTRUE(all.equal(fit$signatures$covs, current_covs_sig, tolerance = 1e-5))) {
+      stop("Safeguard triggered: the 'spatialCovs' provided do not match the covariates originally used to fit the model. Please ensure you are passing the exact same raster list used to fit the model.")
+    }
+  }
+}
+
+gof_tests <- function(osa_df){
+  message("   Calculating goodness-of-fit tests...")
+
+  res_x <- osa_df$residual.x
+  res_y <- osa_df$residual.y
+
+  valid_idx <- which(!is.na(res_x) & !is.na(res_y))
+  rx <- res_x[valid_idx]
+  ry <- res_y[valid_idx]
+  mah <- rx^2 + ry^2
+
+  if(length(rx) > 2) {
+    # Suppress warnings for ties, which can occasionally happen in large datasets
+    ks_x <- stats::ks.test(rx, "pnorm", mean = 0, sd = 1)
+    ks_y <- stats::ks.test(ry, "pnorm", mean = 0, sd = 1)
+    ks_mah <- stats::ks.test(mah, "pchisq", df = 2)
+
+    # Box-Ljung test for autocorrelation (lag typically defaults to log(N))
+    lag_val <- max(1, floor(log(length(rx))))
+    lb_x <- stats::Box.test(rx, lag = lag_val, type = "Ljung-Box")
+    lb_y <- stats::Box.test(ry, lag = lag_val, type = "Ljung-Box")
+    lb_mah <- stats::Box.test(mah, lag = lag_val, type = "Ljung-Box")
+
+    tests_df <- data.frame(
+      metric = c("KS_x", "KS_y", "KS_mah", "LB_x", "LB_y", "LB_mah"),
+      statistic = unname(c(ks_x$statistic, ks_y$statistic, ks_mah$statistic,
+                           lb_x$statistic, lb_y$statistic, lb_mah$statistic)),
+      p.value = unname(c(ks_x$p.value, ks_y$p.value, ks_mah$p.value,
+                         lb_x$p.value, lb_y$p.value, lb_mah$p.value)),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    warning("Not enough valid residuals to calculate quantitative GOF tests.")
+  }
+  return(tests_df)
 }

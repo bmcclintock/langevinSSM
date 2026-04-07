@@ -38,19 +38,21 @@ test_that("rasterOverlap handles negative values (log scale) with a warning", {
 
 test_that("rasterOverlap catches rasters that cannot be normalized", {
   r1 <- get_mock_raster(vals = 1)
-
   r_zero <- get_mock_raster(vals = 0)
-  expect_error(rasterOverlap(r1, r_zero), "One or both rasters sum to 0 or NA")
+
+  expect_error(rasterOverlap(r1, r_zero), "One or more layers in r1 or r2 sum to 0 or NA")
 
   r_na <- get_mock_raster(vals = NA)
-  expect_error(rasterOverlap(r1, r_na), "One or both rasters sum to 0 or NA")
+
+  expect_error(rasterOverlap(r1, r_na), "One or more layers in r1 or r2 sum to 0 or NA")
 })
 
 test_that("rasterOverlap correctly calculates affinity for identical distributions", {
   r1 <- get_mock_raster(vals = runif(100, 0.1, 1))
 
   affinity <- rasterOverlap(r1, r1)
-  expect_equal(affinity, 1, tolerance = 1e-6)
+
+  expect_equal(as.numeric(affinity), 1, tolerance = 1e-6)
 })
 
 test_that("rasterOverlap correctly calculates affinity for entirely disjoint distributions", {
@@ -61,5 +63,6 @@ test_that("rasterOverlap correctly calculates affinity for entirely disjoint dis
   r2 <- get_mock_raster(vals = vals2)
 
   affinity <- rasterOverlap(r1, r2)
-  expect_equal(affinity, 0, tolerance = 1e-6)
+
+  expect_equal(as.numeric(affinity), 0, tolerance = 1e-6)
 })

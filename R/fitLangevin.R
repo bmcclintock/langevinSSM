@@ -23,8 +23,7 @@
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
 #' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
-#' @param calcOSA Logical indicating whether or not to calculate one-step-ahead (OSA) residuals. See \code{\link[TMB]{oneStepPredict}}. Note this can take a while for large data sets. Default: \code{FALSE}.
-#'
+#' @param calcOSA Logical or character string. If \code{TRUE}, calculates one-step-ahead (OSA) residuals using the default \code{"oneStepGaussianOffMode"} method (see \code{\link{getOSA}}). Alternatively, a character string can be provided to specify a different method (see \code{\link[TMB]{oneStepPredict}}). Note this can take a while for large data sets. Default: \code{FALSE}.
 #' @return \code{fitLangevin} object, i.e., a list of:
 #' \item{par}{See \code{\link[stats]{nlminb}}}
 #' \item{objective}{See \code{\link[stats]{nlminb}}}
@@ -34,8 +33,10 @@
 #' \item{evaluations}{See \code{\link[stats]{nlminb}}}
 #' \item{elapsedTime}{Run time of the optimization}
 #' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel''), as well as the joint precision matrix (``jointPrecision'') if \code{getJointPrecision=TRUE}.}
-#' \item{osa}{One-step-ahead residuals (if \code{calcOSA=TRUE})}
 #' \item{conditions}{List containing the optimization settings}
+#' \item{signatures}{List containing lightweight fingerprints for \code{data} and \code{spatialCovs} to protect downstream functions}
+#' \item{tmb_setup}{Blueprint for reconstructing TMB objective function}
+#' \item{osa}{One-step-ahead residuals (if \code{calcOSA} is not \code{FALSE})}
 #' @details
 #' \strong{Measurement Error Models:}
 #' The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information:
@@ -62,8 +63,15 @@
 #' # fit underdamped model with measurement error
 #' # exampleDat included in package; see ?exampleDat for details
 #' # exampleCovs included in package; see ?exampleCovs for details
-#' fit <- fitLangevin(exampleDat,
-#'                    spatialCovs = exampleCovs)
+#' fit <- fitLangevin(data = exampleDat,
+#'                    spatialCovs = exampleCovs,
+#'                    silent = TRUE)
+#'
+#' # fit overdamped model with measurement error
+#' fit_od <- fitLangevin(data = exampleDat,
+#'                       model = "overdamped",
+#'                       spatialCovs = exampleCovs,
+#'                       silent = TRUE)
 #' @references
 #' Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
 #'
@@ -343,79 +351,9 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
   }
 
-  # --- OSA Pseudo-Residual Calculation ---
-  if(calcOSA) {
-    message("   Calculating one-step-ahead pseudo-residuals...")
-
-    res_x <- rep(NA_real_, ncol(dat$Y))
-    res_y <- rep(NA_real_, ncol(dat$Y))
-    unique_ids <- unique(data$id)
-    # Globally valid columns (isd == 1 means non-NA)
-    all_valid_cols <- which(dat$isd == 1)
-
-    for (uid in unique_ids) {
-      # Find column indices (1-based) for this specific track
-      track_cols <- which(dat$ID == uid)
-      # Intersect to get ONLY valid columns for this track
-      valid_track_cols <- intersect(track_cols, all_valid_cols)
-
-      if (length(valid_track_cols) > 1) {
-        eval_track_cols <- valid_track_cols[-1]
-      } else {
-        warning("Track ID ", uid, " does not have enough valid observations for OSA calculation.")
-        next
-      }
-
-      # Map ONLY the evaluated column indices to the 1D elements
-      track_elements <- sort(c(2 * eval_track_cols - 1, 2 * eval_track_cols))
-      other_valid_cols <- setdiff(all_valid_cols, eval_track_cols)
-      cond_elements <- sort(c(2 * other_valid_cols - 1, 2 * other_valid_cols))
-
-      message("      track ID: ", uid, "...")
-      track_osa <- tryCatch({
-        TMB::oneStepPredict(
-          obj = obj2,
-          observation.name = "Y",
-          data.term.indicator = "keep",
-          method = "oneStepGaussianOffMode",
-          trace = FALSE,
-          discrete = FALSE,
-          subset = track_elements,
-          conditional = cond_elements
-        )
-      }, error = function(e) {
-        warning("OSA residual calculation failed for track ID ", uid, ". Error: ", e$message)
-        return(NULL)
-      })
-
-      if (!is.null(track_osa)) {
-        # oneStepPredict returns rows exactly matching the evaluated subset
-        idx_x <- seq(1, nrow(track_osa), by = 2)
-        idx_y <- seq(2, nrow(track_osa), by = 2)
-
-        if (length(eval_track_cols) == length(idx_x)) {
-          # Map residuals back to their correct original columns.
-          res_x[eval_track_cols] <- track_osa$residual[idx_x]
-          res_y[eval_track_cols] <- track_osa$residual[idx_y]
-        } else {
-          warning("Mismatch in evaluated observations for track ID ", uid)
-        }
-      }
-    }
-
-    fit$osa <- data.frame(
-      date = data$date,
-      id = data$id,
-      residual.x = res_x,
-      residual.y = res_y
-    )
-  }
-
   for (est_type in c("natural", "working")) {
     if (!is.null(fit$estimates[[est_type]])) {
       rn <- rownames(fit$estimates[[est_type]])
-
-      # Catch native "beta" or appended "beta_1" formats safely in either path
       beta_idx <- which(rn == "beta" | grepl("^beta_[0-9]+$", rn))
 
       if (length(beta_idx) == length(spatialCovs) && !is.null(names(spatialCovs))) {
@@ -425,15 +363,42 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
   }
 
+  # Ensure ALL necessary build conditions are saved for getOSA to use later
   fit$conditions <- list(hessian = hessian,
                          method = method,
                          silent = silent,
                          initialInner = initialInner,
-                         inner.control =  inner.control,
+                         inner.control = inner.control,
                          control = control,
-                         calcOSA = calcOSA)
+                         calcOSA = calcOSA,
+                         scaleFactor = scaleFactor,
+                         model = model,
+                         smoothGradient = smoothGradient,
+                         npoints = npoints,
+                         curweight = curweight,
+                         zetaScale = zetaScale,
+                         coord = coord)
+
+  fit$signatures <- list(
+    data = get_data_signature(data, coord),
+    covs = get_covs_signature(spatialCovs)
+  )
+
+  # Save the blueprint
+  fit$tmb_setup <- list(
+    parList = obj2$env$parList(fit$par),
+    map = map,
+    random = re
+  )
 
   fit <- class_fitLangevin(fit)
+
+  # --- OSA Pseudo-Residual Calculation ---
+  if(isTRUE(calcOSA) || is.character(calcOSA)) {
+    osa_method <- if(is.character(calcOSA)) calcOSA else "oneStepGaussianOffMode"
+    fit$osa <- getOSA(fit, data, spatialCovs, method = osa_method, run_tests=FALSE, trace = 0)
+    attr(fit$osa,"tests")  <- gof_tests(fit$osa)
+  }
 
   return(fit)
 }

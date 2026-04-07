@@ -1,11 +1,16 @@
 #' Calculate Bhattacharyya's Affinity between two \code{\link[terra]{SpatRaster-class}} objects
 #'
 #' This function calculates the Bhattacharyya's affinity (also known as the Bhattacharyya coefficient) between two rasters, which is a measure of similarity between two probability distributions. The rasters are first normalized to sum to 1 (to represent probability distributions), and then the affinity is calculated as the sum of the square root of the product of the two distributions across all cells.
+#' If multi-layer rasters are provided, the affinity is calculated pairwise for each corresponding layer.
 #'
-#' @param r1 A \code{\link[terra]{SpatRaster-class}} objects object. If any values are negative, \code{rasterOverlap} assumes \code{r1} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).
-#' @param r2 A \code{\link[terra]{SpatRaster-class}} objects object. If any values are negative, \code{rasterOverlap} assumes \code{r2} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).
-#' @return A numeric value between 0 (no overlap) and 1 (identical distributions).
-#' @importFrom terra compareGeom global
+#' @param r1 A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r1} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).
+#' @param r2 A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r2} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).
+#' @return A numeric vector containing the Bhattacharyya's affinity for each layer, with values between 0 (no overlap) and 1 (identical distributions).
+#' @examples
+#' r1 <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1), log = FALSE)
+#' r2 <- getUD(exampleCovs, beta = c(-3, 5, 4, -0.1), log = FALSE)
+#' rasterOverlap(r1,r2)
+#' @importFrom terra compareGeom global nlyr
 #' @export
 rasterOverlap <- function(r1, r2) {
 
@@ -17,30 +22,43 @@ rasterOverlap <- function(r1, r2) {
     stop("Rasters do not have the same geometry (extent, resolution, or CRS). Please resample/project first.")
   }
 
-  min_r1 <- terra::global(r1, "min", na.rm = TRUE)[[1]]
-  if (!is.na(min_r1) && min_r1 < 0) {
+  # verify identical number of layers
+  if (terra::nlyr(r1) != terra::nlyr(r2)) {
+    stop(sprintf("Rasters must have the same number of layers. r1 has %d layer(s) and r2 has %d layer(s).", terra::nlyr(r1), terra::nlyr(r2)))
+  }
+
+  # Extract minimums as a vector across all layers (column 1 of the returned data frame)
+  min_r1 <- terra::global(r1, "min", na.rm = TRUE)[, 1]
+  if (any(!is.na(min_r1) & min_r1 < 0)) {
     warning("Negative values found in r1. Assuming log-scale and exponentiating.")
     r1 <- exp(r1)
   }
 
-  min_r2 <- terra::global(r2, "min", na.rm = TRUE)[[1]]
-  if (!is.na(min_r2) && min_r2 < 0) {
+  min_r2 <- terra::global(r2, "min", na.rm = TRUE)[, 1]
+  if (any(!is.na(min_r2) & min_r2 < 0)) {
     warning("Negative values found in r2. Assuming log-scale and exponentiating.")
     r2 <- exp(r2)
   }
 
-  sum_r1 <- terra::global(r1, "sum", na.rm = TRUE)[[1]]
-  sum_r2 <- terra::global(r2, "sum", na.rm = TRUE)[[1]]
+  # Extract sums as vectors
+  sum_r1 <- terra::global(r1, "sum", na.rm = TRUE)[, 1]
+  sum_r2 <- terra::global(r2, "sum", na.rm = TRUE)[, 1]
 
-  if (is.na(sum_r1) || is.na(sum_r2) || sum_r1 == 0 || sum_r2 == 0) {
-    stop("One or both rasters sum to 0 or NA. Cannot normalize into a probability distribution.")
+  if (any(is.na(sum_r1)) || any(sum_r1 == 0) || any(is.na(sum_r2)) || any(sum_r2 == 0)) {
+    stop("One or more layers in r1 or r2 sum to 0 or NA. Cannot normalize into a probability distribution.")
   }
 
+  # terra natively divides each raster layer by its corresponding vector element
   p <- r1 / sum_r1
   q <- r2 / sum_r2
 
   pq_sqrt <- sqrt(p * q)
-  bc_val <- terra::global(pq_sqrt, "sum", na.rm = TRUE)[[1]]
+
+  # Extract final overlap sums as a vector
+  bc_val <- terra::global(pq_sqrt, "sum", na.rm = TRUE)[, 1]
+
+  # Name the output vector for clarity if the layers have names
+  names(bc_val) <- names(r1)
 
   return(bc_val)
 }

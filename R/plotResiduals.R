@@ -2,7 +2,8 @@
 #'
 #' Generates ggplot2 diagnostic plots (Q-Q plots and ACF plots) for the OSA residuals of a fitted Langevin diffusion model. Plots are made separately for the x and y observed location residuals (which should follow a normal distribution if the model fits well), as well as for the squared Mahalanobis distance of the observed location residuals (which should follow a Chi-Square distribution with 2 degrees of freedom if the model fits well).
 #'
-#' @param fit A \code{fitLangevin} object.
+#' @param fit A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
+#' @param osa Data frame returned by \code{\link{getOSA}} containing the residuals. Only must be provided if \code{fit} does not already include residuals. If \code{!is.null(fit$osa)} and \code{osa} is provided, then the residuals from \code{osa} (and not \code{fit$osa}) are plotted.
 #' @param tracks Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track in the dataset individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots.
 #' @return List of \code{ggplot} objects (or a nested list of \code{ggplot} objects if plotting by track).
 #' @examples
@@ -30,30 +31,37 @@
 # #' @importFrom ggplot2 ggplot aes geom_hline geom_segment geom_abline labs theme_minimal geom_ribbon geom_point scale_color_manual theme
 #' @importFrom stats acf qnorm qchisq ppoints quantile dnorm dchisq na.omit
 #' @export
-plotResiduals <- function(fit, tracks = NULL){
+plotResiduals <- function(fit, osa = NULL, tracks = NULL){
 
   if (!inherits(fit, "fitLangevin")) {
     stop("Input 'fit' must be a fitLangevin object.")
   }
-  if (is.null(fit$osa)) {
-    stop("The fit object does not contain OSA residuals. Make sure to run fitLangevin with calcOSA = TRUE.")
-  }
+
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("Package 'ggplot2' is required for plotting residuals. Please install it.")
   }
 
+  if (!is.null(osa)) {
+    if(!inherits(osa,"osaLangevin")) stop("osa must be a 'osaLangevin' object (see ?getOSA)")
+    resids <- osa
+  } else if (!is.null(fit$osa)) {
+    resids <- fit$osa
+  } else {
+    stop("The fit object does not contain OSA residuals. Please generate them using the 'getOSA()' function and pass the result via the 'osa' argument.")
+  }
+
   if (is.null(tracks)) {
-    return(generate_plots(fit$osa))
+    return(generate_plots(resids))
   } else {
     if (length(tracks) == 1 && tracks[1] == "all") {
-      tracks_to_plot <- unique(fit$osa$id)
+      tracks_to_plot <- unique(resids$id)
     } else {
       tracks_to_plot <- tracks
     }
 
     out_list <- list()
     for (trk in tracks_to_plot) {
-      sub_data <- fit$osa[fit$osa$id == trk, ]
+      sub_data <- resids[resids$id == trk, ]
       if (nrow(sub_data) > 0) {
         out_list[[as.character(trk)]] <- generate_plots(sub_data, paste0(" - ID: ", trk))
       } else warning("No data found for track ID: ", trk, ". Skipping this track.")

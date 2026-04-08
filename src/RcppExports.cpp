@@ -13,27 +13,27 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // simulate_langevin_cpp
-DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, double timeStep, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition);
-RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP timeStepSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP) {
+DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition);
+RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< int >::type model(modelSEXP);
     Rcpp::traits::input_parameter< int >::type nbAnimals(nbAnimalsSEXP);
     Rcpp::traits::input_parameter< int >::type obsPerAnimal(obsPerAnimalSEXP);
-    Rcpp::traits::input_parameter< double >::type timeStep(timeStepSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type dt_vec(dt_vecSEXP);
     Rcpp::traits::input_parameter< double >::type gamma(gammaSEXP);
     Rcpp::traits::input_parameter< double >::type sigma(sigmaSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type beta(betaSEXP);
     Rcpp::traits::input_parameter< List >::type raster_data(raster_dataSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type initialPosition(initialPositionSEXP);
-    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, timeStep, gamma, sigma, beta, raster_data, initialPosition));
+    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition));
     return rcpp_result_gen;
 END_RCPP
 }
 // measurementError_rcpp
-DataFrame measurementError_rcpp(DataFrame data, double smaj_sd, double smin_sd, NumericVector eor, double psi, int model);
-RcppExport SEXP _langevinSSM_measurementError_rcpp(SEXP dataSEXP, SEXP smaj_sdSEXP, SEXP smin_sdSEXP, SEXP eorSEXP, SEXP psiSEXP, SEXP modelSEXP) {
+List measurementError_rcpp(DataFrame data, double smaj_sd, double smin_sd, NumericVector eor, double psi, int model, bool exact);
+RcppExport SEXP _langevinSSM_measurementError_rcpp(SEXP dataSEXP, SEXP smaj_sdSEXP, SEXP smin_sdSEXP, SEXP eorSEXP, SEXP psiSEXP, SEXP modelSEXP, SEXP exactSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -43,13 +43,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type eor(eorSEXP);
     Rcpp::traits::input_parameter< double >::type psi(psiSEXP);
     Rcpp::traits::input_parameter< int >::type model(modelSEXP);
-    rcpp_result_gen = Rcpp::wrap(measurementError_rcpp(data, smaj_sd, smin_sd, eor, psi, model));
+    Rcpp::traits::input_parameter< bool >::type exact(exactSEXP);
+    rcpp_result_gen = Rcpp::wrap(measurementError_rcpp(data, smaj_sd, smin_sd, eor, psi, model, exact));
     return rcpp_result_gen;
 END_RCPP
 }
 // measurementError_LS_rcpp
-DataFrame measurementError_LS_rcpp(DataFrame data, double x_sd, double y_sd, double tau_x, double tau_y, double rho_o, int model);
-RcppExport SEXP _langevinSSM_measurementError_LS_rcpp(SEXP dataSEXP, SEXP x_sdSEXP, SEXP y_sdSEXP, SEXP tau_xSEXP, SEXP tau_ySEXP, SEXP rho_oSEXP, SEXP modelSEXP) {
+List measurementError_LS_rcpp(DataFrame data, double x_sd, double y_sd, double tau_x, double tau_y, double rho_o, int model, bool exact);
+RcppExport SEXP _langevinSSM_measurementError_LS_rcpp(SEXP dataSEXP, SEXP x_sdSEXP, SEXP y_sdSEXP, SEXP tau_xSEXP, SEXP tau_ySEXP, SEXP rho_oSEXP, SEXP modelSEXP, SEXP exactSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -60,7 +61,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type tau_y(tau_ySEXP);
     Rcpp::traits::input_parameter< double >::type rho_o(rho_oSEXP);
     Rcpp::traits::input_parameter< int >::type model(modelSEXP);
-    rcpp_result_gen = Rcpp::wrap(measurementError_LS_rcpp(data, x_sd, y_sd, tau_x, tau_y, rho_o, model));
+    Rcpp::traits::input_parameter< bool >::type exact(exactSEXP);
+    rcpp_result_gen = Rcpp::wrap(measurementError_LS_rcpp(data, x_sd, y_sd, tau_x, tau_y, rho_o, model, exact));
     return rcpp_result_gen;
 END_RCPP
 }

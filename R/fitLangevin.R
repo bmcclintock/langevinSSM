@@ -22,6 +22,7 @@
 #' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
 #' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
+#' @param polishOptim Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization with \code{\link[stats]{nlminb}} has completed. Default: \code{FALSE}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
 #' @param calcOSA Logical or character string. If \code{TRUE}, calculates one-step-ahead (OSA) residuals using the default \code{"oneStepGaussianOffMode"} method (see \code{\link{getOSA}}). Alternatively, a character string can be provided to specify a different method (see \code{\link[TMB]{oneStepPredict}}). Note this can take a while for large data sets. Default: \code{FALSE}.
 #' @return \code{fitLangevin} object, i.e., a list of:
@@ -87,7 +88,7 @@
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE, calcOSA = FALSE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcOSA = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
@@ -232,6 +233,24 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     if (inherits(fit, "try-error") || !is.list(fit)) {
       stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
+    } else {
+      if(polishOptim==TRUE){
+
+        obj2$fn(fit$par)
+
+        message("   Polishing optimization with nlminb...")
+        fit_polished <- try({
+          do.call(stats::nlminb, args = list(
+            start = fit$par,
+            objective = obj2$fn,
+            gradient = obj2$gr,
+            control = control))
+        }, silent = TRUE)
+
+        if (!inherits(fit_polished, "try-error") && fit_polished$objective < fit$objective) {
+          fit <- fit_polished
+        }
+      }
     }
 
     fit$elapsedTime <- proc.time() - start

@@ -85,11 +85,16 @@ getOSA <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMode", tr
       map = fit$tmb_setup$map,
       random = fit$tmb_setup$random,
       DLL = "langevinSSM_TMBExports",
-      silent = TRUE
+      hessian = cond$hessian,
+      method = cond$method,
+      silent = cond$silent,
+      inner.control =  cond$inner.control
     )
   }, silent = TRUE)
 
   if (inherits(obj, "try-error")) stop("Failed to reconstruct TMB object: ", attr(obj, "condition")$message)
+
+  obj$fn(fit$par)
 
   message("   Calculating OSA residuals using method: '", method, "'...")
 

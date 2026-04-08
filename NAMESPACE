@@ -2,6 +2,8 @@
 
 S3method(plot,fitLangevin)
 S3method(print,fitLangevin)
+S3method(simLangevin,default)
+S3method(simLangevin,fitLangevin)
 export(exampleCovs)
 export(fitLangevin)
 export(formatData)

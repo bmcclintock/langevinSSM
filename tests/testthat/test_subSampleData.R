@@ -51,7 +51,7 @@ test_that("subSampleData catches invalid inputs", {
 })
 
 test_that("subSampleData returns correct data dimensions and attributes", {
-  set.seed(123)
+  set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   mock_data <- get_mock_dataLangevin(100) # 200 rows total
 
   # Subsampling rate = 2 (should return ceiling(200 / 2) = 100 rows)
@@ -66,7 +66,7 @@ test_that("subSampleData returns correct data dimensions and attributes", {
 })
 
 test_that("subSampleData always preserves the first observation of every track", {
-  set.seed(123)
+  set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   mock_data <- get_mock_dataLangevin(50)
 
   sub_data <- subSampleData(mock_data, samplingRate = 5)
@@ -81,7 +81,7 @@ test_that("subSampleData always preserves the first observation of every track",
 })
 
 test_that("subSampleData properly recalculates the dt (time step) vector", {
-  set.seed(123)
+  set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   mock_data <- get_mock_dataLangevin(50)
 
   # Subsample
@@ -98,7 +98,7 @@ test_that("subSampleData properly recalculates the dt (time step) vector", {
 })
 
 test_that("subSampleData randomly introduces missing values to specified columns", {
-  set.seed(123)
+  set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   mock_data <- get_mock_dataLangevin(100)
 
   # Prop missing = 0.5, rate = 1
@@ -118,7 +118,7 @@ test_that("subSampleData randomly introduces missing values to specified columns
 })
 
 test_that("subSampleData NEVER introduces NAs to the first observation of a track", {
-  set.seed(123)
+  set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   mock_data <- get_mock_dataLangevin(50)
 
   # Force a massive missing proportion (99%) to heavily test the safeguard

@@ -11,8 +11,8 @@ library(patchwork)
 set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 
 # simulate data
-nbAnimals <- 1
-obsPerAnimal <- 50
+nbAnimals <- 3
+obsPerAnimal <- 500
 sca <- 200
 examplePar=list(beta=c(-4, 6, 5, -0.1),sigma=5,gamma=0.5)
 ncov <- length(examplePar$beta)
@@ -41,7 +41,7 @@ exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAni
 
 plotRaster(UD)+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
 
-fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1),calcOSA=TRUE)
+fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1))
 fit
 fit$osa <- getOSA(fit,exampleDat, exampleCovs, run_tests = TRUE)
 fit

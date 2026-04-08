@@ -263,7 +263,7 @@ test_that("fitLangevin successfully fits end-to-end with duplicated times", {
   start_time <- as.POSIXct("2024-01-01 00:00:00", tz = "UTC")
   dates <- start_time + (1:n_obs) * 3600 # 1 observation per hour
 
-  set.seed(123)
+  set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   x <- seq(50, 150, length.out = n_obs) + rnorm(n_obs, 0, 2)
   y <- seq(50, 150, length.out = n_obs) + rnorm(n_obs, 0, 2)
 

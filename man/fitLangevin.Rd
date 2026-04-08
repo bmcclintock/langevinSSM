@@ -22,6 +22,7 @@ fitLangevin(
   initialInner = TRUE,
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
+  polishOptim = FALSE,
   getJointPrecision = FALSE,
   calcOSA = FALSE
 )
@@ -62,6 +63,8 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{inner.control}{List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.}
 
 \item{control}{A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.}
+
+\item{polishOptim}{Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization with \code{\link[stats]{nlminb}} has completed. Default: \code{FALSE}.}
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
 

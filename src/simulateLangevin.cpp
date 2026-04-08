@@ -42,7 +42,7 @@ arma::vec rmvnorm(const arma::vec& mean, const arma::mat& sigma) {
 DataFrame simulate_langevin_cpp(int model,
                                 int nbAnimals,
                                 int obsPerAnimal,
-                                double timeStep,
+                                NumericVector dt_vec,
                                 double gamma,
                                 double sigma,
                                 NumericVector beta,
@@ -87,7 +87,8 @@ DataFrame simulate_langevin_cpp(int model,
   IntegerVector cov_offset = raster_data["cov_offset"];
   int n_covs = raster_data["n_covs"];
 
-  int total_obs = nbAnimals * obsPerAnimal;
+  int n_points = obsPerAnimal + 1;
+  int total_obs = nbAnimals * n_points;
   NumericVector ID(total_obs);
   NumericVector time(total_obs);
   NumericVector dt(total_obs);
@@ -97,7 +98,7 @@ DataFrame simulate_langevin_cpp(int model,
   NumericVector vely(total_obs);
 
   for(int i = 0; i < nbAnimals; i++) {
-    int start_idx = i * obsPerAnimal;
+    int start_idx = i * n_points;
 
     // Initialize first observation
     ID[start_idx] = i + 1;
@@ -111,24 +112,24 @@ DataFrame simulate_langevin_cpp(int model,
     double s2 = sigma * sigma;
 
     // Simulate remaining observations
-    for(int t = 1; t < obsPerAnimal; t++) {
+    for(int t = 1; t < n_points; t++) {
       int idx = start_idx + t;
-      ID[idx] = i + 1;
-      time[idx] = time[idx-1] + timeStep;
-      dt[idx] = timeStep;
+      double dt_step = dt_vec[t-1];
 
-      double dt_step = dt[idx];
+      ID[idx] = i + 1;
+      time[idx] = time[idx-1] + dt_step;
+      dt[idx] = dt_step;
 
       // Calculate gradients using previous position AND previous time
       arma::mat grad = extract_raster_values(mu_x[idx-1], mu_y[idx-1], time[idx-1],
-                                                 raster_vals,
-                                                 all_z_values,
-                                                 n_zvals_cov,
-                                                 cov_offset,
-                                                 raster_coords,
-                                                 raster_resolution,
-                                                 raster_extent,
-                                                 n_covs);
+                                             raster_vals,
+                                             all_z_values,
+                                             n_zvals_cov,
+                                             cov_offset,
+                                             raster_coords,
+                                             raster_resolution,
+                                             raster_extent,
+                                             n_covs);
 
       // Calculate force vector
       NumericVector h(2, 0.0);
@@ -215,66 +216,76 @@ DataFrame simulate_langevin_cpp(int model,
 }
 
 // [[Rcpp::export]]
-DataFrame measurementError_rcpp(DataFrame data,
-                                double smaj_sd,
-                                double smin_sd,
-                                NumericVector eor,
-                                double psi,
-                                int model) {
+List measurementError_rcpp(DataFrame data,
+                           double smaj_sd,
+                           double smin_sd,
+                           NumericVector eor,
+                           double psi,
+                           int model,
+                           bool exact = false) {
 
-  // Get dimensions
   int n = data.nrows();
-
-  // Generate random values for error parameters
   NumericVector M_rand(n);
   NumericVector m_rand(n);
   NumericVector c_rand(n);
 
-  for(int i = 0; i < n; i++) {
-    M_rand[i] = abs(R::rnorm(0.0, smaj_sd));
-    m_rand[i] = abs(R::rnorm(0.0, smin_sd));
-    if(M_rand[i] < m_rand[i]){
-      double tmpM = M_rand[i];
-      double tmpm = m_rand[i];
-      M_rand[i] = tmpm;
-      m_rand[i] = tmpM;
-    }
-    // Convert degrees to radians
-    c_rand[i] = R::runif(eor[0], eor[1]) * M_PI / 180.0;
-  }
-
-  // Constants
-  double z = sqrt(2.0);
-
-  // Get position vectors
   NumericVector mux = data["mu.x"];
   NumericVector muy = data["mu.y"];
 
-  // Create new vectors for results
-  NumericVector new_mux = clone(mux);
-  NumericVector new_muy = clone(muy);
-
-  // Calculate error parameters
-  NumericVector s2c(n);
-  NumericVector c2c(n);
-  NumericVector M2(n);
-  NumericVector m2(n);
-
-  for(int i = 0; i < n; i++) {
-    s2c[i] = sin(c_rand[i]) * sin(c_rand[i]);
-    c2c[i] = cos(c_rand[i]) * cos(c_rand[i]);
-    M2[i] = (M_rand[i] / z) * (M_rand[i] / z);
-    m2[i] = (m_rand[i] * psi / z) * (m_rand[i] * psi / z);
+  // Initialize new positions. If exact=true and an earlier step already
+  // generated x/y, preserve them. Otherwise start from true locations.
+  NumericVector new_mux;
+  NumericVector new_muy;
+  if (data.containsElementNamed("x")) {
+    new_mux = clone(as<NumericVector>(data["x"]));
+    new_muy = clone(as<NumericVector>(data["y"]));
+  } else {
+    new_mux = clone(mux);
+    new_muy = clone(muy);
   }
+
+  if (exact) {
+    NumericVector orig_smaj = data["smaj"];
+    NumericVector orig_smin = data["smin"];
+    NumericVector orig_eor = data["eor"];
+
+    for(int i = 0; i < n; i++) {
+      M_rand[i] = orig_smaj[i];
+      m_rand[i] = orig_smin[i];
+      if (!NumericVector::is_na(orig_eor[i])) {
+        c_rand[i] = orig_eor[i] * M_PI / 180.0;
+      } else {
+        c_rand[i] = NA_REAL;
+      }
+    }
+  } else {
+    for(int i = 0; i < n; i++) {
+      M_rand[i] = std::abs(R::rnorm(0.0, smaj_sd));
+      m_rand[i] = std::abs(R::rnorm(0.0, smin_sd));
+      if(M_rand[i] < m_rand[i]){
+        double tmp = M_rand[i];
+        M_rand[i] = m_rand[i];
+        m_rand[i] = tmp;
+      }
+      c_rand[i] = R::runif(eor[0], eor[1]) * M_PI / 180.0;
+    }
+  }
+
+  double z = std::sqrt(2.0);
 
   // Apply measurement error
   for(int i = 0; i < n; i++) {
-    arma::mat cov_obs(2, 2, arma::fill::zeros);
+    if (NumericVector::is_na(M_rand[i])) continue; // Skip if no KF error for this row
 
-    cov_obs(0,0) = M2[i] * s2c[i] + m2[i] * c2c[i];
-    cov_obs(1,1) = M2[i] * c2c[i] + m2[i] * s2c[i];
-    cov_obs(0,1) = (0.5 * (M_rand[i] * M_rand[i] -
-      (m_rand[i] * psi * m_rand[i] * psi))) * cos(c_rand[i]) * sin(c_rand[i]);
+    double s2c = std::sin(c_rand[i]) * std::sin(c_rand[i]);
+    double c2c = std::cos(c_rand[i]) * std::cos(c_rand[i]);
+    double M2 = (M_rand[i] / z) * (M_rand[i] / z);
+    double m2 = (m_rand[i] * psi / z) * (m_rand[i] * psi / z);
+
+    arma::mat cov_obs(2, 2, arma::fill::zeros);
+    cov_obs(0,0) = M2 * s2c + m2 * c2c;
+    cov_obs(1,1) = M2 * c2c + m2 * s2c;
+    cov_obs(0,1) = (0.5 * (M_rand[i] * M_rand[i] - (m_rand[i] * psi * m_rand[i] * psi))) * std::cos(c_rand[i]) * std::sin(c_rand[i]);
     cov_obs(1,0) = cov_obs(0,1);
 
     arma::vec mean = {mux[i], muy[i]};
@@ -284,64 +295,54 @@ DataFrame measurementError_rcpp(DataFrame data,
     new_muy[i] = new_pos(1);
   }
 
-  // Create output DataFrame
-  if(model==0){
-    return DataFrame::create(
-      Named("id") = data["id"],
-                        Named("date") = data["date"],
-                                            Named("dt") = data["dt"],
-                                                              Named("x") = new_mux,
-                                                              Named("y") = new_muy,
-                                                              Named("smaj") = M_rand,
-                                                              Named("smin") = m_rand,
-                                                              Named("eor") = c_rand,
-                                                              Named("mu.x") = mux, // true location
-                                                              Named("mu.y") = muy); // true location
+  if (exact) {
+    return List::create(Named("x") = new_mux, Named("y") = new_muy);
   } else {
-    return DataFrame::create(
-      Named("id") = data["id"],
-                        Named("date") = data["date"],
-                                            Named("dt") = data["dt"],
-                                                              Named("x") = new_mux,
-                                                              Named("y") = new_muy,
-                                                              Named("smaj") = M_rand,
-                                                              Named("smin") = m_rand,
-                                                              Named("eor") = c_rand,
-                                                              Named("mu.x") = mux, // true location
-                                                              Named("mu.y") = muy, // true location
-                                                              Named("vel.x") = data["vel.x"],  // true velocity
-                                                              Named("vel.y") = data["vel.y"]); // true velocity
+    return List::create(Named("x") = new_mux, Named("y") = new_muy,
+                        Named("smaj") = M_rand, Named("smin") = m_rand, Named("eor") = c_rand);
   }
 }
 
 // [[Rcpp::export]]
-DataFrame measurementError_LS_rcpp(DataFrame data,
-                                   double x_sd,
-                                   double y_sd,
-                                   double tau_x,
-                                   double tau_y,
-                                   double rho_o,
-                                   int model) {
+List measurementError_LS_rcpp(DataFrame data,
+                              double x_sd,
+                              double y_sd,
+                              double tau_x,
+                              double tau_y,
+                              double rho_o,
+                              int model,
+                              bool exact = false) {
 
   int n = data.nrows();
-
-  // Get true position vectors
   NumericVector mux = data["mu.x"];
   NumericVector muy = data["mu.y"];
 
-  // Vectors for generated SDs and observed positions
+  NumericVector obs_x;
+  NumericVector obs_y;
+  if (data.containsElementNamed("x")) {
+    obs_x = clone(as<NumericVector>(data["x"]));
+    obs_y = clone(as<NumericVector>(data["y"]));
+  } else {
+    obs_x = clone(mux);
+    obs_y = clone(muy);
+  }
+
   NumericVector x_sd_vec(n);
   NumericVector y_sd_vec(n);
-  NumericVector obs_x(n);
-  NumericVector obs_y(n);
 
-  // Generate random SDs and apply measurement error
+  if (exact) {
+    x_sd_vec = data["x.sd"];
+    y_sd_vec = data["y.sd"];
+  } else {
+    for(int i = 0; i < n; i++) {
+      x_sd_vec[i] = std::abs(R::rnorm(0.0, x_sd));
+      y_sd_vec[i] = std::abs(R::rnorm(0.0, y_sd));
+    }
+  }
+
   for(int i = 0; i < n; i++) {
-    // Generate observed standard deviations based on the global x_sd/y_sd
-    x_sd_vec[i] = std::abs(R::rnorm(0.0, x_sd));
-    y_sd_vec[i] = std::abs(R::rnorm(0.0, y_sd));
+    if (NumericVector::is_na(x_sd_vec[i])) continue; // Skip if no LS error for this row
 
-    // Calculate covariance matrix components
     double s = tau_x * x_sd_vec[i];
     double q = tau_y * y_sd_vec[i];
 
@@ -351,7 +352,6 @@ DataFrame measurementError_LS_rcpp(DataFrame data,
     cov_obs(0,1) = s * q * rho_o;
     cov_obs(1,0) = cov_obs(0,1);
 
-    // Sample error
     arma::vec mean = {mux[i], muy[i]};
     arma::vec new_pos = rmvnorm(mean, cov_obs);
 
@@ -359,32 +359,10 @@ DataFrame measurementError_LS_rcpp(DataFrame data,
     obs_y[i] = new_pos(1);
   }
 
-  // Create output DataFrame
-  if(model == 0){ // Overdamped
-    return DataFrame::create(
-      Named("id") = data["id"],
-                        Named("date") = data["date"],
-                                            Named("dt") = data["dt"],
-                                                              Named("x") = obs_x,
-                                                              Named("y") = obs_y,
-                                                              Named("x.sd") = x_sd_vec,
-                                                              Named("y.sd") = y_sd_vec,
-                                                              Named("mu.x") = mux,
-                                                              Named("mu.y") = muy
-    );
-  } else { // Underdamped
-    return DataFrame::create(
-      Named("id") = data["id"],
-                        Named("date") = data["date"],
-                                            Named("dt") = data["dt"],
-                                                              Named("x") = obs_x,
-                                                              Named("y") = obs_y,
-                                                              Named("x.sd") = x_sd_vec,
-                                                              Named("y.sd") = y_sd_vec,
-                                                              Named("mu.x") = mux,
-                                                              Named("mu.y") = muy,
-                                                              Named("vel.x") = data["vel.x"],
-                                                              Named("vel.y") = data["vel.y"]
-    );
+  if (exact) {
+    return List::create(Named("x") = obs_x, Named("y") = obs_y);
+  } else {
+    return List::create(Named("x") = obs_x, Named("y") = obs_y,
+                        Named("x.sd") = x_sd_vec, Named("y.sd") = y_sd_vec);
   }
 }

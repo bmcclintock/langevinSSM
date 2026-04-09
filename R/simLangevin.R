@@ -123,13 +123,33 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     } else subSample$propMissing <- 0
   }
 
+  dt_vec <- rep(timeStep, obsPerAnimal - 1)
+
+  # --- Temporal Bounding Check for dynamic covariates ---
+  sim_min_time <- 0
+  sim_max_time <- sum(dt_vec)
+
+  for (j in seq_along(spatialCovs)) {
+    if (terra::nlyr(spatialCovs[[j]]) > 1) {
+      t_vals <- terra::time(spatialCovs[[j]])
+
+      if (inherits(t_vals, c("POSIXt", "Date"))) {
+        stop("When simulating from scratch with dynamic covariates, the 'terra::time' values of 'spatialCovs$", names(spatialCovs)[j], "' must be numeric (not POSIXt or Date) to align with the numeric simulation time (which starts at 0).")
+      }
+
+      if (is.numeric(t_vals)) {
+        if (sim_min_time < min(t_vals, na.rm = TRUE) || sim_max_time > max(t_vals, na.rm = TRUE)) {
+          stop("The simulated tracking times (0 to ", sim_max_time, ") fall outside the temporal boundaries of 'spatialCovs$", names(spatialCovs)[j], "'. Ensure the simulation time span is entirely within the raster's numeric time range.")
+        }
+      }
+    }
+  }
+
   init_pos_sim <- if (missing(initialPosition)) {
     getInitialPosition(nbAnimals = nbAnimals, spatialCovs = spatialCovs, beta = beta)
   } else {
     getInitialPosition(nbAnimals = nbAnimals, initialPosition = initialPosition, spatialCovs = spatialCovs, beta = beta)
   }
-
-  dt_vec <- rep(timeStep, obsPerAnimal - 1)
 
   out <- simulate_langevin_cpp(
     model = ifelse(model=="underdamped", 1, 0),

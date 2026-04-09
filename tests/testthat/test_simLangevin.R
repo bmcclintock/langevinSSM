@@ -1,10 +1,26 @@
-# tests/testthat/test_rasterOverlap.R
+# tests/testthat/test_simLangevin.R
 
+# --- Helpers ---
 get_valid_raster <- function() {
-  r <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 100, 0, 100))
+  # Expanded extent to prevent out-of-bounds errors during random walks
+  r <- terra::rast(nrows = 10, ncols = 10, ext = c(-1000, 1000, -1000, 1000))
   terra::values(r) <- 1:100
   names(r) <- "habitat"
   return(r)
+}
+
+get_dynamic_raster <- function(type = "numeric") {
+  # Expanded extent to prevent out-of-bounds errors during random walks
+  r <- terra::rast(nrows = 10, ncols = 10, ext = c(-1000, 1000, -1000, 1000))
+  terra::values(r) <- 1:100
+  r_multi <- c(r, r)
+  if (type == "numeric") {
+    terra::time(r_multi) <- c(0, 10)
+  } else {
+    terra::time(r_multi) <- as.POSIXct(c("2023-01-01", "2023-01-02"), tz="UTC")
+  }
+  names(r_multi) <- c("habitat", "habitat")
+  return(r_multi)
 }
 
 get_valid_par <- function() {
@@ -72,4 +88,29 @@ test_that("simLangevin validates natural scale parameters in par", {
 
   expect_error(simLangevin(par = list(beta = c(0.5), sigma = 5, gamma = 0.5, tau = 1.5), spatialCovs = r),
                "tau")
+})
+
+test_that("simLangevin.default catches POSIXt times for dynamic covariates", {
+  # dynamic raster with POSIXt times
+  r <- list(habitat = get_dynamic_raster("POSIXt"))
+  p <- get_valid_par()
+
+  expect_error(simLangevin(par = p, spatialCovs = r, obsPerAnimal = 5),
+               "must be numeric \\(not POSIXt or Date\\)")
+})
+
+test_that("simLangevin.default enforces numeric temporal bounding limits", {
+  # dynamic raster with numeric times (0 and 10)
+  r <- list(habitat = get_dynamic_raster("numeric"))
+  p <- get_valid_par()
+
+  # Will simulate from 0 to (15-1)*1 = 14. Max time > 10, should fail.
+  expect_error(simLangevin(par = p, spatialCovs = r, obsPerAnimal = 15, timeStep = 1),
+               "fall outside the temporal boundaries")
+
+  # Will simulate from 0 to (5-1)*1 = 4. Max time < 10, should pass.
+  res <- suppressMessages(simLangevin(model = "underdamped", par = p, spatialCovs = r,
+                                      nbAnimals = 1, obsPerAnimal = 5, timeStep = 1,
+                                      initialPosition = c(50, 50)))
+  expect_s3_class(res, "dataLangevin")
 })

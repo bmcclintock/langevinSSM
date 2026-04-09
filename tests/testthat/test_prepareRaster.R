@@ -102,6 +102,56 @@ test_that("Dynamic/Multi-layer raster time requirements are enforced", {
 
 # ------------------------------------------------------------------
 
+test_that("Temporal type consistency is enforced between raster and data", {
+  r <- get_valid_raster()
+  r_multi <- c(r, r)
+
+  # 1. Raster is POSIXt, Data is numeric
+  terra::time(r_multi) <- as.POSIXct(c("2023-01-01", "2023-01-02"), tz = "UTC")
+  covs_posix <- list(cov1 = r_multi)
+
+  dat_num <- get_valid_data()
+  dat_num$date <- c(1, 2, 3)
+
+  expect_error(prepareRaster(spatialCovs = covs_posix, data = dat_num, coord = c("x", "y")),
+               "Type mismatch")
+
+  # 2. Raster is numeric, Data is POSIXt
+  terra::time(r_multi) <- c(1, 2)
+  covs_num <- list(cov1 = r_multi)
+  dat_posix <- get_valid_data()
+
+  expect_error(prepareRaster(spatialCovs = covs_num, data = dat_posix, coord = c("x", "y")),
+               "Type mismatch")
+})
+
+# ------------------------------------------------------------------
+
+test_that("Temporal bounding limits are enforced", {
+  r <- get_valid_raster()
+  r_multi <- c(r, r)
+  terra::time(r_multi) <- as.POSIXct(c("2023-01-01 00:00:00", "2023-01-03 00:00:00"), tz = "UTC")
+  covs <- list(cov1 = r_multi)
+
+  dat <- get_valid_data()
+
+  # Data min < Raster min
+  dat$date <- as.POSIXct(c("2022-12-31", "2023-01-02", "2023-01-02"), tz="UTC")
+  expect_error(prepareRaster(spatialCovs = covs, data = dat, coord = c("x", "y")),
+               "fall outside the temporal boundaries")
+
+  # Data max > Raster max
+  dat$date <- as.POSIXct(c("2023-01-02", "2023-01-02", "2023-01-04"), tz="UTC")
+  expect_error(prepareRaster(spatialCovs = covs, data = dat, coord = c("x", "y")),
+               "fall outside the temporal boundaries")
+
+  # Perfect bounds
+  dat$date <- as.POSIXct(c("2023-01-01 10:00:00", "2023-01-02 10:00:00", "2023-01-02 12:00:00"), tz="UTC")
+  expect_type(prepareRaster(spatialCovs = covs, data = dat, coord = c("x", "y")), "list")
+})
+
+# ------------------------------------------------------------------
+
 test_that("Column name conflicts between data and rasters are caught", {
   r <- get_valid_raster()
   valid_data <- get_valid_data()

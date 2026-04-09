@@ -13,7 +13,7 @@
 #' @param log Logical (for \code{fitLangevin} and \code{simLangevin}). Indicates whether to plot the log UD (\code{TRUE}, default) or the probability UD.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
-#' @param time Optional (for \code{fitLangevin} only). Indicates which layer(s) of a dynamic UD to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all UD layers are plotted.
+#' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
 #' @param ... Additional arguments (currently ignored, kept for S3 compatibility).
 #'
@@ -58,17 +58,8 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
   ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log)
 
-  if (!is.null(time)) {
-    if (terra::nlyr(ud_full) > 1) {
-      ud_times <- terra::time(ud_full)
-      if (!is.null(ud_times) && any(ud_times %in% time)) {
-        ud_full <- ud_full[[which(ud_times %in% time)]]
-      } else {
-        ud_full <- tryCatch(ud_full[[time]], error = function(e) stop("Invalid 'time' argument."))
-      }
-    } else {
-      warning("'time' argument provided, but UD is static.")
-    }
+  if (!is.null(time) && terra::nlyr(ud_full) == 1) {
+    warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
   }
 
   plot_ids <- if (compact) "all" else as.character(unique(track_df$id))
@@ -79,7 +70,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
     fill_label <- ifelse(log, expression(log(pi)), expression(pi))
 
     plot_list[[pid]] <- .build_langevin_plot(
-      track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent,
+      track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
       track_colors = c("Observed" = "lightgrey", "Estimated" = "tomato"),
       track_lines = c("Observed" = "dashed", "Estimated" = "solid")
@@ -92,12 +83,12 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 #' @rdname plot.langevin
 #' @method plot simLangevin
 #' @export
-plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, compact = TRUE, ...) {
+plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, time = NULL, compact = TRUE, ...) {
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
 
   # If no beta is provided, fall back to dataLangevin plotting behavior
   if (is.null(beta)) {
-    return(plot.dataLangevin(x, spatialCovs, extent = extent, compact = compact, ...))
+    return(plot.dataLangevin(x, spatialCovs, extent = extent, time = time, compact = compact, ...))
   }
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
@@ -119,6 +110,10 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
   # --- Prepare Theoretical UD Raster ---
   ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, log = log)
 
+  if (!is.null(time) && terra::nlyr(ud_full) == 1) {
+    warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
+  }
+
   plot_ids <- if (compact) "all" else as.character(unique(track_df$id))
   plot_list <- list()
 
@@ -127,7 +122,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     fill_label <- ifelse(log, expression(log(pi)), expression(pi))
 
     plot_list[[pid]] <- .build_langevin_plot(
-      track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent,
+      track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
       track_colors = track_colors, track_lines = track_lines
     )
@@ -139,7 +134,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
 #' @rdname plot.langevin
 #' @method plot dataLangevin
 #' @export
-plot.dataLangevin <- function(x, spatialCovs, extent = NULL, compact = TRUE, ...) {
+plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...) {
 
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
@@ -162,6 +157,10 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, compact = TRUE, ...
     track_lines <- c("Observed" = "dashed")
   }
 
+  if (!is.null(time) && all(vapply(spatialCovs, terra::nlyr, numeric(1)) == 1)) {
+    warning("'time' argument provided, but all spatial covariates are static. Ignoring 'time'.")
+  }
+
   cov_names <- names(spatialCovs)
   if (is.null(cov_names)) cov_names <- paste0("Covariate_", seq_along(spatialCovs))
 
@@ -170,14 +169,15 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, compact = TRUE, ...
 
   for (c_idx in seq_along(spatialCovs)) {
     cov_name <- cov_names[c_idx]
-    cov_rast <- spatialCovs[[c_idx]] # We pass the FULL raster, no matter how many layers!
+    cov_rast <- spatialCovs[[c_idx]]
+
     cov_plot_list <- list()
 
     for (pid in plot_ids) {
       title_text <- if (compact) paste("Covariate:", cov_name, "- All Tracks") else paste("Covariate:", cov_name, "- Track ID:", pid)
 
       cov_plot_list[[pid]] <- .build_langevin_plot(
-        track_df = track_df, pid = pid, raster_obj = cov_rast, user_extent = extent,
+        track_df = track_df, pid = pid, raster_obj = cov_rast, user_extent = extent, time = time,
         compact = compact, title_text = title_text, fill_label = cov_name,
         track_colors = track_colors, track_lines = track_lines
       )
@@ -189,11 +189,10 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, compact = TRUE, ...
 }
 
 # --- Internal Helper for Plotting Engine ---
-.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent, compact, title_text, fill_label, track_colors, track_lines) {
+.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent, time, compact, title_text, fill_label, track_colors, track_lines) {
 
   trk_sub <- if (compact) track_df else track_df[track_df$id == pid, ]
 
-  # 1. Calculate or use extent
   current_extent <- user_extent
   if (is.null(current_extent)) {
     x_range <- max(trk_sub$x, na.rm = TRUE) - min(trk_sub$x, na.rm = TRUE)
@@ -204,48 +203,20 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, compact = TRUE, ...
     current_extent <- c(x_mid - 0.6 * max_range, x_mid + 0.6 * max_range, y_mid - 0.6 * max_range, y_mid + 0.6 * max_range)
   }
 
-  xlim <- ylim <- NULL
+  crop_ext <- NULL
   if (!is.null(current_extent)) {
     crop_ext <- tryCatch(terra::ext(current_extent), error = function(e) NULL)
     if (!is.null(crop_ext)) {
-      ext_vec <- as.vector(crop_ext)
-      xlim <- c(ext_vec["xmin"], ext_vec["xmax"])
-      ylim <- c(ext_vec["ymin"], ext_vec["ymax"])
       raster_obj <- tryCatch(terra::crop(raster_obj, crop_ext), error = function(e) raster_obj)
     }
   }
 
-  # 2. Rename raster layers to ensure distinct facet names (borrowing from plotRaster logic)
-  n_layers <- terra::nlyr(raster_obj)
-  layer_times <- terra::time(raster_obj)
+  p <- plotRaster(raster_obj, legend.title = fill_label, extent = crop_ext, time = time)
 
-  if (n_layers > 1) {
-    if (!is.null(layer_times) && !all(is.na(layer_times))) {
-      names(raster_obj) <- paste0("Time: ", layer_times)
-    } else {
-      names(raster_obj) <- paste0("Layer ", seq_len(n_layers))
-    }
-  }
-
-  # 3. Raster to Dataframe
-  rast_df <- terra::as.data.frame(raster_obj, xy = TRUE, na.rm = TRUE)
-  layer_names <- setdiff(names(rast_df), c("x", "y"))
-
-  rast_long <- do.call(rbind, lapply(layer_names, function(lyr) {
-    data.frame("x" = rast_df$x, "y" = rast_df$y, "time_layer" = lyr, "Value" = rast_df[[lyr]])
-  }))
-
-  # Lock factor levels to maintain chronological/layer order in facets
-  rast_long$time_layer <- factor(rast_long$time_layer, levels = layer_names)
-
-  # 4. Build ggplot
-  p <- ggplot2::ggplot() +
-    ggplot2::geom_raster(data = rast_long, ggplot2::aes(x = x, y = y, fill = Value)) +
-    ggplot2::scale_fill_viridis_c(name = fill_label, option = "viridis", na.value = "transparent") +
+  p <- p +
     ggplot2::theme_minimal() +
     ggplot2::labs(x = "easting (x)", y = "northing (y)", title = title_text)
 
-  # Track handling
   if(length(track_colors) > 1) {
     p <- p +
       ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, linetype = type, group = interaction(id, type)), linewidth = 0.5, alpha = 0.8) +
@@ -258,11 +229,6 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, compact = TRUE, ...
       ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, group = id), color = track_colors[1], linetype = track_lines[1], linewidth = 0.5, alpha = 0.8) +
       ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y), color = track_colors[1], shape = 16, size = 1, alpha = 0.8)
   }
-
-  p <- p + if (!is.null(xlim) && !is.null(ylim)) ggplot2::coord_equal(xlim = xlim, ylim = ylim) else ggplot2::coord_equal()
-
-  # THIS triggers facet_wrap for multi-layer rasters!
-  if (length(layer_names) > 1) p <- p + ggplot2::facet_wrap(~ time_layer)
 
   return(p)
 }

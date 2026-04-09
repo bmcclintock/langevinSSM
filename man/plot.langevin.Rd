@@ -24,11 +24,12 @@
   beta = NULL,
   log = TRUE,
   extent = NULL,
+  time = NULL,
   compact = TRUE,
   ...
 )
 
-\method{plot}{dataLangevin}(x, spatialCovs, extent = NULL, compact = TRUE, ...)
+\method{plot}{dataLangevin}(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...)
 }
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{dataLangevin}, or \code{simLangevin} object.}
@@ -41,7 +42,7 @@
 
 \item{data}{Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.}
 
-\item{time}{Optional (for \code{fitLangevin} only). Indicates which layer(s) of a dynamic UD to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all UD layers are plotted.}
+\item{time}{Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.}
 
 \item{compact}{Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).}
 

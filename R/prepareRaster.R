@@ -42,8 +42,36 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
 
       if(is.null(t_vals) || all(is.na(t_vals))) {
         stop("spatialCovs$", spatialcovnames[j], " is a multi-layer raster that must have time values set (see ?terra::time)")
-      } else if(!is.null(data) && !("date" %in% names(data))) {
-        stop("spatialCovs$", spatialcovnames[j], " requires a 'date' column in 'data' to match the raster's dynamic layers")
+      } else if(!is.null(data)) {
+        if(!("date" %in% names(data))) {
+          stop("spatialCovs$", spatialcovnames[j], " requires a 'date' column in 'data' to match the raster's dynamic layers")
+        }
+
+        d_vals <- data$date
+
+        is_t_time <- inherits(t_vals, c("POSIXt", "Date"))
+        is_d_time <- inherits(d_vals, c("POSIXt", "Date"))
+
+        # --- Type Consistency Check ---
+        if (is_t_time && !is_d_time) {
+          stop("Type mismatch: spatialCovs$", spatialcovnames[j], " has POSIXt/Date time values, but data$date is numeric.")
+        } else if (!is_t_time && is_d_time) {
+          stop("Type mismatch: spatialCovs$", spatialcovnames[j], " has numeric time values, but data$date is POSIXt/Date.")
+        } else if (!is_t_time && !is_d_time) {
+          if (!is.numeric(t_vals) || !is.numeric(d_vals)) {
+            stop("Time values must be either numeric or POSIXt/Date.")
+          }
+        }
+
+        # --- Temporal Bounding Check ---
+        min_t <- min(t_vals, na.rm = TRUE)
+        max_t <- max(t_vals, na.rm = TRUE)
+        min_d <- min(d_vals, na.rm = TRUE)
+        max_d <- max(d_vals, na.rm = TRUE)
+
+        if (min_d < min_t || max_d > max_t) {
+          stop("The tracking data times fall outside the temporal boundaries of 'spatialCovs$", spatialcovnames[j], "'. Ensure min(data$date) and max(data$date) are strictly within the raster's time range.")
+        }
       }
     }
   }

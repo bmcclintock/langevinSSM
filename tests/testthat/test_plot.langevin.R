@@ -5,10 +5,17 @@ get_mock_covs <- function(dynamic = FALSE) {
   r1 <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 10, 0, 10), vals = runif(100))
   if (dynamic) {
     r1 <- c(r1, r1 * 0.5)
-    terra::time(r1) <- as.POSIXct(c("2023-01-01", "2023-01-02"), tz = "UTC")
+    terra::time(r1) <- as.POSIXct(c("2023-01-01 00:00:00", "2023-01-02 00:00:00"), tz = "UTC")
   }
   list(cov1 = r1)
 }
+
+# Generate a sequence of dates bridging the dynamic raster times
+mock_dates <- rep(seq(
+  from = as.POSIXct("2023-01-01 00:00:00", tz = "UTC"),
+  to = as.POSIXct("2023-01-02 00:00:00", tz = "UTC"),
+  length.out = 5
+), 2)
 
 get_mock_fit <- function() {
   fit <- list(
@@ -19,7 +26,8 @@ get_mock_fit <- function() {
           est = data.frame(
             mu.x = c(2.1, 2.6, 3.1, 3.6, 4.1, 6.1, 6.6, 7.1, 7.6, 8.1),
             mu.y = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
-            id = rep(c("A", "B"), each = 5)
+            id = rep(c("A", "B"), each = 5),
+            date = mock_dates
           )
         )
       )
@@ -34,26 +42,34 @@ get_mock_fit <- function() {
 }
 
 get_mock_data <- function() {
-  # 5 points per track to ensure geom_path draws distinct lines
+  # 5 points per track, now strictly including dates
   dat <- data.frame(
+    id = rep(c("A", "B"), each = 5),
+    date = mock_dates,
+    dt = rep(6, 10),
     x = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
     y = c(2.1, 2.4, 3.1, 3.6, 4.1, 6.1, 6.4, 7.1, 7.6, 8.1),
-    id = rep(c("A", "B"), each = 5)
+    smaj = NA, smin = NA, eor = NA, x.sd = NA, y.sd = NA
   )
-  class(dat) <- c("dataLangevin", "data.frame")
+  # Actually route it through the real validator so we know the mock data is legal!
+  dat <- class_dataLangevin(dat, time.unit = "hours")
   return(dat)
 }
 
 get_mock_sim <- function() {
-  # 5 points per track to ensure geom_path draws distinct lines
+  # 5 points per track, with dates and latent states
   dat <- data.frame(
+    id = rep(c("A", "B"), each = 5),
+    date = mock_dates,
+    dt = rep(6, 10),
     x = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
     y = c(2.1, 2.4, 3.1, 3.6, 4.1, 6.1, 6.4, 7.1, 7.6, 8.1),
     mu.x = c(2.1, 2.6, 3.1, 3.6, 4.1, 6.1, 6.6, 7.1, 7.6, 8.1),
     mu.y = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
-    id = rep(c("A", "B"), each = 5)
+    smaj = NA, smin = NA, eor = NA, x.sd = NA, y.sd = NA
   )
-  class(dat) <- c("simLangevin", "dataLangevin", "data.frame")
+  dat <- class_dataLangevin(dat, time.unit = "hours")
+  class(dat) <- unique(c("simLangevin", class(dat)))
   return(dat)
 }
 
@@ -160,6 +176,31 @@ test_that("plot.dataLangevin handles multi-layer (dynamic) rasters", {
   expect_true(inherits(p_list[["cov1"]]$facet, "FacetWrap"), info = "Multi-layer covariate should trigger facet_wrap")
 })
 
+test_that("plot.dataLangevin handles time subsetting with mixed static/dynamic covs without warning", {
+  dat <- get_mock_data()
+  covs <- get_mock_covs(dynamic = TRUE)
+  covs$static_cov <- get_mock_covs(dynamic = FALSE)$cov1 # Mix of dynamic and static
+
+  # Because at least one covariate is dynamic, NO warning should be produced!
+  p_list <- plot(dat, spatialCovs = covs, time = 1)
+
+  expect_type(p_list, "list")
+  expect_equal(length(p_list), 2)
+  expect_true(inherits(p_list[["cov1"]]$facet, "FacetNull"), info = "Dynamic raster should be reduced to single layer")
+  expect_true(inherits(p_list[["static_cov"]]$facet, "FacetNull"), info = "Static raster remains single layer without crashing")
+})
+
+test_that("plot.dataLangevin warns if time provided but ALL covariates are static", {
+  dat <- get_mock_data()
+  covs <- get_mock_covs(dynamic = FALSE) # Only static
+  covs$static_cov2 <- get_mock_covs(dynamic = FALSE)$cov1
+
+  expect_warning(
+    plot(dat, spatialCovs = covs, time = 1),
+    "all spatial covariates are static"
+  )
+})
+
 # ---------------------------------------------------------
 # Tests for plot.simLangevin
 # ---------------------------------------------------------
@@ -208,4 +249,14 @@ test_that("plot.simLangevin handles multi-layer (dynamic) rasters with beta", {
 
   expect_s3_class(p, "ggplot")
   expect_true(inherits(p$facet, "FacetWrap"), info = "Multi-layer UD calculation should trigger facet_wrap")
+})
+
+test_that("plot.simLangevin handles time subsetting with beta", {
+  sim <- get_mock_sim()
+  covs <- get_mock_covs(dynamic = TRUE)
+
+  p <- plot(sim, spatialCovs = covs, beta = c(1.5), time = 1)
+
+  expect_s3_class(p, "ggplot")
+  expect_true(inherits(p$facet, "FacetNull"), info = "Dynamic UD should be reduced to single layer")
 })

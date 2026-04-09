@@ -158,6 +158,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
 
   class(out) <- append("simLangevin", class(out))
   out <- class_dataLangevin(out)
+  class(out) <- unique(c("simLangevin", class(out)))
 
   return(out)
 }
@@ -365,8 +366,8 @@ simLangevin.fitLangevin <- function(model,
   }
 
   attr(out,"time.unit") <- time.unit
-  class(out) <- append("simLangevin", class(out))
   out <- class_dataLangevin(out)
+  class(out) <- unique(c("simLangevin", class(out)))
 
   return(out)
 }

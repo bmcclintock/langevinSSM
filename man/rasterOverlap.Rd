@@ -21,5 +21,5 @@ If multi-layer rasters are provided, the affinity is calculated pairwise for eac
 \examples{
 r1 <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1), log = FALSE)
 r2 <- getUD(exampleCovs, beta = c(-3, 5, 4, -0.1), log = FALSE)
-rasterOverlap(r1,r2)
+rasterOverlap(r1$UD,r2$UD)
 }

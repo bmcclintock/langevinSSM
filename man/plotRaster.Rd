@@ -26,7 +26,6 @@ Supports multi-layer rasters by automatically creating a faceted multi-panel plo
 }
 \examples{
 # exampleCovs included in package; see ?exampleCovs for details
-UD <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1) )
-plotRaster(UD, legend.title = paste0("log(",expression(pi),")"))
+plotRaster(exampleCovs$cov1)
 
 }

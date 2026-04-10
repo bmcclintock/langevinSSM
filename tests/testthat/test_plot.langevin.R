@@ -260,3 +260,86 @@ test_that("plot.simLangevin handles time subsetting with beta", {
   expect_s3_class(p, "ggplot")
   expect_true(inherits(p$facet, "FacetNull"), info = "Dynamic UD should be reduced to single layer")
 })
+
+# ---------------------------------------------------------
+# Tests for plot.udLangevin
+# ---------------------------------------------------------
+
+# --- Helper function for mock udLangevin data ---
+get_mock_ud <- function(dynamic = FALSE, with_uncertainty = FALSE) {
+  r <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 10, 0, 10), vals = runif(100))
+  names(r) <- "UD"
+
+  if (dynamic) {
+    r <- c(r, r * 0.5)
+    terra::time(r) <- as.POSIXct(c("2023-01-01 00:00:00", "2023-01-02 00:00:00"), tz = "UTC")
+  }
+
+  out <- list(UD = r)
+
+  if (with_uncertainty) {
+    # Create arbitrary SE and CV rasters based on the UD
+    se <- r * 0.1
+    names(se) <- rep("UD_SE", terra::nlyr(se))
+    cv <- r * 0.05
+    names(cv) <- rep("UD_CV", terra::nlyr(cv))
+
+    out$SE <- se
+    out$CV <- cv
+  }
+
+  # Using the class constructor format
+  class(out) <- unique(c("udLangevin", class(out)))
+  return(out)
+}
+
+test_that("plot.udLangevin works for basic UD without uncertainty", {
+  ud <- get_mock_ud(with_uncertainty = FALSE)
+  p <- plot(ud)
+
+  expect_s3_class(p, "ggplot")
+  expect_true(inherits(p$facet, "FacetNull"), info = "Static base UD should not use facet_wrap")
+  expect_equal(p$labels$title, "Utilization Distribution (UD)")
+})
+
+test_that("plot.udLangevin returns list of plots when SE and CV are present", {
+  ud <- get_mock_ud(with_uncertainty = TRUE)
+  p_list <- plot(ud)
+
+  expect_type(p_list, "list")
+  expect_equal(length(p_list), 3)
+  expect_named(p_list, c("UD", "SE", "CV"))
+
+  expect_s3_class(p_list[["UD"]], "ggplot")
+  expect_s3_class(p_list[["SE"]], "ggplot")
+  expect_s3_class(p_list[["CV"]], "ggplot")
+
+  expect_equal(p_list[["SE"]]$labels$title, "UD log standard error (SE)")
+  expect_equal(p_list[["CV"]]$labels$title, "UD coefficient of variation (CV)")
+})
+
+test_that("plot.udLangevin handles log = FALSE for SE", {
+  ud <- get_mock_ud(with_uncertainty = TRUE)
+  p_list <- plot(ud, log = FALSE)
+
+  expect_type(p_list, "list")
+  expect_s3_class(p_list[["SE"]], "ggplot")
+
+  # Check that the title changed to indicate logarithmic scaling
+  expect_equal(p_list[["SE"]]$labels$title, "UD standard error (SE)")
+})
+
+test_that("plot.udLangevin handles dynamic rasters with and without time subsetting", {
+  ud <- get_mock_ud(dynamic = TRUE, with_uncertainty = TRUE)
+
+  # All layers (faceting should trigger on all generated plots)
+  p_all <- plot(ud)
+  expect_true(inherits(p_all[["UD"]]$facet, "FacetWrap"), info = "Multi-layer UD should trigger facet_wrap")
+  expect_true(inherits(p_all[["SE"]]$facet, "FacetWrap"), info = "Multi-layer SE should trigger facet_wrap")
+  expect_true(inherits(p_all[["CV"]]$facet, "FacetWrap"), info = "Multi-layer CV should trigger facet_wrap")
+
+  # Subsetting by time index (reduces to single layer)
+  p_sub <- plot(ud, time = 1)
+  expect_true(inherits(p_sub[["UD"]]$facet, "FacetNull"), info = "Subsetting dynamic UD to a single time layer should remove facet_wrap")
+  expect_true(inherits(p_sub[["SE"]]$facet, "FacetNull"), info = "Subsetting dynamic SE to a single time layer should remove facet_wrap")
+})

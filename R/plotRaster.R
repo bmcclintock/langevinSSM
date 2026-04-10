@@ -11,8 +11,7 @@
 #' @return A \code{\link[ggplot2]{ggplot}} object containing the raster plot.
 #' @examples
 #' # exampleCovs included in package; see ?exampleCovs for details
-#' UD <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1) )
-#' plotRaster(UD, legend.title = paste0("log(",expression(pi),")"))
+#' plotRaster(exampleCovs$cov1)
 #'
 #' @importFrom terra as.data.frame nlyr time ext crop
 #' @export

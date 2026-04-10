@@ -39,7 +39,7 @@ UD <- getUD(exampleCovs, beta = examplePar$beta)
 set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAnimals,obsPerAnimal=obsPerAnimal,measurementError = measurementError)
 
-plotRaster(UD)+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
+plot(UD, extent=c(900,1100,900,1100))+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
 
 fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1))
 fit

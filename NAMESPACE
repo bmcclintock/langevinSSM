@@ -3,6 +3,7 @@
 S3method(plot,dataLangevin)
 S3method(plot,fitLangevin)
 S3method(plot,simLangevin)
+S3method(plot,udLangevin)
 S3method(print,fitLangevin)
 S3method(simLangevin,default)
 S3method(simLangevin,fitLangevin)

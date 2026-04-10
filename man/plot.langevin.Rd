@@ -4,6 +4,7 @@
 \alias{plot.langevin}
 \alias{plot.fitLangevin}
 \alias{plot.simLangevin}
+\alias{plot.udLangevin}
 \alias{plot.dataLangevin}
 \title{Plot Langevin model fits and data}
 \usage{
@@ -29,14 +30,16 @@
   ...
 )
 
+\method{plot}{udLangevin}(x, log = TRUE, extent = NULL, time = NULL, ...)
+
 \method{plot}{dataLangevin}(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...)
 }
 \arguments{
-\item{x}{A \code{fitLangevin}, \code{dataLangevin}, or \code{simLangevin} object.}
+\item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, or \code{udLangevin} object.}
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.}
 
-\item{log}{Logical (for \code{fitLangevin} and \code{simLangevin}). Indicates whether to plot the log UD (\code{TRUE}, default) or the probability UD.}
+\item{log}{Logical. For \code{fitLangevin} and \code{simLangevin}, indicates whether to plot the log UD (default: \code{TRUE}) or the probability UD. For \code{udLangevin}, indicates whether to plot the log of the standard error (\code{TRUE}) or natural standard error (default: \code{TRUE}).}
 
 \item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.}
 
@@ -59,5 +62,6 @@ These methods plot objects associated with the \code{langevinSSM} package using 
   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
+  \item \strong{\code{plot.udLangevin}:} Plots the estimated Utilization Distribution (UD). If the \code{udLangevin} object contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 }
 }

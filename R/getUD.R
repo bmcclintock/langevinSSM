@@ -5,7 +5,7 @@
 #' @param log Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.
 #' @param nsims Integer. Number of draws from the covariance matrix to use for estimating uncertainty in the UD. If \code{nsims > 0}, the returned list of raster will include additional elements for the (probability-scale) standard error (\code{SE}) and the coefficient of variation (\code{CV}) for each cell. Default: \code{0}.
 #' @param show_progress Logical. If \code{TRUE}, displays a progress bar and messages during simulation. Default: \code{TRUE}.
-#' @return A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization distribution. If \code{nsims > 0}, it returns a list including the estimated UD and its associated uncertainty metrics.
+#' @return An object of class \code{udLangevin}, which is a list containing the (log) utilization distribution (\code{UD}) as a \code{\link[terra]{SpatRaster-class}} object. If \code{nsims > 0}, the list also includes the estimated standard error (\code{SE}) and coefficient of variation (\code{CV}).
 #' @seealso \code{\link{plotRaster}} for plotting the utilization distribution and covariates.
 #' @examples
 #' # exampleCovs included in package; see ?exampleCovs for details
@@ -52,9 +52,9 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nsims = 0, show_progress =
   }
   names(ud_base) <- rep(base_name, terra::nlyr(ud_base))
 
-  if (nsims == 0) return(ud_base)
+  if (nsims == 0) return(class_udLangevin(list(UD = ud_base)))
 
-  if (is.null(fit$estimates$cov_natural)) stop("Refit model to get cov_natural.")
+  if (is.null(fit$estimates$cov_natural)) stop("fit$estimates$cov_natural not found. Refit model to get cov_natural.")
   beta_cov <- fit$estimates$cov_natural[beta_idx, beta_idx, drop = FALSE]
   beta_draws <- MASS::mvrnorm(nsims, beta, beta_cov)
 
@@ -121,5 +121,5 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nsims = 0, show_progress =
     terra::time(ud_cv) <- terra::time(spatialCovs[[dyn_idx]])
   }
 
-  return(list(UD = ud_base, SE = ud_se, CV = ud_cv))
+  return(class_udLangevin(list(UD = ud_base, SE = ud_se, CV = ud_cv)))
 }

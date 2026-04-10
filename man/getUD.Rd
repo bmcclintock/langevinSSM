@@ -20,7 +20,7 @@ getUD(spatialCovs, fit, beta, log = TRUE, nsims = 0, show_progress = TRUE)
 \item{show_progress}{Logical. If \code{TRUE}, displays a progress bar and messages during simulation. Default: \code{TRUE}.}
 }
 \value{
-A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization distribution. If \code{nsims > 0}, it returns a list including the estimated UD and its associated uncertainty metrics.
+An object of class \code{udLangevin}, which is a list containing the (log) utilization distribution (\code{UD}) as a \code{\link[terra]{SpatRaster-class}} object. If \code{nsims > 0}, the list also includes the estimated standard error (\code{SE}) and coefficient of variation (\code{CV}).
 }
 \description{
 Compute Utilization Distribution

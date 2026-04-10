@@ -5,12 +5,13 @@
 #'   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
 #'   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
 #'   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
+#'   \item \strong{\code{plot.udLangevin}:} Plots the estimated Utilization Distribution (UD). If the \code{udLangevin} object contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 #' }
 #'
-#' @param x A \code{fitLangevin}, \code{dataLangevin}, or \code{simLangevin} object.
+#' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, or \code{udLangevin} object.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
-#' @param log Logical (for \code{fitLangevin} and \code{simLangevin}). Indicates whether to plot the log UD (\code{TRUE}, default) or the probability UD.
+#' @param log Logical. For \code{fitLangevin} and \code{simLangevin}, indicates whether to plot the log UD (default: \code{TRUE}) or the probability UD. For \code{udLangevin}, indicates whether to plot the log of the standard error (\code{TRUE}) or natural standard error (default: \code{TRUE}).
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
@@ -56,9 +57,11 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   # --- Prepare UD Raster ---
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log)
 
-  if (!is.null(time) && terra::nlyr(ud_full) == 1) {
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log)
+  ud_raster <- ud_full$UD
+
+  if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
   }
 
@@ -70,7 +73,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
     fill_label <- ifelse(log, expression(log(pi)), expression(pi))
 
     plot_list[[pid]] <- .build_langevin_plot(
-      track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent, time = time,
+      track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
       track_colors = c("Observed" = "lightgrey", "Estimated" = "tomato"),
       track_lines = c("Observed" = "dashed", "Estimated" = "solid"), ...
@@ -109,8 +112,9 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
 
   # --- Prepare Theoretical UD Raster ---
   ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, log = log)
+  ud_raster <- ud_full$UD
 
-  if (!is.null(time) && terra::nlyr(ud_full) == 1) {
+  if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
   }
 
@@ -122,13 +126,47 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     fill_label <- ifelse(log, expression(log(pi)), expression(pi))
 
     plot_list[[pid]] <- .build_langevin_plot(
-      track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent, time = time,
+      track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
       track_colors = track_colors, track_lines = track_lines, ...
     )
   }
 
   return(if (compact || length(plot_list) == 1) plot_list[[1]] else plot_list)
+}
+
+#' @rdname plot.langevin
+#' @method plot udLangevin
+#' @export
+plot.udLangevin <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+
+  plot_list <- list()
+
+  ud_name <- names(x$UD)[1]
+  plot_list[["UD"]] <- plotRaster(x$UD, legend.title = ud_name, extent = extent, time = time, ...) +
+    ggplot2::labs(title = "Utilization Distribution (UD)")
+
+  if (!is.null(x$SE) && !is.null(x$CV)) {
+    se_rast <- x$SE
+    se_name <- "UD_SE"
+
+    if (log) {
+      se_rast <- log(se_rast)
+      names(se_rast) <- rep("log_UD_SE", terra::nlyr(se_rast))
+      se_name <- "log_UD_SE"
+    }
+
+    plot_list[["SE"]] <- plotRaster(se_rast, legend.title = se_name, extent = extent, time = time, ...) +
+      ggplot2::labs(title = ifelse(log, "UD log standard error (SE)", "UD standard error (SE)"))
+
+    plot_list[["CV"]] <- plotRaster(x$CV, legend.title = "UD_CV", extent = extent, time = time, ...) +
+      ggplot2::labs(title = "UD coefficient of variation (CV)")
+  }
+
+  if (length(plot_list) == 1) return(plot_list[[1]])
+
+  return(plot_list)
 }
 
 #' @rdname plot.langevin

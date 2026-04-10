@@ -221,8 +221,7 @@ List measurementError_rcpp(DataFrame data,
                            double smin_sd,
                            NumericVector eor,
                            double psi,
-                           int model,
-                           bool exact = false) {
+                           bool knownError = false) {
 
   int n = data.nrows();
   NumericVector M_rand(n);
@@ -232,7 +231,7 @@ List measurementError_rcpp(DataFrame data,
   NumericVector mux = data["mu.x"];
   NumericVector muy = data["mu.y"];
 
-  // Initialize new positions. If exact=true and an earlier step already
+  // Initialize new positions. If knownError=true and an earlier step already
   // generated x/y, preserve them. Otherwise start from true locations.
   NumericVector new_mux;
   NumericVector new_muy;
@@ -244,7 +243,7 @@ List measurementError_rcpp(DataFrame data,
     new_muy = clone(muy);
   }
 
-  if (exact) {
+  if (knownError) {
     NumericVector orig_smaj = data["smaj"];
     NumericVector orig_smin = data["smin"];
     NumericVector orig_eor = data["eor"];
@@ -295,7 +294,7 @@ List measurementError_rcpp(DataFrame data,
     new_muy[i] = new_pos(1);
   }
 
-  if (exact) {
+  if (knownError) {
     return List::create(Named("x") = new_mux, Named("y") = new_muy);
   } else {
     return List::create(Named("x") = new_mux, Named("y") = new_muy,
@@ -310,8 +309,7 @@ List measurementError_LS_rcpp(DataFrame data,
                               double tau_x,
                               double tau_y,
                               double rho_o,
-                              int model,
-                              bool exact = false) {
+                              bool knownError = false) {
 
   int n = data.nrows();
   NumericVector mux = data["mu.x"];
@@ -330,7 +328,7 @@ List measurementError_LS_rcpp(DataFrame data,
   NumericVector x_sd_vec(n);
   NumericVector y_sd_vec(n);
 
-  if (exact) {
+  if (knownError) {
     x_sd_vec = data["x.sd"];
     y_sd_vec = data["y.sd"];
   } else {
@@ -359,7 +357,7 @@ List measurementError_LS_rcpp(DataFrame data,
     obs_y[i] = new_pos(1);
   }
 
-  if (exact) {
+  if (knownError) {
     return List::create(Named("x") = obs_x, Named("y") = obs_y);
   } else {
     return List::create(Named("x") = obs_x, Named("y") = obs_y,

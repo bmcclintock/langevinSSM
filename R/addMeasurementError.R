@@ -1,42 +1,72 @@
+#' Add measurement error to true locations
+#'
+#' This function adds measurement error to the true locations in the data frame, either by using provided measurement error parameters or by using existing error columns in the data. It supports both Argos Kalman Filter (KF) and Least Squares (LS)/GPS error models
+#' @param data A data frame containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.sd`, `y.sd` for LS/GPS).
+#' @param par A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.
+#' @param measurementError A list of measurement error parameters. For KF, this should include `smaj.sd`, `smin.sd`, and optionally `eor`. For LS/GPS, this should include `x.sd` and `y.sd`. If not provided, the function will look for appropriate columns in `data`.
+#' @param coord A character vector of length 2 specifying the column names in `data` that contain the true x and y locations (default is `c("mu.x", "mu.y")`).
+#' @return A data frame with observed locations (`x`, `y`). and measurement error terms added (if applicable).
 #' @importFrom dplyr %>% mutate
-addMeasurementError <- function(model, out, par, measurementError = NULL, exact = FALSE) {
+#' @export
+addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord = c("mu.x", "mu.y")) {
 
   # Initialize x and y to true locations if they don't exist yet
-  if (!"x" %in% names(out)) out$x <- out$mu.x
-  if (!"y" %in% names(out)) out$y <- out$mu.y
+  if (!"x" %in% names(data)) data$x <- data[,coord[1]]
+  if (!"y" %in% names(data)) data$y <- data[,coord[2]]
 
-  if (is.null(measurementError) && !exact) {
-    # No error: observations equal true locations
-    out <- out %>% dplyr::mutate(smaj = NA, smin = NA, eor = NA, x.sd = NA, y.sd = NA)
-    return(out)
+  knownError <- is.null(measurementError)
+
+  if(knownError & !("smaj" %in% names(data) && "smin" %in% names(data) && "eor" %in% names(data)) &
+     !("x.sd" %in% names(data) && "y.sd" %in% names(data))) {
+    stop("No measurement error parameters provided.\nPlease provide either 'measurementError' or appropriate measurement error columns in 'data' (i.e., 'smaj', 'smin', 'eor', 'x.sd' and 'y.sd').")
   }
 
-  out$lc <- "G"
+  data$lc <- "G"
+
+  if(!is.null(par$psi) & !is.null(par$l_psi)) stop("Cannot provide both 'psi' and 'l_psi' in 'par'.")
+  if(!is.null(par$tau) & !is.null(par$l_tau)) stop("Cannot provide both 'tau' and 'l_tau' in 'par'.")
+  if(!is.null(par$rho_o) & !is.null(par$l_rho_o)) stop("Cannot provide both 'rho_o' and 'l_rho_o' in 'par'.")
 
   # Robustly extract parameters (handles both natural and working scale inputs)
   psi <- if (!is.null(par$psi)) par$psi else if (!is.null(par$l_psi)) exp(par$l_psi) else 1
   tau <- if (!is.null(par$tau)) par$tau else if (!is.null(par$l_tau)) exp(par$l_tau) else c(1, 1)
   rho_o <- if (!is.null(par$rho_o)) par$rho_o else if (!is.null(par$l_rho_o)) (2 / (1 + exp(-par$l_rho_o)) - 1) else 0
 
-  if (exact) {
-    # EXACT MODE: Data already contains smaj/x.sd columns. We apply the math row-by-row.
-    has_KF <- "smaj" %in% names(out) && any(!is.na(out$smaj))
-    has_LS <- "x.sd" %in% names(out) && any(!is.na(out$x.sd))
+  if(knownError & ("smaj" %in% names(data) && "smin" %in% names(data) && "eor" %in% names(data))) {
+    if(!all(is.na(data$eor)) && max(data$eor, na.rm = TRUE) < pi) {
+     warning("eor values were converted to radians, but they appear to have been provided in radians rather than degrees from north. Please ensure that the eor column was provided in degrees from north.")
+    }
+    data$eor <- data$eor * pi / 180 # convert from degrees to radians
+  }
+
+  checkErrorData(data, coord, measurementError, knownError)
+
+  if (knownError) {
+    # Data already contains smaj/x.sd columns. We apply the math row-by-row.
+    has_KF <- "smaj" %in% names(data) && any(!is.na(data$smaj))
+    has_LS <- "x.sd" %in% names(data) && any(!is.na(data$x.sd))
 
     if (has_KF) {
-      res <- measurementError_rcpp(out, 0, 0, c(0,0), psi, ifelse(model == "underdamped", 1, 0), TRUE)
-      out$x <- res$x
-      out$y <- res$y
+      res <- measurementError_rcpp(data, 0, 0, c(0,0), psi, TRUE)
+      data$x <- res$x
+      data$y <- res$y
+    } else {
+      data$smaj <- NA
+      data$smin <- NA
+      data$eor <- NA
     }
 
     if (has_LS) {
-      res <- measurementError_LS_rcpp(out, 0, 0, tau[1], tau[2], rho_o, ifelse(model == "underdamped", 1, 0), TRUE)
-      out$x <- res$x
-      out$y <- res$y
+      res <- measurementError_LS_rcpp(data, 0, 0, tau[1], tau[2], rho_o, TRUE)
+      data$x <- res$x
+      data$y <- res$y
+    } else {
+      data$x.sd <- NA
+      data$y.sd <- NA
     }
 
   } else {
-    # DE NOVO MODE: Generate completely new errors
+    # Generate completely new errors
     if (!is.list(measurementError)) stop("'measurementError' must be a list.")
 
     has_KF <- all(c("smaj.sd", "smin.sd") %in% names(measurementError))
@@ -51,30 +81,30 @@ addMeasurementError <- function(model, out, par, measurementError = NULL, exact 
       smin.sd <- measurementError$smin.sd
       eor_range <- if (!is.null(measurementError$eor)) measurementError$eor else c(0, 180)
 
-      res <- measurementError_rcpp(out, smaj.sd, smin.sd, eor_range, psi, ifelse(model == "underdamped", 1, 0), FALSE)
+      res <- measurementError_rcpp(data, smaj.sd, smin.sd, eor_range, psi, FALSE)
 
-      out$x <- res$x
-      out$y <- res$y
-      out$smaj <- res$smaj
-      out$smin <- res$smin
-      out$eor <- res$eor
-      out$x.sd <- NA
-      out$y.sd <- NA
+      data$x <- res$x
+      data$y <- res$y
+      data$smaj <- res$smaj
+      data$smin <- res$smin
+      data$eor <- res$eor
+      data$x.sd <- NA
+      data$y.sd <- NA
 
     } else if (has_LS) {
       x_sd_val <- measurementError$x.sd
       y_sd_val <- measurementError$y.sd
 
-      res <- measurementError_LS_rcpp(out, x_sd_val, y_sd_val, tau[1], tau[2], rho_o, ifelse(model == "underdamped", 1, 0), FALSE)
+      res <- measurementError_LS_rcpp(data, x_sd_val, y_sd_val, tau[1], tau[2], rho_o, FALSE)
 
-      out$x <- res$x
-      out$y <- res$y
-      out$x.sd <- res$x.sd
-      out$y.sd <- res$y.sd
-      out$smaj <- NA
-      out$smin <- NA
-      out$eor <- NA
+      data$x <- res$x
+      data$y <- res$y
+      data$x.sd <- res$x.sd
+      data$y.sd <- res$y.sd
+      data$smaj <- NA
+      data$smin <- NA
+      data$eor <- NA
     }
   }
-  return(out)
+  return(data)
 }

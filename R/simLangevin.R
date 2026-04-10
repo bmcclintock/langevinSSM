@@ -10,7 +10,7 @@
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
 #' @param timeStep Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.
 #'
-#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}.
+#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. See \code{\link{fitLangevin}}.
 #' @param nbAnimals Number of animals to simulate. Default: 1.
 #' @param obsPerAnimal Number of observations to simulate per animal. Default: 500.
 #' @param initialPosition Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.
@@ -163,7 +163,11 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     initialPosition = init_pos_sim
   )
 
-  out <- addMeasurementError(model, out, par, measurementError = measurementError)
+  if(!is.null(measurementError)) {
+    out <- addMeasurementError(out, par, measurementError = measurementError)
+  } else {
+    out <- out %>% dplyr::mutate(x = mu.x, y = mu.y, smaj = NA, smin = NA, eor = NA, x.sd = NA, y.sd = NA)
+  }
 
   if(!is.null(subSample)){
     out <- subSampleData(out, samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
@@ -326,7 +330,7 @@ simLangevin.fitLangevin <- function(model,
       out$vel.x <- vel_mat[, 1]
       out$vel.y <- vel_mat[, 2]
     }
-    out <- addMeasurementError(fit$conditions$model, out, nat_par, exact = TRUE)
+    out <- addMeasurementError(out, nat_par)
   } else {
     out_list <- vector("list", length(unique(data$id)))
     names(out_list) <- unique(data$id)
@@ -375,7 +379,7 @@ simLangevin.fitLangevin <- function(model,
       out_list[[as.character(i)]] <- sim_ind
     }
     out <- do.call(rbind, out_list)
-    out <- addMeasurementError(fit$conditions$model, out, nat_par, exact = TRUE)
+    out <- addMeasurementError(out, nat_par)
   }
 
   out$id <- as.factor(out$id)

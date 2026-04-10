@@ -147,14 +147,22 @@ get_emf <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
                                                                                                  "1", "0", "A", "B", "Z")))
 }
 
-checkErrorData <- function(data, coord=c("x","y")){
+checkErrorData <- function(data, coord=c("x","y"), measurementError = NULL, knownError = TRUE){
   if(any(is.na(data[,coord[1]]) & !is.na(data[,coord[2]])) | any(!is.na(data[,coord[1]]) & is.na(data[,coord[2]]))) stop("Missing values (NA) in coordinates must be in both x and y columns.")
-  if(any(is.na(data[,coord[1]]) & (!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor) | !is.na(data$x.sd) | !is.na(data$y.sd)))) stop("Measurement error terms must be NA when there are missing values in the coordinates.")
-  if(any(is.na(data$smaj) & (!is.na(data$smin) & !is.na(data$eor)))) stop("When using the error ellipse model, smaj, smin, and eor must all be provided or all be NA.")
-  if(any(is.na(data$x.sd) & !is.na(data$y.sd))) stop("When using the x- and y-axis error model, x.sd and y.sd must both be provided or both be NA.")
-  if(any((!is.na(data$smaj) & !is.na(data$smin) & !is.na(data$eor)) & (!is.na(data$x.sd) | !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms. If using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA. If using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
-  if(any((!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor)) & (!is.na(data$x.sd) & !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms. If using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA. If using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
-  if(isTRUE(any(data$eor<0 | data$eor > pi))) stop("Error ellipse orientation (eor) must be between 0 and pi radians.")
+  if(knownError){
+    if(any(is.na(data[,coord[1]]) & (!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor) | !is.na(data$x.sd) | !is.na(data$y.sd)))) stop("Measurement error terms must be NA when there are missing values in the coordinates.")
+    if(any(is.na(data$smaj) & (!is.na(data$smin) & !is.na(data$eor)))) stop("When using the error ellipse model, smaj, smin, and eor must all be provided or all be NA.")
+    if(any(is.na(data$x.sd) & !is.na(data$y.sd))) stop("When using the x- and y-axis error model, x.sd and y.sd must both be provided or both be NA.")
+    if(any((!is.na(data$smaj) & !is.na(data$smin) & !is.na(data$eor)) & (!is.na(data$x.sd) | !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA.\nIf using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
+    if(any((!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor)) & (!is.na(data$x.sd) & !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA.\nIf using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
+    if(isTRUE(any(data$eor<0 | data$eor > pi))) stop("Error ellipse orientation (eor) must be between 0 and pi radians.")
+  }
+  if(!is.null(measurementError)){
+    if(knownError) stop("Cannot provide 'measurementError' parameters when the data already contains measurement error information. Please provide either 'measurementError' or appropriate measurement error columns in 'data', but not both.")
+    if(!is.list(measurementError)) stop("'measurementError' must be a list.")
+    if(!all(c("smaj.sd", "smin.sd", "eor") %in% names(measurementError)) && !all(c("x.sd", "y.sd") %in% names(measurementError))) stop("When providing 'measurementError' parameters, you must provide either 'smaj.sd', 'smin.sd', and 'eor' for the error ellipse model, or 'x.sd' and 'y.sd' for the x- and y-axis error model.\nPlease provide the appropriate parameters for your chosen error model.")
+    if(all(c("smaj.sd", "smin.sd", "eor") %in% names(measurementError)) && all(c("x.sd", "y.sd") %in% names(measurementError))) stop("Cannot provide both error ellipse and x- and y-axis error parameters in 'measurementError'.\nPlease provide either 'smaj.sd', 'smin.sd', and 'eor' for the error ellipse model, or 'x.sd' and 'y.sd' for the x- and y-axis error model, but not both.")
+  }
 }
 
 mapDuplicatedTimes <- function(dat, map, par, re) {

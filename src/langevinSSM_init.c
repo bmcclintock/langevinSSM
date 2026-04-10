@@ -6,13 +6,13 @@
 // Generated with tools::package_native_routine_registration_skeleton(getwd(),,,FALSE) (R 4.0)
 
 /* .Call calls */
-extern SEXP _langevinSSM_measurementError_LS_rcpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-extern SEXP _langevinSSM_measurementError_rcpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP _langevinSSM_measurementError_LS_rcpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP _langevinSSM_measurementError_rcpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP _langevinSSM_simulate_langevin_cpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 static const R_CallMethodDef CallEntries[] = {
-  {"_langevinSSM_measurementError_LS_rcpp", (DL_FUNC) &_langevinSSM_measurementError_LS_rcpp, 8},
-  {"_langevinSSM_measurementError_rcpp",    (DL_FUNC) &_langevinSSM_measurementError_rcpp,    7},
+  {"_langevinSSM_measurementError_LS_rcpp", (DL_FUNC) &_langevinSSM_measurementError_LS_rcpp, 7},
+  {"_langevinSSM_measurementError_rcpp",    (DL_FUNC) &_langevinSSM_measurementError_rcpp,    6},
   {"_langevinSSM_simulate_langevin_cpp",    (DL_FUNC) &_langevinSSM_simulate_langevin_cpp,    9},
   {NULL, NULL, 0}
 };

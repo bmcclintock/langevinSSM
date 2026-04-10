@@ -15,7 +15,7 @@
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
-#' @param ... Additional arguments (currently ignored, kept for S3 compatibility).
+#' @param ... Additional arguments passed to \code{\link{plotRaster}}.
 #'
 #' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} argument.
 #'
@@ -73,7 +73,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
       track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
       track_colors = c("Observed" = "lightgrey", "Estimated" = "tomato"),
-      track_lines = c("Observed" = "dashed", "Estimated" = "solid")
+      track_lines = c("Observed" = "dashed", "Estimated" = "solid"), ...
     )
   }
 
@@ -124,7 +124,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     plot_list[[pid]] <- .build_langevin_plot(
       track_df = track_df, pid = pid, raster_obj = ud_full, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
-      track_colors = track_colors, track_lines = track_lines
+      track_colors = track_colors, track_lines = track_lines, ...
     )
   }
 
@@ -171,6 +171,8 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
     cov_name <- cov_names[c_idx]
     cov_rast <- spatialCovs[[c_idx]]
 
+    names(cov_rast) <- rep(cov_name, terra::nlyr(cov_rast))
+
     cov_plot_list <- list()
 
     for (pid in plot_ids) {
@@ -179,7 +181,7 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
       cov_plot_list[[pid]] <- .build_langevin_plot(
         track_df = track_df, pid = pid, raster_obj = cov_rast, user_extent = extent, time = time,
         compact = compact, title_text = title_text, fill_label = cov_name,
-        track_colors = track_colors, track_lines = track_lines
+        track_colors = track_colors, track_lines = track_lines, ...
       )
     }
     master_plot_list[[cov_name]] <- if (compact) cov_plot_list[[1]] else cov_plot_list
@@ -189,7 +191,7 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
 }
 
 # --- Internal Helper for Plotting Engine ---
-.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent, time, compact, title_text, fill_label, track_colors, track_lines) {
+.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent, time, compact, title_text, fill_label, track_colors, track_lines, ...) {
 
   trk_sub <- if (compact) track_df else track_df[track_df$id == pid, ]
 
@@ -207,11 +209,16 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
   if (!is.null(current_extent)) {
     crop_ext <- tryCatch(terra::ext(current_extent), error = function(e) NULL)
     if (!is.null(crop_ext)) {
-      raster_obj <- tryCatch(terra::crop(raster_obj, crop_ext), error = function(e) raster_obj)
+      raster_obj <- tryCatch({
+        terra::crop(raster_obj, crop_ext)
+      }, error = function(e) {
+        warning("terra::crop failed. Ignoring extent.")
+        return(raster_obj)
+      })
     }
   }
 
-  p <- plotRaster(raster_obj, legend.title = fill_label, extent = crop_ext, time = time)
+  p <- plotRaster(raster_obj, legend.title = fill_label, extent = crop_ext, time = time, ...)
 
   p <- p +
     ggplot2::theme_minimal() +

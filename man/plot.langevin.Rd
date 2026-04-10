@@ -46,7 +46,7 @@
 
 \item{compact}{Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).}
 
-\item{...}{Additional arguments (currently ignored, kept for S3 compatibility).}
+\item{...}{Additional arguments passed to \code{\link{plotRaster}}.}
 
 \item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.}
 }

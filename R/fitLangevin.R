@@ -325,6 +325,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   } else {
     fit$estimates$natural <- summary(sdreport_out, "report")
     fit$estimates$working <- summary(sdreport_out, "fixed")
+    fit$estimates$cov_natural <- sdreport_out$cov
 
     for (est_type in c("natural", "working")) {
       rn <- rownames(fit$estimates[[est_type]])

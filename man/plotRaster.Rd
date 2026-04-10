@@ -4,16 +4,18 @@
 \alias{plotRaster}
 \title{Plot Raster}
 \usage{
-plotRaster(rast, legend.title = NULL, extent = NULL, time = NULL)
+plotRaster(rast, legend.title = NULL, extent = NULL, time = NULL, ...)
 }
 \arguments{
 \item{rast}{A \code{\link[terra]{SpatRaster-class}} object to plot.}
 
-\item{legend.title}{Character string for the legend title. Default: \code{NULL}, in which case the name of the first raster layer will be used as the legend title.}
+\item{legend.title}{Character string for the legend title. Default: \code{NULL}, in which case the name of the first raster layer (see \code{\link[terra]{names}}) will be used as the legend title.}
 
 \item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. Default: \code{NULL}.}
 
 \item{time}{Optional. Indicates which layer(s) of a dynamic raster to plot. Can be a numeric index, a layer name, or a value matching the raster's \code{\link[terra]{time}} attribute (e.g., a \code{POSIXct}/\code{Date} or numeric object). If \code{NULL} (default), all layers are plotted.}
+
+\item{...}{Additional arguments passed to \code{\link[ggplot2]{scale_fill_viridis_c}} (e.g., \code{direction = -1}).}
 }
 \value{
 A \code{\link[ggplot2]{ggplot}} object containing the raster plot.

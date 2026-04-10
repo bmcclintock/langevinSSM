@@ -16,6 +16,23 @@ get_dynamic_raster <- function() {
   return(r_dyn)
 }
 
+get_mock_fit_for_ud <- function() {
+  fit <- list(
+    estimates = list(
+      natural = matrix(c(0.5, -0.2), nrow = 2, dimnames = list(c("beta_hab1", "beta_hab2"), "Estimate")),
+      cov_natural = matrix(c(0.1, 0.01, 0.01, 0.1), nrow = 2, dimnames = list(c("beta_hab1", "beta_hab2"), c("beta_hab1", "beta_hab2")))
+    ),
+    signatures = list(
+      data = NULL,
+      covs = NULL
+    )
+  )
+  class(fit) <- "fitLangevin"
+  return(fit)
+}
+
+# --- Base functionality tests ---
+
 test_that("getUD enforces matching covariate and beta lengths", {
   covs <- list(hab1 = get_static_raster(), hab2 = get_static_raster())
 
@@ -85,4 +102,67 @@ test_that("getUD dynamic probability UD layers individually sum to 1", {
   # Ensure normalization applies across all time slices
   expect_equal(sums_ud[1], 1, tolerance = 1e-6)
   expect_equal(sums_ud[2], 1, tolerance = 1e-6)
+})
+
+# --- Simulation and Uncertainty Tests (nsims > 0) ---
+
+# --- Simulation and Uncertainty Tests (nsims > 0) ---
+
+test_that("getUD marginal posterior simulation returns correctly structured list", {
+  covs <- list(hab1 = get_static_raster(), hab2 = get_static_raster("hab2"))
+  fit <- get_mock_fit_for_ud()
+
+  # Set show_progress = FALSE to keep test output clean
+  out <- getUD(spatialCovs = covs, fit = fit, nsims = 5, log = FALSE, show_progress = FALSE)
+
+  expect_type(out, "list")
+  expect_named(out, c("UD", "SE", "CV"))
+  expect_s4_class(out$UD, "SpatRaster")
+  expect_s4_class(out$SE, "SpatRaster")
+  expect_s4_class(out$CV, "SpatRaster")
+
+  expect_equal(names(out$UD), "UD")
+  expect_equal(names(out$SE), "UD_SE")
+  expect_equal(names(out$CV), "UD_CV")
+})
+
+test_that("getUD simulation handles dynamic (time-varying) covariates properly", {
+  covs_dyn <- list(hab1 = get_dynamic_raster())
+  fit_dyn <- list(
+    estimates = list(
+      natural = matrix(c(0.5), nrow = 1, dimnames = list(c("beta_hab1"), "Estimate")),
+      cov_natural = matrix(c(0.1), nrow = 1, dimnames = list(c("beta_hab1"), c("beta_hab1")))
+    ),
+    signatures = list(data = NULL, covs = NULL)
+  )
+  class(fit_dyn) <- "fitLangevin"
+
+  out <- getUD(spatialCovs = covs_dyn, fit = fit_dyn, nsims = 5, show_progress = FALSE)
+
+  # Each output metric should match the number of layers in the dynamic covariate
+  expect_equal(terra::nlyr(out$UD), 2)
+  expect_equal(terra::nlyr(out$SE), 2)
+  expect_equal(terra::nlyr(out$CV), 2)
+
+  # Time attributes must be passed to the uncertainty metrics
+  expect_equal(length(terra::time(out$SE)), 2)
+  expect_equal(length(terra::time(out$CV)), 2)
+})
+
+test_that("getUD catches user errors related to missing fit requirements for nsims > 0", {
+  covs <- list(hab1 = get_static_raster(), hab2 = get_static_raster("hab2"))
+  fit_bad <- get_mock_fit_for_ud()
+  fit_bad$estimates$cov_natural <- NULL
+
+  # Providing beta instead of fit when nsims > 0
+  expect_error(
+    getUD(spatialCovs = covs, beta = c(0.5, -0.2), nsims = 5, show_progress = FALSE),
+    "argument \"fit\" is missing"
+  )
+
+  # Providing a fit object that lacks the covariance matrix
+  expect_error(
+    getUD(spatialCovs = covs, fit = fit_bad, nsims = 5, show_progress = FALSE),
+    "Refit model to get cov_natural"
+  )
 })

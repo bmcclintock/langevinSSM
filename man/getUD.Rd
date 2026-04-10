@@ -4,7 +4,7 @@
 \alias{getUD}
 \title{Compute Utilization Distribution}
 \usage{
-getUD(spatialCovs, fit, beta, log = TRUE)
+getUD(spatialCovs, fit, beta, log = TRUE, nsims = 0, show_progress = TRUE)
 }
 \arguments{
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
@@ -14,9 +14,13 @@ getUD(spatialCovs, fit, beta, log = TRUE)
 \item{beta}{Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.}
 
 \item{log}{Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.}
+
+\item{nsims}{Integer. Number of draws from the covariance matrix to use for estimating uncertainty in the UD. If \code{nsims > 0}, the returned list of raster will include additional elements for the (probability-scale) standard error (\code{SE}) and the coefficient of variation (\code{CV}) for each cell. Default: \code{0}.}
+
+\item{show_progress}{Logical. If \code{TRUE}, displays a progress bar and messages during simulation. Default: \code{TRUE}.}
 }
 \value{
-A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization distribution. If the covariates in \code{spatialCovs} have time information (see \code{\link[terra]{time}}), the resulting time-dependent ``utilization distribution'' will also have time information, and each layer will correspond to a different time point.
+A \code{\link[terra]{SpatRaster-class}} object containing the (log) utilization distribution. If \code{nsims > 0}, it returns a list including the estimated UD and its associated uncertainty metrics.
 }
 \description{
 Compute Utilization Distribution

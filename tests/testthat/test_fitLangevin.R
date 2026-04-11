@@ -510,40 +510,40 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   class(dat) <- "data.frame"
   fmt_dat <- suppressWarnings(formatData(dat, predTimes = pt, time.unit = "hours"))
 
-  # 4. Fit Model with calcOSA = TRUE
+  # 4. Fit Model with calcResiduals = TRUE
   suppressMessages(suppressWarnings({
     fit <- fitLangevin(
       data = fmt_dat,
       model = "underdamped",
       spatialCovs = spatialCovs,
       par = init_par,
-      calcOSA = TRUE,
+      calcResiduals = TRUE,
       silent = TRUE
     )
   }))
 
   # 5. Assertions
   expect_s3_class(fit, "fitLangevin")
-  expect_true(is.data.frame(fit$osa))
+  expect_true(is.data.frame(fit$residuals))
 
   # Total rows should match formatted data exactly
-  expect_equal(nrow(fit$osa), nrow(fmt_dat))
+  expect_equal(nrow(fit$residuals), nrow(fmt_dat))
 
   # 1. The interpolation point (NA coordinates) should have NA residuals
   na_obs_idx <- which(is.na(fmt_dat$x))
   expect_true(length(na_obs_idx) == 1)
-  expect_true(all(is.na(fit$osa$residual.x[na_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.x[na_obs_idx])))
 
   # 2. The first observation of EVERY track should have NA residuals
   first_obs_idx <- which(!duplicated(fmt_dat$id))
-  expect_true(all(is.na(fit$osa$residual.x[first_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.x[first_obs_idx])))
 
   # 3. Known Locations (No observation error)
   # Because these have no error, TMB skips their observation likelihood (isd=0).
   # With no likelihood to evaluate, their residuals MUST be NA.
   known_obs_idx <- which(is.na(fmt_dat$x.sd) & !is.na(fmt_dat$x))
   expect_true(length(known_obs_idx) == 2) # The original + the duplicate
-  expect_true(all(is.na(fit$osa$residual.x[known_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.x[known_obs_idx])))
 
   # 4. ALL OTHER real observations
   # This includes the hard duplicate WITH observation error! Since it has a valid
@@ -553,8 +553,8 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   # Filter out the first observation and the known (error-free) observations
   obs_to_check <- setdiff(real_obs_idx, c(first_obs_idx, known_obs_idx))
 
-  expect_true(all(!is.na(fit$osa$residual.x[obs_to_check])))
-  expect_true(all(!is.na(fit$osa$residual.y[obs_to_check])))
+  expect_true(all(!is.na(fit$residuals$residual.x[obs_to_check])))
+  expect_true(all(!is.na(fit$residuals$residual.y[obs_to_check])))
 })
 
 test_that("overdamped fitLangevin calculates OSA residuals correctly with duplicated times, NA gaps, and known locations", {
@@ -606,40 +606,40 @@ test_that("overdamped fitLangevin calculates OSA residuals correctly with duplic
   class(dat) <- "data.frame"
   fmt_dat <- suppressWarnings(formatData(dat, predTimes = pt, time.unit = "hours"))
 
-  # 4. Fit Model with calcOSA = TRUE
+  # 4. Fit Model with calcResiduals = TRUE
   suppressMessages(suppressWarnings({
     fit <- fitLangevin(
       data = fmt_dat,
       model = "overdamped",
       spatialCovs = spatialCovs,
       par = init_par,
-      calcOSA = TRUE,
+      calcResiduals = TRUE,
       silent = TRUE
     )
   }))
 
   # 5. Assertions
   expect_s3_class(fit, "fitLangevin")
-  expect_true(is.data.frame(fit$osa))
+  expect_true(is.data.frame(fit$residuals))
 
   # Total rows should match formatted data exactly
-  expect_equal(nrow(fit$osa), nrow(fmt_dat))
+  expect_equal(nrow(fit$residuals), nrow(fmt_dat))
 
   # 1. The interpolation point (NA coordinates) should have NA residuals
   na_obs_idx <- which(is.na(fmt_dat$x))
   expect_true(length(na_obs_idx) == 1)
-  expect_true(all(is.na(fit$osa$residual.x[na_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.x[na_obs_idx])))
 
   # 2. Known Locations (No observation error) MUST be NA
   known_obs_idx <- which(is.na(fmt_dat$x.sd) & !is.na(fmt_dat$x))
   expect_true(length(known_obs_idx) == 2) # The original + the duplicate
-  expect_true(all(is.na(fit$osa$residual.x[known_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.x[known_obs_idx])))
 
   # 3. The first observation of EVERY track MUST be NA
   # (Because we explicitly conditioned on it in fitLangevin.R!)
   first_obs_idx <- which(!duplicated(fmt_dat$id))
-  expect_true(all(is.na(fit$osa$residual.x[first_obs_idx])))
-  expect_true(all(is.na(fit$osa$residual.y[first_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.x[first_obs_idx])))
+  expect_true(all(is.na(fit$residuals$residual.y[first_obs_idx])))
 
   # 4. ALL OTHER real observations (including the hard duplicate WITH error)
   real_obs_idx <- which(!is.na(fmt_dat$x))
@@ -647,6 +647,79 @@ test_that("overdamped fitLangevin calculates OSA residuals correctly with duplic
   # Filter out the known (error-free) observations and the first observation
   obs_to_check <- setdiff(real_obs_idx, c(first_obs_idx, known_obs_idx))
 
-  expect_true(all(!is.na(fit$osa$residual.x[obs_to_check])))
-  expect_true(all(!is.na(fit$osa$residual.y[obs_to_check])))
+  expect_true(all(!is.na(fit$residuals$residual.x[obs_to_check])))
+  expect_true(all(!is.na(fit$residuals$residual.y[obs_to_check])))
+})
+
+# --- S3 Method Tests (coef, vcov, logLik, confint, residuals) ---
+
+test_that("S3 methods for fitLangevin work", {
+
+  # Build a lightweight, mock fitLangevin object with all necessary components
+  mock_fit <- list(
+    par = c(beta_hab = 1.5, sigma = 2),
+    objective = 150.5,
+    estimates = list(
+      natural = data.frame(Estimate = c(1.5, 2.0), "Std. Error" = c(0.1, 0.2), row.names = c("beta_hab", "sigma"), check.names = FALSE),
+      working = data.frame(Estimate = c(1.5, log(2)), "Std. Error" = c(0.1, 0.1), row.names = c("beta_hab", "log_sigma"), check.names = FALSE),
+      random = list(
+        mu = list(
+          est = data.frame(id = c("A", "A"), mu.x = c(10, 20), mu.y = c(15, 25)),
+          se = data.frame(id = c("A", "A"), mu.x = c(1, 1), mu.y = c(2, 2))
+        )
+      )
+    ),
+    covariance = list(
+      natural = matrix(c(0.01, 0.005, 0.005, 0.04), nrow = 2, dimnames = list(c("beta_hab", "sigma"), c("beta_hab", "sigma")))
+    ),
+    signatures = list(data = list(nrow = 50)),
+    residuals = data.frame(residual.x = c(1, -1), residual.y = c(-1, 1))
+  )
+  class(mock_fit) <- "fitLangevin"
+
+  # 1. coef() and vcov()
+  cf <- coef(mock_fit)
+  expect_equal(length(cf), 2)
+  expect_equal(cf["beta_hab"], c(beta_hab = 1.5))
+
+  vc <- vcov(mock_fit)
+  expect_true(is.matrix(vc))
+  expect_equal(vc["sigma", "sigma"], 0.04)
+
+  # 2. logLik(), AIC(), BIC()
+  ll <- logLik(mock_fit)
+  expect_s3_class(ll, "logLik")
+  expect_equal(as.numeric(ll), -150.5)
+  expect_equal(attr(ll, "df"), 2)
+  expect_equal(attr(ll, "nobs"), 50)
+
+  expect_equal(AIC(mock_fit), -2 * (-150.5) + 2 * 2)
+  expect_equal(BIC(mock_fit), -2 * (-150.5) + log(50) * 2)
+
+  # 3. residuals()
+  res <- residuals(mock_fit)
+  expect_true(is.data.frame(res))
+  expect_equal(nrow(res), 2)
+
+  # 4. confint() for Fixed Effects
+  ci_fixed <- confint(mock_fit, type = "natural")
+  expect_true(is.matrix(ci_fixed))
+  expect_equal(colnames(ci_fixed), c("2.5 %", "97.5 %"))
+  expect_true(ci_fixed["beta_hab", "2.5 %"] < 1.5)
+
+  # Error catching in confint
+  expect_error(confint(mock_fit, parm = "nonsense"), "Parameter\\(s\\) not found")
+
+  # 5. confint() for Random Effects (mu/vel layout)
+  ci_mu <- confint(mock_fit, type = "mu")
+  expect_true(is.data.frame(ci_mu))
+  # Should have 8 columns: id, time_step, x, x_lwr, x_upr, y, y_lwr, y_upr
+  expect_equal(colnames(ci_mu), c("id", "time_step", "mu.x", "mu.x_2.5%", "mu.x_97.5%",
+                                  "mu.y", "mu.y_2.5%", "mu.y_97.5%"))
+  expect_equal(nrow(ci_mu), 2)
+  expect_equal(ci_mu$time_step, c(1, 2))
+
+  # Verify auto-correction of parm="mu" to type="mu"
+  ci_mu_param_intercept <- confint(mock_fit, parm = "mu")
+  expect_equal(ci_mu, ci_mu_param_intercept)
 })

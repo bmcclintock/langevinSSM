@@ -5,7 +5,7 @@
 #'   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
 #'   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
 #'   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
-#'   \item \strong{\code{plot.udLangevin}:} Plots the estimated Utilization Distribution (UD). If the \code{udLangevin} object contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
+#'   \item \strong{\code{plotUD}:} Plots the estimated Utilization Distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 #' }
 #'
 #' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, or \code{udLangevin} object.
@@ -58,8 +58,12 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log)
-  ud_raster <- ud_full$UD
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log, plot = FALSE)
+  ud_layer_name <- if (log) "log_UD" else "UD"
+
+  # extract all layers that match the target name
+  target_idx <- which(names(ud_full) == ud_layer_name)
+  ud_raster <- ud_full[[target_idx]]
 
   if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
@@ -110,9 +114,12 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
   track_colors <- c("Observed" = "lightgrey", "True (mu)" = "tomato")
   track_lines <- c("Observed" = "dashed", "True (mu)" = "solid")
 
-  # --- Prepare Theoretical UD Raster ---
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, log = log)
-  ud_raster <- ud_full$UD
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, log = log, plot = FALSE)
+  ud_layer_name <- if (log) "log_UD" else "UD"
+
+  # extract all layers that match the target name
+  target_idx <- which(names(ud_full) == ud_layer_name)
+  ud_raster <- ud_full[[target_idx]]
 
   if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
@@ -133,40 +140,6 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
   }
 
   return(if (compact || length(plot_list) == 1) plot_list[[1]] else plot_list)
-}
-
-#' @rdname plot.langevin
-#' @method plot udLangevin
-#' @export
-plot.udLangevin <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
-  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
-
-  plot_list <- list()
-
-  ud_name <- names(x$UD)[1]
-  plot_list[["UD"]] <- plotRaster(x$UD, legend.title = ud_name, extent = extent, time = time, ...) +
-    ggplot2::labs(title = "Utilization Distribution (UD)")
-
-  if (!is.null(x$SE) && !is.null(x$CV)) {
-    se_rast <- x$SE
-    se_name <- "UD_SE"
-
-    if (log) {
-      se_rast <- log(se_rast)
-      names(se_rast) <- rep("log_UD_SE", terra::nlyr(se_rast))
-      se_name <- "log_UD_SE"
-    }
-
-    plot_list[["SE"]] <- plotRaster(se_rast, legend.title = se_name, extent = extent, time = time, ...) +
-      ggplot2::labs(title = ifelse(log, "UD log standard error (SE)", "UD standard error (SE)"))
-
-    plot_list[["CV"]] <- plotRaster(x$CV, legend.title = "UD_CV", extent = extent, time = time, ...) +
-      ggplot2::labs(title = "UD coefficient of variation (CV)")
-  }
-
-  if (length(plot_list) == 1) return(plot_list[[1]])
-
-  return(plot_list)
 }
 
 #' @rdname plot.langevin
@@ -203,7 +176,7 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
   if (is.null(cov_names)) cov_names <- paste0("Covariate_", seq_along(spatialCovs))
 
   plot_ids <- if (compact) "all" else as.character(unique(track_df$id))
-  master_plot_list <- list()
+  main_plot_list <- list()
 
   for (c_idx in seq_along(spatialCovs)) {
     cov_name <- cov_names[c_idx]
@@ -222,10 +195,82 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
         track_colors = track_colors, track_lines = track_lines, ...
       )
     }
-    master_plot_list[[cov_name]] <- if (compact) cov_plot_list[[1]] else cov_plot_list
+    main_plot_list[[cov_name]] <- if (compact) cov_plot_list[[1]] else cov_plot_list
   }
 
-  return(master_plot_list)
+  return(main_plot_list)
+}
+
+#' @details Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
+#' @rdname plot.langevin
+#' @export
+plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
+
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+
+  plot_list <- list()
+  layer_names <- names(x)
+
+  # 1. Plot Base UD
+  ud_name <- if (any(grepl("^log_UD", layer_names))) "log_UD" else "UD"
+
+  # Safely extract all layers that match the target name
+  target_idx <- which(layer_names == ud_name)
+  ud_rast <- x[[target_idx]]
+
+  is_log_ud <- (ud_name == "log_UD")
+
+  ud_title <- ifelse(is_log_ud, "Utilization distribution (log scale)", "Utilization distribution")
+  ud_legend <- expression(pi(x)) # if (is_log_ud) expression(log(pi(x))) else expression(pi(x))
+
+  plot_list[["UD"]] <- plotRaster(ud_rast, legend.title = ud_legend, extent = extent, time = time, ...) +
+    ggplot2::labs(title = ud_title)
+
+  # Define common legend expressions for uncertainty plots
+  se_legend <- "SE" # if (log) expression(log(SE(pi(x)))) else expression(SE(pi(x)))
+  cv_legend <- "CV" #expression(CV(pi(x)))
+
+  # 2. Plot Delta Method Uncertainty
+  if ("UD_SE_delta" %in% layer_names && "UD_CV_delta" %in% layer_names) {
+    se_idx <- which(layer_names == "UD_SE_delta")
+    cv_idx <- which(layer_names == "UD_CV_delta")
+
+    se_rast_delta <- x[[se_idx]]
+
+    if (log) {
+      se_rast_delta <- log(se_rast_delta)
+      names(se_rast_delta) <- rep("log_UD_SE_delta", terra::nlyr(se_rast_delta))
+    }
+
+    plot_list[["SE_delta"]] <- plotRaster(se_rast_delta, legend.title = se_legend, extent = extent, time = time, ...) +
+      ggplot2::labs(title = ifelse(log, "UD log standard error (Delta method)", "UD standard error (Delta method)"))
+
+    plot_list[["CV_delta"]] <- plotRaster(x[[cv_idx]], legend.title = cv_legend, extent = extent, time = time, ...) +
+      ggplot2::labs(title = "UD coefficient of variation (Delta method)")
+  }
+
+  # 3. Plot Simulated Uncertainty (Welford's Algorithm)
+  if ("UD_SE_sim" %in% layer_names && "UD_CV_sim" %in% layer_names) {
+    se_sim_idx <- which(layer_names == "UD_SE_sim")
+    cv_sim_idx <- which(layer_names == "UD_CV_sim")
+
+    se_rast_sim <- x[[se_sim_idx]]
+
+    if (log) {
+      se_rast_sim <- log(se_rast_sim)
+      names(se_rast_sim) <- rep("log_UD_SE_sim", terra::nlyr(se_rast_sim))
+    }
+
+    plot_list[["SE_sim"]] <- plotRaster(se_rast_sim, legend.title = se_legend, extent = extent, time = time, ...) +
+      ggplot2::labs(title = ifelse(log, "UD log standard error (simulated)", "UD standard error (simulated)"))
+
+    plot_list[["CV_sim"]] <- plotRaster(x[[cv_sim_idx]], legend.title = cv_legend, extent = extent, time = time, ...) +
+      ggplot2::labs(title = "UD coefficient of variation (simulated)")
+  }
+
+  if (length(plot_list) == 1) return(plot_list[[1]])
+
+  return(plot_list)
 }
 
 # --- Internal Helper for Plotting Engine ---

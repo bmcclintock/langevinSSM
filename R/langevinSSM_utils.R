@@ -55,6 +55,157 @@ NULL
 #' @docType data
 NULL
 
+#' S3 Methods for Langevin model fits
+#'
+#' Standard S3 methods for extracting information from \code{fitLangevin} objects.
+#'
+#' @param object A \code{fitLangevin} object.
+#' @param type Character string indicating which scale to extract. Options are \code{"natural"} (default), \code{"working"}, \code{"mu"}, or \code{"vel"} (depending on the method).
+#' @param parm A specification of which parameters are to be given confidence intervals.
+#' @param level The confidence level required. Default: \code{0.95}.
+#' @param ... Further arguments passed to or from other methods.
+#'
+#' @name langevin_methods
+NULL
+
+#' @rdname langevin_methods
+#' @export
+logLik.fitLangevin <- function(object, ...) {
+  # TMB minimizes the negative log-likelihood
+  val <- -object$objective
+
+  # The number of estimated parameters (degrees of freedom)
+  attr(val, "df") <- length(object$par)
+
+  # The number of observations (required for BIC)
+  if (!is.null(object$signatures$data$nrow)) {
+    attr(val, "nobs") <- object$signatures$data$nrow
+  }
+
+  class(val) <- "logLik"
+  return(val)
+}
+
+#' @rdname langevin_methods
+#' @export
+coef.fitLangevin <- function(object, type = "natural", ...) {
+
+  if (!type %in% names(object$estimates)) {
+    stop("Estimates for type '", type, "' are not available in this model fit.")
+  }
+
+  # Extract just the Estimate column
+  est_vector <- object$estimates[[type]][, "Estimate"]
+
+  # Assign the parameter names
+  names(est_vector) <- rownames(object$estimates[[type]])
+
+  return(est_vector)
+}
+
+#' @rdname langevin_methods
+#' @export
+vcov.fitLangevin <- function(object, type = "natural", ...) {
+
+  if (!type %in% names(object$covariance)) {
+    stop("Covariance matrix for type '", type, "' is not available in this model fit.")
+  }
+
+  return(object$covariance[[type]])
+}
+
+#' @rdname langevin_methods
+#' @export
+confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ...) {
+
+  # --- Smart catching for common user syntax ---
+  # If a user accidentally passes 'mu' or 'vel' to 'parm', seamlessly route it to 'type'
+  if (!missing(parm) && length(parm) == 1 && parm %in% c("mu", "vel")) {
+    type <- parm
+    is_re_parm <- TRUE
+  } else {
+    is_re_parm <- FALSE
+  }
+
+  # Calculate the Z multiplier based on the requested confidence level
+  a <- (1 - level) / 2
+  a <- c(a, 1 - a)
+  pct <- paste(format(100 * a, trim = TRUE, scientific = FALSE, digits = 3), "%")
+  fac <- stats::qnorm(a)
+
+  # 1. Standard Fixed Effects ("natural" or "working")
+  if (type %in% c("natural", "working")) {
+    cf <- coef.fitLangevin(object, type = type)
+    vc <- vcov.fitLangevin(object, type = type)
+    se <- sqrt(diag(vc))
+
+    ci <- array(NA, dim = c(length(cf), 2L), dimnames = list(names(cf), pct))
+    ci[, 1] <- cf + fac[1] * se
+    ci[, 2] <- cf + fac[2] * se
+
+    if (!missing(parm) && !is_re_parm) {
+      missing_parms <- parm[!parm %in% rownames(ci)]
+      if (length(missing_parms) > 0) {
+        stop("Parameter(s) not found in model: ", paste(missing_parms, collapse = ", "))
+      }
+      ci <- ci[parm, , drop = FALSE]
+    }
+
+    return(ci)
+
+    # 2. Random Effects Trajectories ("mu" or "vel")
+  } else if (type %in% c("mu", "vel")) {
+
+    if (is.null(object$estimates$random) || !type %in% names(object$estimates$random)) {
+      stop("Random effect '", type, "' is not available in this model fit.")
+    }
+
+    est_df <- object$estimates$random[[type]]$est
+    se_df  <- object$estimates$random[[type]]$se
+
+    x_col <- paste0(type, ".x")
+    y_col <- paste0(type, ".y")
+
+    # Clean the percentage strings for column names (e.g., "2.5 %" -> "2.5%")
+    pct_clean <- gsub(" ", "", pct)
+
+    # Construct the compromised wide-format data frame
+    ci_df <- data.frame(
+      id = est_df$id,
+      # Force integer conversion so tests don't fail against c(1, 2)
+      time_step = as.integer(ave(as.character(est_df$id), est_df$id, FUN = seq_along))
+    )
+
+    # X-axis Estimates and Bounds
+    ci_df[[x_col]] <- est_df[[x_col]]
+    ci_df[[paste0(x_col, "_", pct_clean[1])]] <- est_df[[x_col]] + fac[1] * se_df[[x_col]]
+    ci_df[[paste0(x_col, "_", pct_clean[2])]] <- est_df[[x_col]] + fac[2] * se_df[[x_col]]
+
+    # Y-axis Estimates and Bounds
+    ci_df[[y_col]] <- est_df[[y_col]]
+    ci_df[[paste0(y_col, "_", pct_clean[1])]] <- est_df[[y_col]] + fac[1] * se_df[[y_col]]
+    ci_df[[paste0(y_col, "_", pct_clean[2])]] <- est_df[[y_col]] + fac[2] * se_df[[y_col]]
+
+    return(ci_df)
+
+  } else {
+    stop("The 'type' argument must be one of: 'natural', 'working', 'mu', or 'vel'.")
+  }
+}
+
+#' @rdname langevin_methods
+#' @export
+residuals.fitLangevin <- function(object, ...) {
+
+  if (is.null(object$residuals)) {
+    stop("Residuals were not calculated during model fitting. Please re-run fitLangevin with 'calcResiduals = TRUE'.")
+  }
+
+  res <- object$residuals
+
+  return(res)
+}
+
 rasterList <- function (rast)
 {
   lim <- as.vector(terra::ext(rast))
@@ -249,11 +400,11 @@ verify_signatures <- function(fit, data = NULL, spatialCovs = NULL) {
   }
 }
 
-gof_tests <- function(osa_df){
+gof_tests <- function(res_df){
   message("   Calculating goodness-of-fit tests...")
 
-  res_x <- osa_df$residual.x
-  res_y <- osa_df$residual.y
+  res_x <- res_df$residual.x
+  res_y <- res_df$residual.y
 
   valid_idx <- which(!is.na(res_x) & !is.na(res_y))
   rx <- res_x[valid_idx]

@@ -1,4 +1,4 @@
-#' Calculate One-Step-Ahead (OSA) Residuals post-fit
+#' Calculate one-step-ahead (OSA) residuals post-fit
 #'
 #' Reconstructs the TMB objective function from a fitted model to calculate OSA residuals using user-specified methods, without needing to refit the model.
 #'
@@ -9,7 +9,7 @@
 #' @param trace Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.
 #' @param run_tests Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are printed to the console and attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{FALSE}.
 #' @param ... Additional arguments passed to \code{\link[TMB]{oneStepPredict}}.
-#' @return An \code{osaLangevin} data frame containing the OSA residuals. If \code{run_tests = TRUE}, the data frame will have an attribute \code{"tests"} containing a data frame of goodness-of-fit statistics and p-values.
+#' @return An \code{resLangevin} data frame containing the OSA residuals. If \code{run_tests = TRUE}, the data frame will have an attribute \code{"tests"} containing a data frame of goodness-of-fit statistics and p-values.
 #' @examples
 #' par <- list(beta = c(-4, 6, 5, -0.1), sigma = 5, gamma = 0.5)
 #' measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor = c(0,180))
@@ -28,12 +28,12 @@
 #'                    silent = TRUE,
 #'                    control = list(trace = 1))
 #'
-#' fit$osa <- getOSA(fit, data = smallDat, spatialCovs = exampleCovs, run_tests = TRUE)
+#' fit$residuals <- getResiduals(fit, data = smallDat, spatialCovs = exampleCovs, run_tests = TRUE)
 #'
 #' @importFrom TMB MakeADFun oneStepPredict
 #' @importFrom stats ks.test Box.test
 #' @export
-getOSA <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMode", trace = FALSE, run_tests = FALSE, ...) {
+getResiduals <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMode", trace = FALSE, run_tests = FALSE, ...) {
 
   if(!inherits(fit, "fitLangevin")) stop("'fit' must be a fitLangevin object.")
   if(is.null(fit$tmb_setup)) stop("The provided fit object does not contain a 'tmb_setup' blueprint.")
@@ -119,7 +119,7 @@ getOSA <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMode", tr
     cond_elements <- sort(c(2 * other_valid_cols - 1, 2 * other_valid_cols))
 
     message("      Processing track ID: ", uid, "...")
-    track_osa <- tryCatch({
+    track_res <- tryCatch({
       TMB::oneStepPredict(
         obj = obj,
         observation.name = "Y",
@@ -136,32 +136,32 @@ getOSA <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMode", tr
       return(NULL)
     })
 
-    if (!is.null(track_osa)) {
-      idx_x <- seq(1, nrow(track_osa), by = 2)
-      idx_y <- seq(2, nrow(track_osa), by = 2)
+    if (!is.null(track_res)) {
+      idx_x <- seq(1, nrow(track_res), by = 2)
+      idx_y <- seq(2, nrow(track_res), by = 2)
 
       if (length(eval_track_cols) == length(idx_x)) {
-        res_x[eval_track_cols] <- track_osa$residual[idx_x]
-        res_y[eval_track_cols] <- track_osa$residual[idx_y]
+        res_x[eval_track_cols] <- track_res$residual[idx_x]
+        res_y[eval_track_cols] <- track_res$residual[idx_y]
       }
     }
   }
 
-  osa_df <- data.frame(
+  res_df <- data.frame(
     id = data$id,
     date = data$date,
     residual.x = res_x,
     residual.y = res_y
   )
 
-  class(osa_df) <- c("osaLangevin", "data.frame")
+  class(res_df) <- c("resLangevin", "data.frame")
 
   #    --- Goodness-of-Fit Tests ---
   if(run_tests) {
 
-    tests_df <- gof_tests(osa_df)
+    tests_df <- gof_tests(res_df)
 
-    attr(osa_df,"tests") <- tests_df
+    attr(res_df,"tests") <- tests_df
 
     message("\n   --- OSA Goodness-of-Fit Results ---")
 
@@ -174,5 +174,5 @@ getOSA <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMode", tr
     message("-----------------------------------")
   }
 
-  return(osa_df)
+  return(res_df)
 }

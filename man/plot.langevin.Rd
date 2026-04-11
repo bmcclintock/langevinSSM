@@ -4,8 +4,8 @@
 \alias{plot.langevin}
 \alias{plot.fitLangevin}
 \alias{plot.simLangevin}
-\alias{plot.udLangevin}
 \alias{plot.dataLangevin}
+\alias{plotUD}
 \title{Plot Langevin model fits and data}
 \usage{
 \method{plot}{fitLangevin}(
@@ -30,9 +30,9 @@
   ...
 )
 
-\method{plot}{udLangevin}(x, log = TRUE, extent = NULL, time = NULL, ...)
-
 \method{plot}{dataLangevin}(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...)
+
+plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 }
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, or \code{udLangevin} object.}
@@ -62,6 +62,9 @@ These methods plot objects associated with the \code{langevinSSM} package using 
   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
-  \item \strong{\code{plot.udLangevin}:} Plots the estimated Utilization Distribution (UD). If the \code{udLangevin} object contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
+  \item \strong{\code{plotUD}:} Plots the estimated Utilization Distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 }
+}
+\details{
+Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
 }

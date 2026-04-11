@@ -21,8 +21,6 @@ addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord
     stop("No measurement error parameters provided.\nPlease provide either 'measurementError' or appropriate measurement error columns in 'data' (i.e., 'smaj', 'smin', 'eor', 'x.sd' and 'y.sd').")
   }
 
-  data$lc <- "G"
-
   if(!is.null(par$psi) & !is.null(par$l_psi)) stop("Cannot provide both 'psi' and 'l_psi' in 'par'.")
   if(!is.null(par$tau) & !is.null(par$l_tau)) stop("Cannot provide both 'tau' and 'l_tau' in 'par'.")
   if(!is.null(par$rho_o) & !is.null(par$l_rho_o)) stop("Cannot provide both 'rho_o' and 'l_rho_o' in 'par'.")

@@ -4,12 +4,12 @@
 \alias{plotResiduals}
 \title{Plot One-Step-Ahead (OSA) Residuals for \code{fitLangevin} model}
 \usage{
-plotResiduals(fit, osa = NULL, tracks = NULL)
+plotResiduals(fit, res = NULL, tracks = NULL)
 }
 \arguments{
 \item{fit}{A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.}
 
-\item{osa}{Data frame returned by \code{\link{getOSA}} containing the residuals. Only must be provided if \code{fit} does not already include residuals. If \code{!is.null(fit$osa)} and \code{osa} is provided, then the residuals from \code{osa} (and not \code{fit$osa}) are plotted.}
+\item{res}{Data frame returned by \code{\link{getResiduals}} containing the residuals. Only must be provided if \code{fit} does not already include residuals. If \code{!is.null(fit$residuals)} and \code{res} is provided, then the residuals from \code{res} (and not \code{fit$residuals}) are plotted.}
 
 \item{tracks}{Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track in the dataset individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots.}
 }
@@ -36,7 +36,7 @@ fit <- fitLangevin(model = "underdamped",
                    spatialCovs = exampleCovs,
                    silent = TRUE,
                    control = list(trace = 1),
-                   calcOSA = TRUE)
+                   calcResiduals = TRUE)
 
 plotResiduals(fit)
 

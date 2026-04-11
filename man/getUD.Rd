@@ -4,7 +4,15 @@
 \alias{getUD}
 \title{Compute Utilization Distribution}
 \usage{
-getUD(spatialCovs, fit, beta, log = TRUE, nsims = 0, show_progress = TRUE)
+getUD(
+  spatialCovs,
+  fit,
+  beta,
+  log = TRUE,
+  nSims = 0,
+  show_progress = TRUE,
+  plot = TRUE
+)
 }
 \arguments{
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
@@ -15,20 +23,22 @@ getUD(spatialCovs, fit, beta, log = TRUE, nsims = 0, show_progress = TRUE)
 
 \item{log}{Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.}
 
-\item{nsims}{Integer. Number of draws from the covariance matrix to use for estimating uncertainty in the UD. If \code{nsims > 0}, the returned list of raster will include additional elements for the (probability-scale) standard error (\code{SE}) and the coefficient of variation (\code{CV}) for each cell. Default: \code{0}.}
+\item{nSims}{Integer. Number of draws from the covariance matrix to use for estimating Monte Carlo uncertainty in the UD. If \code{nSims > 0}, the returned raster stack will include additional layers for simulated SE and CV. Default: \code{0}.}
 
-\item{show_progress}{Logical. If \code{TRUE}, displays a progress bar and messages during simulation. Default: \code{TRUE}.}
+\item{show_progress}{Logical. If \code{TRUE}, displays a progress bar for simulations. Default: \code{TRUE}.}
+
+\item{plot}{Logical. Plot the resulting UD using \code{\link{plotUD}}? Default: \code{TRUE}.}
 }
 \value{
-An object of class \code{udLangevin}, which is a list containing the (log) utilization distribution (\code{UD}) as a \code{\link[terra]{SpatRaster-class}} object. If \code{nsims > 0}, the list also includes the estimated standard error (\code{SE}) and coefficient of variation (\code{CV}).
+A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).
 }
 \description{
-Compute Utilization Distribution
+This function computes the utilization distribution (UD) for a given set of spatial covariates and habitat selection coefficients. It also estimates uncertainty in the UD using the Delta method and Monte Carlo simulations (if \code{nSims>0}). The resulting UD and uncertainty estimates are returned as \code{\link[terra]{SpatRaster-class}} objects, which can be plotted and analyzed further.
 }
 \examples{
 # exampleCovs included in package; see ?exampleCovs for details
 UD <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1) )
 }
 \seealso{
-\code{\link{plotRaster}} for plotting the utilization distribution and covariates.
+\code{\link{plotUD}}, \code{\link{regionProb}}.
 }

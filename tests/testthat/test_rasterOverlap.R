@@ -66,3 +66,114 @@ test_that("rasterOverlap correctly calculates affinity for entirely disjoint dis
 
   expect_equal(as.numeric(affinity), 0, tolerance = 1e-6)
 })
+
+get_mock_getUD_output <- function(with_uncertainty = TRUE, log = FALSE, layers = 1) {
+  # Base UD
+  ud_list <- lapply(1:layers, function(i) {
+    r <- get_mock_raster(vals = runif(100, 0.1, 1))
+    if (log) terra::values(r) <- log(terra::values(r))
+    return(r)
+  })
+  r_ud <- do.call(c, ud_list)
+  names(r_ud) <- rep(ifelse(log, "log_UD", "UD"), layers)
+
+  if (with_uncertainty) {
+    # Add dummy SE and CV layers
+    se_list <- lapply(1:layers, function(i) get_mock_raster(vals = runif(100, 0.01, 0.1)))
+    r_se <- do.call(c, se_list)
+    names(r_se) <- rep(ifelse(log, "log_UD_SE_delta", "UD_SE_delta"), layers)
+
+    cv_list <- lapply(1:layers, function(i) get_mock_raster(vals = runif(100, 0.05, 0.2)))
+    r_cv <- do.call(c, cv_list)
+    names(r_cv) <- rep(ifelse(log, "log_UD_CV_delta", "UD_CV_delta"), layers)
+
+    return(c(r_ud, r_se, r_cv))
+  }
+
+  return(r_ud)
+}
+
+test_that("rasterOverlap automatically filters out getUD uncertainty layers", {
+  # r1 has 3 layers (UD, SE, CV), r2 has 1 layer (UD)
+  r1 <- get_mock_getUD_output(with_uncertainty = TRUE, log = FALSE)
+  r2 <- get_mock_getUD_output(with_uncertainty = FALSE, log = FALSE)
+
+  # The smart filter should cleanly reduce r1 to just the UD layer
+  expect_silent(res <- rasterOverlap(r1, r2))
+
+  expect_length(res, 1)
+  expect_named(res, "UD")
+  expect_true(res >= 0 && res <= 1)
+})
+
+test_that("rasterOverlap smart filter works correctly with log_UD", {
+  r1 <- get_mock_getUD_output(with_uncertainty = TRUE, log = TRUE)
+  r2 <- get_mock_getUD_output(with_uncertainty = FALSE, log = TRUE)
+
+  # Catch BOTH warnings to prevent the second one from leaking into the console
+  expect_warning(
+    expect_warning(
+      res <- rasterOverlap(r1, r2),
+      "Negative values found in r1"
+    ),
+    "Negative values found in r2"
+  )
+
+  expect_length(res, 1)
+  expect_named(res, "log_UD")
+  expect_true(res >= 0 && res <= 1)
+})
+
+test_that("rasterOverlap calculates pairwise affinities for multi-layer (dynamic) getUD outputs", {
+  # Both are dynamic UDs with 2 time steps (6 layers total if with_uncertainty)
+  r1 <- get_mock_getUD_output(with_uncertainty = TRUE, log = FALSE, layers = 2)
+  r2 <- get_mock_getUD_output(with_uncertainty = FALSE, log = FALSE, layers = 2)
+
+  # Smart filter should reduce r1 from 6 layers to 2 layers, matching r2
+  res <- rasterOverlap(r1, r2)
+
+  expect_length(res, 2)
+  expect_named(res, c("UD", "UD"))
+})
+
+test_that("rasterOverlap calculates pairwise affinities for generic multi-layer rasters", {
+  r1 <- c(get_mock_raster(vals = runif(100, 0.1, 1)), get_mock_raster(vals = runif(100, 0.1, 1)))
+  names(r1) <- c("Habitat_A", "Habitat_B")
+
+  r2 <- c(get_mock_raster(vals = runif(100, 0.1, 1)), get_mock_raster(vals = runif(100, 0.1, 1)))
+  names(r2) <- c("Habitat_A", "Habitat_B")
+
+  # Because neither has "UD" or "log_UD" in the name, the filter is bypassed
+  res <- rasterOverlap(r1, r2)
+
+  expect_length(res, 2)
+  expect_named(res, c("Habitat_A", "Habitat_B"))
+})
+
+test_that("rasterOverlap catches mismatched layer counts AFTER smart filtering (User Trap)", {
+  # r1 is a dynamic UD (2 time steps)
+  r1 <- get_mock_getUD_output(with_uncertainty = FALSE, log = FALSE, layers = 2)
+
+  # r2 is a static UD (1 time step)
+  r2 <- get_mock_getUD_output(with_uncertainty = TRUE, log = FALSE, layers = 1)
+
+  # After filtering, r1 has 2 layers and r2 has 1 layer. This should throw a clear error.
+  expect_error(
+    rasterOverlap(r1, r2),
+    "Rasters must have the same number of layers"
+  )
+})
+
+test_that("rasterOverlap catches mismatched layer counts for generic rasters (User Trap)", {
+  r1 <- c(get_mock_raster(), get_mock_raster())
+  names(r1) <- c("A", "B")
+
+  r2 <- get_mock_raster()
+  names(r2) <- "A"
+
+  expect_error(
+    rasterOverlap(r1, r2),
+    "Rasters must have the same number of layers"
+  )
+})
+

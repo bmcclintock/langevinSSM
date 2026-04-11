@@ -53,7 +53,15 @@ par <- list(beta = c(-4, 6, 5, -0.1), # habitat selection coefficients
             sigma = 5, # diffusion (or speed) parameter
             gamma = 0.5) # autocorrelation parameter
 
+# calculate the true utiliziation distribution
 ## exampleCovs is a list of four spatial covariates (e.g., habitat features) that loads with the package
+trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
+```
+
+![](man/figures/README-unnamed-chunk-4-1.png)<!-- -->
+
+``` r
+
 simDat <- simLangevin(model = "underdamped",
                       par = par,
                       spatialCovs = exampleCovs,
@@ -80,12 +88,7 @@ measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error el
                          smin.sd = 0.75,     # sd of semi-minor axis of error ellipse
                          eor = c(0,180)) # range of ellipse orientation (in degrees from north)
 
-exampleDat <- simLangevin(model = "underdamped",
-                         par = par,
-                         spatialCovs = exampleCovs,
-                         nbAnimals = 3,
-                         obsPerAnimal = 500,
-                         measurementError = measurementError)
+set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 
 head(exampleDat)
 #>   id date   dt        x        y      smaj      smin       eor x.sd y.sd
@@ -111,12 +114,12 @@ use the `formatData` and `fitLangevin` functions. For example:
 # unformatDat is example data appropriate for formatData that loads with the package
 head(unformatDat)
 #>   id                date        x        y      smaj      smin       eor x.sd
-#> 1  1 2026-04-07 00:00:00 1023.610 988.7225 3.1904213 0.8238468  25.25334   NA
-#> 2  1 2026-04-07 00:00:36 1024.056 990.0353 0.2602149 0.1929297  48.24272   NA
-#> 3  1 2026-04-07 00:01:12 1022.943 991.0823 1.9072127 0.6294832 126.97307   NA
-#> 4  1 2026-04-07 00:01:48 1024.243 990.1201 0.1952989 0.0469546 126.62606   NA
-#> 5  1 2026-04-07 00:02:24 1024.996 990.5625 1.4343749 1.1175133 164.35512   NA
-#> 6  1 2026-04-07 00:03:00 1024.489 990.9043 0.8349596 0.1392169  26.87534   NA
+#> 1  1 2026-04-10 00:00:00 1023.610 988.7225 3.1904213 0.8238468  25.25334   NA
+#> 2  1 2026-04-10 00:00:36 1024.056 990.0353 0.2602149 0.1929297  48.24272   NA
+#> 3  1 2026-04-10 00:01:12 1022.943 991.0823 1.9072127 0.6294832 126.97307   NA
+#> 4  1 2026-04-10 00:01:48 1024.243 990.1201 0.1952989 0.0469546 126.62606   NA
+#> 5  1 2026-04-10 00:02:24 1024.996 990.5625 1.4343749 1.1175133 164.35512   NA
+#> 6  1 2026-04-10 00:03:00 1024.489 990.9043 0.8349596 0.1392169  26.87534   NA
 #>   y.sd
 #> 1   NA
 #> 2   NA
@@ -130,12 +133,12 @@ exampleDat <- formatData(unformatDat, time.unit = "hours")
 
 head(exampleDat)
 #>   id                date   dt        x        y   lc      smaj      smin
-#> 1  1 2026-04-07 00:00:00 0.00 1023.610 988.7225 <NA> 3.1904213 0.8238468
-#> 2  1 2026-04-07 00:00:36 0.01 1024.056 990.0353 <NA> 0.2602149 0.1929297
-#> 3  1 2026-04-07 00:01:12 0.01 1022.943 991.0823 <NA> 1.9072127 0.6294832
-#> 4  1 2026-04-07 00:01:48 0.01 1024.243 990.1201 <NA> 0.1952989 0.0469546
-#> 5  1 2026-04-07 00:02:24 0.01 1024.996 990.5625 <NA> 1.4343749 1.1175133
-#> 6  1 2026-04-07 00:03:00 0.01 1024.489 990.9043 <NA> 0.8349596 0.1392169
+#> 1  1 2026-04-10 00:00:00 0.00 1023.610 988.7225 <NA> 3.1904213 0.8238468
+#> 2  1 2026-04-10 00:00:36 0.01 1024.056 990.0353 <NA> 0.2602149 0.1929297
+#> 3  1 2026-04-10 00:01:12 0.01 1022.943 991.0823 <NA> 1.9072127 0.6294832
+#> 4  1 2026-04-10 00:01:48 0.01 1024.243 990.1201 <NA> 0.1952989 0.0469546
+#> 5  1 2026-04-10 00:02:24 0.01 1024.996 990.5625 <NA> 1.4343749 1.1175133
+#> 6  1 2026-04-10 00:03:00 0.01 1024.489 990.9043 <NA> 0.8349596 0.1392169
 #>         eor x.sd y.sd
 #> 1 0.4407540   NA   NA
 #> 2 0.8419944   NA   NA
@@ -145,12 +148,12 @@ head(exampleDat)
 #> 6 0.4690632   NA   NA
 
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
-## setting calcOSA = TRUE will calculate one-step-ahead residuals for model diagnostics
+## setting calcResiduals = TRUE will calculate one-step-ahead residuals for model diagnostics
 fit <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
                    silent = TRUE,
-                   calcOSA = TRUE)  
+                   calcResiduals = TRUE)  
 
 fit
 #> 
@@ -159,7 +162,7 @@ fit
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.97 
-#> Optimization time:  0.65 seconds
+#> Optimization time:  0.62 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
@@ -177,22 +180,27 @@ fit
 #> 
 #> --- OSA Goodness-of-Fit Results ---
 #>  metric  statistic   p.value
-#>    KS_x 0.01597316 0.8395629
+#>    KS_x 0.01599200 0.8385286
 #>    KS_y 0.02434843 0.3373330
-#>  KS_mah 0.01965272 0.6097146
-#>    LB_x 7.93384128 0.3384639
-#>    LB_y 3.30600889 0.8553254
-#>  LB_mah 5.26409755 0.6277688
+#>  KS_mah 0.01965255 0.6097253
+#>    LB_x 7.88968961 0.3424215
+#>    LB_y 3.28845523 0.8570979
+#>  LB_mah 5.37979230 0.6137200
 #> -----------------------------------
 
 # calculate the estimated UD
 UD <- getUD(spatialCovs = exampleCovs, fit = fit)
+```
+
+![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
+
+``` r
 
 # plot the estimated (log) UD with the observed and estimated locations
 plot(fit, spatialCovs = exampleCovs, data = exampleDat)
 ```
 
-![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
+![](man/figures/README-unnamed-chunk-5-2.png)<!-- -->
 
 ``` r
 
@@ -201,17 +209,27 @@ p <- plotResiduals(fit)
 p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 ```
 
-![](man/figures/README-unnamed-chunk-5-2.png)<!-- -->
+![](man/figures/README-unnamed-chunk-5-3.png)<!-- -->
 
 ``` r
-
-# calculate the true utiliziation distribution
-trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
 
 # calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
 #>    log_UD 
 #> 0.9088081
+
+# calculate probability of being in specified region
+## create a spatial mask for the region of interest
+d2c <- exampleCovs$d2c < 2.5
+reg_prob <- regionProb(fit,
+                       spatialCovs = exampleCovs, 
+                       mask = d2c, # region of interest
+                       show_progress = FALSE)
+
+reg_prob$Point_Estimate # point estimate
+#> [1] 0.3098513
+reg_prob$CI_sim_95 # 95% Monte Carlo credible interval
+#> [1] 1.954616e-53 7.103307e-01
 ```
 
 ## Citation

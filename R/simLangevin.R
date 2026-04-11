@@ -264,7 +264,7 @@ simLangevin.fitLangevin <- function(model,
 
   if ((fullPosterior | conditional) && !requireNamespace("Matrix", quietly = TRUE)) stop("The 'Matrix' package is required for full posterior or conditional simulation.")
 
-  calc_jp <- fullPosterior && is.null(fit$estimates$random$jointPrecision)
+  calc_jp <- fullPosterior && is.null(fit$covariance$random$jointPrecision)
   if(calc_jp) message("   Calculating full covariance matrix using TMB::sdreport(obj, getJointPrecision = TRUE)")
   sdr <- TMB::sdreport(obj2, getJointPrecision = calc_jp)
 
@@ -284,7 +284,7 @@ simLangevin.fitLangevin <- function(model,
       message("   Simulating tracks forward using the full joint covariance matrix...")
     }
 
-    Q <- if (!is.null(fit$estimates$random$jointPrecision)) fit$estimates$random$jointPrecision else sdr$jointPrecision
+    Q <- if (!is.null(fit$covariance$random$jointPrecision)) fit$covariance$random$jointPrecision else sdr$jointPrecision
     L <- Matrix::Cholesky(Q, super = TRUE)
     z <- stats::rnorm(ncol(Q))
     step <- as.numeric(Matrix::solve(L, Matrix::solve(L, z, system = "Lt"), system = "Pt"))

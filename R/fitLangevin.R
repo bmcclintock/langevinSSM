@@ -24,7 +24,7 @@
 #' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
 #' @param polishOptim Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization with \code{\link[stats]{nlminb}} has completed. Default: \code{FALSE}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
-#' @param calcOSA Logical or character string. If \code{TRUE}, calculates one-step-ahead (OSA) residuals using the default \code{"oneStepGaussianOffMode"} method (see \code{\link{getOSA}}). Alternatively, a character string can be provided to specify a different method (see \code{\link[TMB]{oneStepPredict}}). Note this can take a while for large data sets. Default: \code{FALSE}.
+#' @param calcResiduals Logical or character string. If \code{TRUE}, calculates one-step-ahead (OSA) residuals using the default \code{"oneStepGaussianOffMode"} method (see \code{\link{getResiduals}}). Alternatively, a character string can be provided to specify a different method (see \code{\link[TMB]{oneStepPredict}}). Note this can take a while for large data sets. Default: \code{FALSE}.
 #' @return \code{fitLangevin} object, i.e., a list of:
 #' \item{par}{See \code{\link[stats]{nlminb}}}
 #' \item{objective}{See \code{\link[stats]{nlminb}}}
@@ -33,11 +33,12 @@
 #' \item{iterations}{See \code{\link[stats]{nlminb}}}
 #' \item{evaluations}{See \code{\link[stats]{nlminb}}}
 #' \item{elapsedTime}{Run time of the optimization}
-#' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel''), as well as the joint precision matrix (``jointPrecision'') if \code{getJointPrecision=TRUE}.}
+#' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
+#' \item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random'')}.
 #' \item{conditions}{List containing the optimization settings}
+#' \item{residuals}{One-step-ahead residuals (if \code{calcResiduals} is not \code{FALSE})}
 #' \item{signatures}{List containing lightweight fingerprints for \code{data} and \code{spatialCovs} to protect downstream functions}
 #' \item{tmb_setup}{Blueprint for reconstructing TMB objective function}
-#' \item{osa}{One-step-ahead residuals (if \code{calcOSA} is not \code{FALSE})}
 #' @details
 #' \strong{Measurement Error Models:}
 #' The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information:
@@ -88,7 +89,7 @@
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcOSA = FALSE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcResiduals = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
@@ -323,9 +324,12 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       }
     }
   } else {
-    fit$estimates$natural <- summary(sdreport_out, "report")
-    fit$estimates$working <- summary(sdreport_out, "fixed")
-    fit$estimates$cov_natural <- sdreport_out$cov
+
+    fit$estimates <- list(natural = summary(sdreport_out, "report"),
+                          working = summary(sdreport_out, "fixed"))
+
+    fit$covariance <- list(natural = sdreport_out$cov,
+                           working = sdreport_out$cov.fixed)
 
     for (est_type in c("natural", "working")) {
       rn <- rownames(fit$estimates[[est_type]])
@@ -367,7 +371,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
         colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
         colnames(fit$estimates$random[[node]]$se)  <- c("id", paste0(node, ".", c("x", "y")))
       }
-      if(getJointPrecision) fit$estimates$random$jointPrecision <- sdreport_out$jointPrecision
+      if(getJointPrecision) fit$covariance$random$jointPrecision <- sdreport_out$jointPrecision
     }
   }
 
@@ -383,14 +387,14 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
   }
 
-  # Ensure ALL necessary build conditions are saved for getOSA to use later
+  # Ensure ALL necessary build conditions are saved for getResiduals to use later
   fit$conditions <- list(hessian = hessian,
                          method = method,
                          silent = silent,
                          initialInner = initialInner,
                          inner.control = inner.control,
                          control = control,
-                         calcOSA = calcOSA,
+                         calcResiduals = calcResiduals,
                          scaleFactor = scaleFactor,
                          model = model,
                          smoothGradient = smoothGradient,
@@ -414,10 +418,10 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   fit <- class_fitLangevin(fit)
 
   # --- OSA Pseudo-Residual Calculation ---
-  if(isTRUE(calcOSA) || is.character(calcOSA)) {
-    osa_method <- if(is.character(calcOSA)) calcOSA else "oneStepGaussianOffMode"
-    fit$osa <- getOSA(fit, data, spatialCovs, method = osa_method, run_tests=FALSE, trace = 0)
-    attr(fit$osa,"tests")  <- gof_tests(fit$osa)
+  if(isTRUE(calcResiduals) || is.character(calcResiduals)) {
+    res_method <- if(is.character(calcResiduals)) calcResiduals else "oneStepGaussianOffMode"
+    fit$residuals <- getResiduals(fit, data, spatialCovs, method = res_method, run_tests=FALSE, trace = 0)
+    attr(fit$residuals,"tests")  <- gof_tests(fit$residuals)
   }
 
   return(fit)

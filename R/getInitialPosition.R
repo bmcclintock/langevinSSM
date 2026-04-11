@@ -3,9 +3,10 @@ getInitialPosition <- function(nbAnimals, initialPosition, spatialCovs, beta, re
 
   if (missing(initialPosition)) {
     message("   Randomly drawing initial positions from UD...")
-    UD <- getUD(spatialCovs, beta = beta, log = TRUE)
+    UD <- getUD(spatialCovs, beta = beta, log = TRUE, plot = FALSE)
 
-    log_ud_vals <- as.numeric(terra::values(UD[[1]]))
+    # Explicitly extract the log_UD layer
+    log_ud_vals <- as.numeric(terra::values(UD[["log_UD"]][[1]]))
     max_log_ud <- max(log_ud_vals, na.rm = TRUE)
 
     prob_vals <- exp(log_ud_vals - max_log_ud)

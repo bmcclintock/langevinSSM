@@ -33,7 +33,7 @@ remotes::install_github("bmcclintock/langevinSSM")
 
 ## Usage
 To simulate animal movement paths using the Langevin diffusion model, one can use the `simLangevin` function. For example:
-```{r,eval=TRUE, echo=c(-10,-19)}
+```{r,eval=TRUE, echo=c(-14,-23)}
 library(langevinSSM)
 library(ggplot2)
 library(terra)
@@ -45,8 +45,11 @@ par <- list(beta = c(-4, 6, 5, -0.1), # habitat selection coefficients
             sigma = 5, # diffusion (or speed) parameter
             gamma = 0.5) # autocorrelation parameter
 
-set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
+# calculate the true utiliziation distribution
 ## exampleCovs is a list of four spatial covariates (e.g., habitat features) that loads with the package
+trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
+
+set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 simDat <- simLangevin(model = "underdamped",
                       par = par,
                       spatialCovs = exampleCovs,
@@ -80,12 +83,12 @@ exampleDat <- formatData(unformatDat, time.unit = "hours")
 head(exampleDat)
 
 # Fit the underdamped Langevin diffusion model to simulated data with measurement error
-## setting calcOSA = TRUE will calculate one-step-ahead residuals for model diagnostics
+## setting calcResiduals = TRUE will calculate one-step-ahead residuals for model diagnostics
 fit <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
                    silent = TRUE,
-                   calcOSA = TRUE)  
+                   calcResiduals = TRUE)  
 
 fit
 
@@ -99,11 +102,19 @@ plot(fit, spatialCovs = exampleCovs, data = exampleDat)
 p <- plotResiduals(fit)
 p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 
-# calculate the true utiliziation distribution
-trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
-
 # calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
+
+# calculate probability of being in specified region
+## create a spatial mask for the region of interest
+d2c <- exampleCovs$d2c < 2.5
+reg_prob <- regionProb(fit,
+                       spatialCovs = exampleCovs, 
+                       mask = d2c, # region of interest
+                       show_progress = FALSE)
+
+reg_prob$Point_Estimate # point estimate
+reg_prob$CI_sim_95 # 95% Monte Carlo credible interval
 ```
 ## Citation
 

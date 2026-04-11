@@ -72,19 +72,19 @@ test_that("Imputation vs Predictive Check divergence and GoF validation", {
   long_dat <- class_dataLangevin(long_df)
 
   # 2. Fit the model away from edges to ensure valid Hessian and residuals
-  # We request calcOSA = TRUE to trigger the internal gof_tests call
+  # We request calcResiduals = TRUE to trigger the internal gof_tests call
   long_fit <- suppressMessages(fitLangevin(
     data = long_dat,
     spatialCovs = exCovs,
     par = list(sigma = 2),
-    calcOSA = TRUE,
+    calcResiduals = TRUE,
     silent = TRUE
   ))
 
   # 3. Verify that tests_df was actually created and is not NULL
   # This confirms fitLangevin successfully called gof_tests with valid data
-  expect_false(is.null(attr(long_fit$osa, "tests")))
-  expect_s3_class(attr(long_fit$osa, "tests"), "data.frame")
+  expect_false(is.null(attr(long_fit$residuals, "tests")))
+  expect_s3_class(attr(long_fit$residuals, "tests"), "data.frame")
 
   # 4. Standard Divergence Check
   set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")

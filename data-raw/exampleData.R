@@ -39,12 +39,14 @@ UD <- getUD(exampleCovs, beta = examplePar$beta)
 set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 exampleDat <- simLangevin(par=examplePar,spatialCovs=exampleCovs,nbAnimals=nbAnimals,obsPerAnimal=obsPerAnimal,measurementError = measurementError)
 
-plot(UD, extent=c(900,1100,900,1100))+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
+plotUD(UD, extent=c(900,1100,900,1100))+geom_point(aes(x=x,y=y),data=exampleDat,col=2)+geom_point(aes(x=mu.x,y=mu.y),data=exampleDat)
 
 fit <- fitLangevin(exampleDat,spatialCovs = exampleCovs,silent=TRUE,control=list(trace=1))
 fit
-fit$osa <- getOSA(fit,exampleDat, exampleCovs, run_tests = TRUE)
+fit$residuals <- getResiduals(fit,exampleDat, exampleCovs, run_tests = TRUE)
 fit
+
+estUD <- getUD(fit,spatialCovs=exampleCovs)
 
 plot(fit,spatialCovs=exampleCovs,data=exampleDat)
 

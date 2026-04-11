@@ -59,7 +59,7 @@ if(model=="overdamped"){
 } else colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","gamma","BA")
 
 dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_psi",psi,"_sca",sca,"_covRange",paste0(covRange,collapse="_"),
-                   ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor,collapse="_")),""),ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
+                   ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
 
 set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
 if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
@@ -115,8 +115,7 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
         obsPerAnimal = obsPerAnimal,
         timeStep = timeStep,
         par=par,
-        spatialCovs = spatialCovs[[isim]],
-        measurementError = measurementError
+        spatialCovs = spatialCovs[[isim]]
       ),error=function(e) e)
       if(inherits(langSim[[isim]],"error")){
         message("    Retrying Simulation ",isim,": ",langSim[[isim]]$message)
@@ -151,16 +150,22 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
   }
 }
 
+# add measurement error
+set.seed(1, kind="Mersenne-Twister", normal.kind = "Inversion")
+for(isim in 1:nsims){
+  subDat[[isim]] <- addMeasurementError(langSim[[isim]], measurementError = measurementError)
+}
+
 # subsample data
 set.seed(1, kind="Mersenne-Twister", normal.kind = "Inversion")
 for(isim in 1:nsims){
-  subDat[[isim]] <- subSampleData(langSim[[isim]], samplingRate = samplingRate, propMissing = propMissing)
+  subDat[[isim]] <- subSampleData(subDat[[isim]], samplingRate = samplingRate, propMissing = propMissing)
 }
 
 for(isim in 1:nsims){
   cat("Simulation",isim,"\n")
   # Compute utilization distribution
-  UD <- getUD(spatialCovs[[isim]], beta=beta,log=TRUE)
+  UD <- getUD(spatialCovs[[isim]], beta=beta, log=TRUE, plot=FALSE)
 
   # Plot covariates
   ggtheme <- theme(axis.title = element_text(size=12), axis.text = element_text(size=12),
@@ -190,10 +195,10 @@ for(isim in 1:nsims){
 
   if(useInitialValues) par <- initialValues(subDat[[isim]],model,par=list(psi=psi),spatialCovs=spatialCovs[[isim]])
 
-  langFit[[isim]] <- fitLangevin(subDat[[isim]],model=model,par=par,spatialCovs=spatialCovs[[isim]],
+  langFit[[isim]] <- suppressMessages(fitLangevin(subDat[[isim]],model=model,par=par,spatialCovs=spatialCovs[[isim]],
                                  map=map,
                                  smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale,
-                                 silent=TRUE, control=list(trace=0),initialInner=initialInner)
+                                 silent=TRUE, control=list(trace=0),initialInner=initialInner))
 
   parMat[isim,1:(5+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
   parMat[isim,"sigma"] <- langFit[[isim]]$estimates$natural["sigma",1]
@@ -215,8 +220,8 @@ for(isim in 1:nsims){
     lines(langSim[[isim]]$mu.x[langSim[[isim]]$id==i],langSim[[isim]]$mu.y[langSim[[isim]]$id==i]) # true path
   }
   plot(terra::crop(UD,zoom_ext),main="True UD",col=viridis::viridis(100))
-  estUD <- getUD(spatialCovs[[isim]],langFit[[isim]],log=TRUE)
-  plot(terra::crop(estUD,zoom_ext),main="Estimated UD",col=viridis::viridis(100))
+  estUD <- suppressMessages(getUD(spatialCovs[[isim]],langFit[[isim]],log=TRUE))
+  plot(terra::crop(estUD$log_UD,zoom_ext),main="Estimated UD",col=viridis::viridis(100))
 
   parMat[isim,"BA"] <- mean(rasterOverlap(exp(estUD),exp(UD))) # Calculate Bhattacharyya's Affinity between estimated and true UDs
 
@@ -227,4 +232,4 @@ for(isim in 1:nsims){
 }
 
 if(!dir.exists("simulation/results")) dir.create("simulation/results")
-save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))

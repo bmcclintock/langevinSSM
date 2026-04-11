@@ -1,7 +1,7 @@
-# tests/testthat/test_getOSA.R
+# tests/testthat/test_getResiduals.R
 
 # --- Helper to generate a fast, reusable mock fit ---
-get_mock_osa_fit <- function() {
+get_mock_res_fit <- function() {
   set.seed(42)
   r <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 100, 0, 100))
   terra::values(r) <- runif(100)
@@ -23,14 +23,14 @@ get_mock_osa_fit <- function() {
   start_time <- as.POSIXct("2024-01-01 00:00:00", tz = "UTC")
   dat$date <- start_time + (1:nrow(dat)) * 3600
 
-  # Fit the model with calcOSA = TRUE so we have a baseline to compare against
+  # Fit the model with calcResiduals = TRUE so we have a baseline to compare against
   fit <- suppressMessages(suppressWarnings({
     fitLangevin(
       data = dat,
       model = "overdamped",
       spatialCovs = spatialCovs,
       par = init_par,
-      calcOSA = TRUE,
+      calcResiduals = TRUE,
       silent = TRUE
     )
   }))
@@ -39,17 +39,17 @@ get_mock_osa_fit <- function() {
 }
 
 # Generate the mock objects once for the test file
-mock_env <- get_mock_osa_fit()
+mock_env <- get_mock_res_fit()
 fit_base <- mock_env$fit
 dat_base <- mock_env$dat
 covs_base <- mock_env$covs
 
-test_that("getOSA catches invalid inputs and legacy fit objects", {
+test_that("getResiduals catches invalid inputs and legacy fit objects", {
 
   # 1. Non-fitLangevin object
   bad_fit <- list(par = c(1,2,3))
   expect_error(
-    getOSA(bad_fit, dat_base, covs_base),
+    getResiduals(bad_fit, dat_base, covs_base),
     "'fit' must be a fitLangevin object."
   )
 
@@ -57,56 +57,56 @@ test_that("getOSA catches invalid inputs and legacy fit objects", {
   legacy_fit <- fit_base
   legacy_fit$tmb_setup <- NULL
   expect_error(
-    getOSA(legacy_fit, dat_base, covs_base),
+    getResiduals(legacy_fit, dat_base, covs_base),
     "does not contain a 'tmb_setup' blueprint"
   )
 })
 
-test_that("getOSA returns correctly formatted output", {
+test_that("getResiduals returns correctly formatted output", {
 
   # Run a fresh post-hoc extraction
-  osa_fresh <- suppressMessages(getOSA(fit_base, dat_base, covs_base))
+  res_fresh <- suppressMessages(getResiduals(fit_base, dat_base, covs_base))
 
   # Check class
-  expect_s3_class(osa_fresh, "osaLangevin")
-  expect_s3_class(osa_fresh, "data.frame")
+  expect_s3_class(res_fresh, "resLangevin")
+  expect_s3_class(res_fresh, "data.frame")
 
   # Check required columns
-  expect_true(all(c("id", "date", "residual.x", "residual.y") %in% names(osa_fresh)))
+  expect_true(all(c("id", "date", "residual.x", "residual.y") %in% names(res_fresh)))
 
   # Check rows perfectly match the input data
-  expect_equal(nrow(osa_fresh), nrow(dat_base))
+  expect_equal(nrow(res_fresh), nrow(dat_base))
 })
 
-test_that("getOSA post-hoc reconstruction perfectly matches fitLangevin internal calc", {
+test_that("getResiduals post-hoc reconstruction perfectly matches fitLangevin internal calc", {
 
-  # fit_base$osa was calculated INSIDE fitLangevin using the active TMB obj.
-  # osa_fresh is calculated by RECONSTRUCTING the TMB obj from the blueprint.
-  osa_fresh <- suppressMessages(getOSA(fit_base, dat_base, covs_base))
+  # fit_base$residuals was calculated INSIDE fitLangevin using the active TMB obj.
+  # res_fresh is calculated by RECONSTRUCTING the TMB obj from the blueprint.
+  res_fresh <- suppressMessages(getResiduals(fit_base, dat_base, covs_base))
 
   # They should be mathematically identical
-  expect_equal(osa_fresh$residual.x, fit_base$osa$residual.x)
-  expect_equal(osa_fresh$residual.y, fit_base$osa$residual.y)
+  expect_equal(res_fresh$residual.x, fit_base$residuals$residual.x)
+  expect_equal(res_fresh$residual.y, fit_base$residuals$residual.y)
 })
 
-test_that("getOSA successfully accepts and passes alternative OSA methods", {
+test_that("getResiduals successfully accepts and passes alternative OSA methods", {
 
   # Reconstruct using "fullGaussian" instead of the default
-  osa_full <- suppressMessages(
-    getOSA(fit_base, dat_base, covs_base, method = "fullGaussian")
+  res_full <- suppressMessages(
+    getResiduals(fit_base, dat_base, covs_base, method = "fullGaussian")
   )
 
-  expect_s3_class(osa_full, "osaLangevin")
+  expect_s3_class(res_full, "resLangevin")
 
   # The method should run without error and produce valid numeric residuals.
   # Note: For this specific Gaussian model, fullGaussian and oneStepGaussianOffMode
   # are mathematically identical, so we just verify it produced valid numerics.
-  valid_residuals <- na.omit(osa_full$residual.x)
+  valid_residuals <- na.omit(res_full$residual.x)
   expect_true(length(valid_residuals) > 0)
   expect_true(is.numeric(valid_residuals))
 })
 
-test_that("getOSA handles individual track failures gracefully without crashing the whole process", {
+test_that("getResiduals handles individual track failures gracefully without crashing the whole process", {
 
   bad_dat <- dat_base
 
@@ -123,18 +123,18 @@ test_that("getOSA handles individual track failures gracefully without crashing 
 
   # Expect a warning that Track 2 didn't have enough observations
   expect_warning(
-    osa_sabotaged <- suppressMessages(getOSA(bad_fit, bad_dat, covs_base)),
+    res_sabotaged <- suppressMessages(getResiduals(bad_fit, bad_dat, covs_base)),
     "Track ID 2 does not have enough valid observations"
   )
 
   # BUT the function should not have crashed. It should still return an object...
-  expect_s3_class(osa_sabotaged, "osaLangevin")
+  expect_s3_class(res_sabotaged, "resLangevin")
 
   # ...where Animal 1 successfully got its residuals...
-  anim_1_resids <- na.omit(osa_sabotaged$residual.x[osa_sabotaged$id == "1"])
+  anim_1_resids <- na.omit(res_sabotaged$residual.x[res_sabotaged$id == "1"])
   expect_true(length(anim_1_resids) > 0)
 
   # ...and Animal 2 is entirely NA
-  anim_2_resids <- na.omit(osa_sabotaged$residual.x[osa_sabotaged$id == "2"])
+  anim_2_resids <- na.omit(res_sabotaged$residual.x[res_sabotaged$id == "2"])
   expect_equal(length(anim_2_resids), 0)
 })

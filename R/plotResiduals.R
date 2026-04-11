@@ -3,7 +3,7 @@
 #' Generates ggplot2 diagnostic plots (Q-Q plots and ACF plots) for the OSA residuals of a fitted Langevin diffusion model. Plots are made separately for the x and y observed location residuals (which should follow a normal distribution if the model fits well), as well as for the squared Mahalanobis distance of the observed location residuals (which should follow a Chi-Square distribution with 2 degrees of freedom if the model fits well).
 #'
 #' @param fit A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
-#' @param osa Data frame returned by \code{\link{getOSA}} containing the residuals. Only must be provided if \code{fit} does not already include residuals. If \code{!is.null(fit$osa)} and \code{osa} is provided, then the residuals from \code{osa} (and not \code{fit$osa}) are plotted.
+#' @param res Data frame returned by \code{\link{getResiduals}} containing the residuals. Only must be provided if \code{fit} does not already include residuals. If \code{!is.null(fit$residuals)} and \code{res} is provided, then the residuals from \code{res} (and not \code{fit$residuals}) are plotted.
 #' @param tracks Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track in the dataset individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots.
 #' @return List of \code{ggplot} objects (or a nested list of \code{ggplot} objects if plotting by track).
 #' @examples
@@ -23,7 +23,7 @@
 #'                    spatialCovs = exampleCovs,
 #'                    silent = TRUE,
 #'                    control = list(trace = 1),
-#'                    calcOSA = TRUE)
+#'                    calcResiduals = TRUE)
 #'
 #' plotResiduals(fit)
 #'
@@ -31,7 +31,7 @@
 # #' @importFrom ggplot2 ggplot aes geom_hline geom_segment geom_abline labs theme_minimal geom_ribbon geom_point scale_color_manual theme
 #' @importFrom stats acf qnorm qchisq ppoints quantile dnorm dchisq na.omit
 #' @export
-plotResiduals <- function(fit, osa = NULL, tracks = NULL){
+plotResiduals <- function(fit, res = NULL, tracks = NULL){
 
   if (!inherits(fit, "fitLangevin")) {
     stop("Input 'fit' must be a fitLangevin object.")
@@ -41,13 +41,13 @@ plotResiduals <- function(fit, osa = NULL, tracks = NULL){
     stop("Package 'ggplot2' is required for plotting residuals. Please install it.")
   }
 
-  if (!is.null(osa)) {
-    if(!inherits(osa,"osaLangevin")) stop("osa must be a 'osaLangevin' object (see ?getOSA)")
-    resids <- osa
-  } else if (!is.null(fit$osa)) {
-    resids <- fit$osa
+  if (!is.null(res)) {
+    if(!inherits(res,"resLangevin")) stop("res must be a 'resLangevin' object (see ?getResiduals)")
+    resids <- res
+  } else if (!is.null(fit$residuals)) {
+    resids <- fit$residuals
   } else {
-    stop("The fit object does not contain OSA residuals. Please generate them using the 'getOSA()' function and pass the result via the 'osa' argument.")
+    stop("The fit object does not contain OSA residuals. Please generate them using the 'getResiduals()' function and pass the result via the 'res' argument.")
   }
 
   if (is.null(tracks)) {

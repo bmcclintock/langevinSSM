@@ -61,7 +61,7 @@ test_that("addMeasurementError generates new KF errors correctly", {
   res <- suppressWarnings(addMeasurementError(df, measurementError = err))
 
   # Check columns created
-  expect_true(all(c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd", "lc") %in% names(res)))
+  expect_true(all(c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd") %in% names(res)))
 
   # Check data types and structure
   expect_true(is.numeric(res$smaj))

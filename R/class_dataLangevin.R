@@ -8,7 +8,7 @@ class_dataLangevin <- function(x, time.unit = NULL) {
   if (!is.data.frame(x)) stop("Object must be a data frame to be a 'dataLangevin' object.")
 
   # enforce universal required columns
-  req_cols <- c("id", "date", "dt", "x", "y", "smaj", "smin", "eor", "x.sd", "y.sd")
+  req_cols <- c("id", "date", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err")
   missing_cols <- setdiff(req_cols, names(x))
   if (length(missing_cols) > 0) {
     stop("Missing required columns for 'dataLangevin': ", paste(missing_cols, collapse = ", "))

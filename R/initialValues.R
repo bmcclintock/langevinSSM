@@ -46,13 +46,13 @@ initialValues <- function(data, model=c("underdamped","overdamped"), par, spatia
     else if(!all(names(par) %in% c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"))) stop("names(par) is limited to c('beta','sigma','gamma','mu','vel','psi','tau','rho_o')")
 
     has_ee <- any(!is.na(data$smaj))
-    has_ls <- any(!is.na(data$x.sd))
+    has_ls <- any(!is.na(data$x.err))
 
     if (!has_ee && "psi" %in% names(par)) {
       stop("Cannot specify par$psi because the data do not contain error ellipse observations ('smaj', 'smin', 'eor').")
     }
     if (!has_ls && any(c("tau", "rho_o") %in% names(par))) {
-      stop("Cannot specify par$tau or par$rho_o because the data do not contain standard deviation observations ('x.sd', 'y.sd'.")
+      stop("Cannot specify par$tau or par$rho_o because the data do not contain standard error observations ('x.err', 'y.err').")
     }
     if (model == "overdamped" && any(c("gamma", "vel") %in% names(par))) {
       stop("Cannot specify par$gamma or par$vel when model = 'overdamped'.")

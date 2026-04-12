@@ -8,7 +8,7 @@
 #' @return List of \code{ggplot} objects (or a nested list of \code{ggplot} objects if plotting by track).
 #' @examples
 #' par <- list(beta = c(-4, 6, 5, -0.1), sigma = 5, gamma = 0.5)
-#' measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor = c(0,180))
+#' measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor.lim = c(0,180))
 #'
 #' set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 #' # ridiculously small dataset for example purposes

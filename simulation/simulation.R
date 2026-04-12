@@ -35,8 +35,8 @@ use_aniMotum <- FALSE # logical indicating whether or not to use aniMotum to imp
 
 smaj.sd <- 1.5 # SD for semi-major error ellipse axis; smaj ~ abs(Normal(0,smaj.sd))
 smin.sd <- smaj.sd/2 # SD for semi-minor error ellipse axis; smin ~ abs(Normal(0,smin.sd))
-eor <- c(0,180) # range for error ellipse orientation (in degrees from north); eor ~ Uniform(eor[1],eor[2])
-measurementError <- list(smaj.sd=smaj.sd,smin.sd=smin.sd,eor=eor) # setting measurementError <- NULL adds no measurement error to observations
+eor.lim <- c(0,180) # range for error ellipse orientation (in degrees from north); eor ~ Uniform(eor.lim[1],eor.lim[2])
+measurementError <- list(smaj.sd=smaj.sd,smin.sd=smin.sd,eor.lim=eor.lim) # setting measurementError <- NULL adds no measurement error to observations
 
 ## specify scale and spatial autocorrelation for covariates
 sca <- 200 # bounding box scale
@@ -232,4 +232,4 @@ for(isim in 1:nsims){
 }
 
 if(!dir.exists("simulation/results")) dir.create("simulation/results")
-save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))

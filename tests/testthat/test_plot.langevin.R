@@ -49,7 +49,7 @@ get_mock_data <- function() {
     dt = rep(6, 10),
     x = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
     y = c(2.1, 2.4, 3.1, 3.6, 4.1, 6.1, 6.4, 7.1, 7.6, 8.1),
-    smaj = NA, smin = NA, eor = NA, x.sd = NA, y.sd = NA
+    smaj = NA, smin = NA, eor = NA, x.err = NA, y.err = NA
   )
   # Actually route it through the real validator so we know the mock data is legal!
   dat <- class_dataLangevin(dat, time.unit = "hours")
@@ -66,7 +66,7 @@ get_mock_sim <- function() {
     y = c(2.1, 2.4, 3.1, 3.6, 4.1, 6.1, 6.4, 7.1, 7.6, 8.1),
     mu.x = c(2.1, 2.6, 3.1, 3.6, 4.1, 6.1, 6.6, 7.1, 7.6, 8.1),
     mu.y = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
-    smaj = NA, smin = NA, eor = NA, x.sd = NA, y.sd = NA
+    smaj = NA, smin = NA, eor = NA, x.err = NA, y.err = NA
   )
   dat <- class_dataLangevin(dat, time.unit = "hours")
   class(dat) <- unique(c("simLangevin", class(dat)))

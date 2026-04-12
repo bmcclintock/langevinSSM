@@ -13,7 +13,7 @@ get_mock_dataLangevin <- function(n_per_id = 100) {
     x = rnorm(n_per_id * 2),
     y = rnorm(n_per_id * 2),
     smaj = 1, smin = 0.5, eor = 0,
-    x.sd = 1, y.sd = 1,
+    x.err = 1, y.err = 1,
     stringsAsFactors = FALSE
   )
 
@@ -114,7 +114,7 @@ test_that("subSampleData randomly introduces missing values to specified columns
   # Verify NAs were only injected into the specified columns
   expect_true(any(is.na(sub_data$y)))
   expect_false(any(is.na(sub_data$smaj)))
-  expect_false(any(is.na(sub_data$x.sd)))
+  expect_false(any(is.na(sub_data$x.err)))
 })
 
 test_that("subSampleData NEVER introduces NAs to the first observation of a track", {

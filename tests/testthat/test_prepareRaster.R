@@ -204,15 +204,15 @@ test_that("Spatial overlap buffer warning catches data close to the edge", {
   covs <- list(cov1 = r)
 
   # Point is at x=90, y=50. It is physically inside the raster.
-  # But x.sd is 5. The 3-sigma buffer is 15.
+  # But x.err is 5. The 3-sigma buffer is 15.
   # 90 + 15 = 105, which exceeds the max raster bound of 100.
   warn_data <- data.frame(
     id = "A",
     date = as.POSIXct("2023-01-01", tz="UTC"),
     x = 90,
     y = 50,
-    x.sd = 5,
-    y.sd = 1,
+    x.err = 5,
+    y.err = 1,
     smaj = NA
   )
 

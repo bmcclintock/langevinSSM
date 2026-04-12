@@ -13,8 +13,8 @@ get_base_data <- function() {
     smaj = c(10, 15, NA, NA, NA),
     smin = c(5, 7, NA, NA, NA),
     eor  = c(45, 90, NA, NA, NA), # degrees from north
-    x.sd = c(NA, NA, 5, NA, NA),
-    y.sd = c(NA, NA, 5, NA, NA),
+    x.err = c(NA, NA, 5, NA, NA),
+    y.err = c(NA, NA, 5, NA, NA),
     extra_var = c("temp1", "temp2", "temp3", "temp4", "temp5")
   )
 }
@@ -47,7 +47,7 @@ test_that("Custom error parameter names are successfully standardized", {
                      epar = c("err_maj", "err_min", "err_angle"),
                      sderr = c("err_x", "err_y"))
 
-  expect_true(all(c("smaj", "smin", "eor", "x.sd", "y.sd") %in% names(res3)))
+  expect_true(all(c("smaj", "smin", "eor", "x.err", "y.err") %in% names(res3)))
 })
 
 test_that("EMF integration accurately fills missing NA errors", {
@@ -55,13 +55,13 @@ test_that("EMF integration accurately fills missing NA errors", {
   my_emf <- get_emf()
 
   # ensure it is NA before formatting
-  expect_true(is.na(dat5$x.sd[4]))
+  expect_true(is.na(dat5$x.err[4]))
 
   res5 <- formatData(dat5, emf = my_emf)
 
   # ensure it was filled correctly after formatting
-  expect_false(is.na(res5$x.sd[4]))
-  expect_equal(res5$x.sd[4], my_emf$emf.x[my_emf$lc == "A"])
+  expect_false(is.na(res5$x.err[4]))
+  expect_equal(res5$x.err[4], my_emf$emf.x[my_emf$lc == "A"])
 })
 
 test_that("sf spatial objects are safely parsed and stripped", {
@@ -98,23 +98,23 @@ test_that("Explicit lc='G' preserves user-specified ellipses or SDs", {
     smaj = c(NA, 10, NA), # Row 2 has an ellipse
     smin = c(NA, 5, NA),
     eor  = c(NA, 45, NA),
-    x.sd = c(5, NA, NA),  # Row 1 has SDs
-    y.sd = c(5, NA, NA)
+    x.err = c(5, NA, NA),  # Row 1 has SDs
+    y.err = c(5, NA, NA)
   ) # Row 3 has no errors
 
   res8 <- formatData(dat8)
 
   # row 1: G with SDs
-  expect_equal(res8$x.sd[1], 5)
+  expect_equal(res8$x.err[1], 5)
   expect_true(is.na(res8$smaj[1]))
 
   # row 2: G with Ellipse (ensure eor converted to radians correctly)
   expect_equal(res8$smaj[2], 10)
   expect_equal(res8$eor[2], 45 * pi / 180)
-  expect_true(is.na(res8$x.sd[2]))
+  expect_true(is.na(res8$x.err[2]))
 
   # row 3: G with no errors
-  expect_true(is.na(res8$x.sd[3]))
+  expect_true(is.na(res8$x.err[3]))
   expect_true(is.na(res8$smaj[3]))
 
   # all rows should still be class "G"
@@ -132,8 +132,8 @@ test_that("Argos classes preserve user-specified errors and selectively bypass E
     smaj = c(100, NA, NA), # Row 1 (LC 3) has an explicit ellipse
     smin = c(50, NA, NA),
     eor  = c(45, NA, NA),
-    x.sd = c(NA, 75, NA),  # Row 2 (LC A) has explicit SDs
-    y.sd = c(NA, 75, NA)   # Row 3 (LC B) has NO errors
+    x.err = c(NA, 75, NA),  # Row 2 (LC A) has explicit SDs
+    y.err = c(NA, 75, NA)   # Row 3 (LC B) has NO errors
   )
 
   my_emf <- get_emf()
@@ -141,15 +141,15 @@ test_that("Argos classes preserve user-specified errors and selectively bypass E
 
   # Row 1 (LC 3): Should KEEP its user-provided ellipse and NOT get EMF SDs
   expect_equal(res9$smaj[1], 100)
-  expect_true(is.na(res9$x.sd[1]))
+  expect_true(is.na(res9$x.err[1]))
 
   # Row 2 (LC A): Should KEEP its user-provided SDs (75) and NOT get overwritten by EMF
-  expect_equal(res9$x.sd[2], 75)
-  expect_true(res9$x.sd[2] != my_emf$emf.x[my_emf$lc == "A"])
+  expect_equal(res9$x.err[2], 75)
+  expect_true(res9$x.err[2] != my_emf$emf.x[my_emf$lc == "A"])
 
   # Row 3 (LC B): Had no errors, so it SHOULD be filled by the EMF table
-  expect_false(is.na(res9$x.sd[3]))
-  expect_equal(res9$x.sd[3], my_emf$emf.x[my_emf$lc == "B"])
+  expect_false(is.na(res9$x.err[3]))
+  expect_equal(res9$x.err[3], my_emf$emf.x[my_emf$lc == "B"])
 })
 
 test_that("Missing 'lc' column is assigned NA without guessing", {

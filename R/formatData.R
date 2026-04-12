@@ -8,9 +8,9 @@
 #' @param coord Character vector of length 2 specifying the column names for the (projected) coordinates. Default: c("x", "y").
 #' @param lc Character string specifying the column name for the location quality class. Default: ``lc''.
 #' @param epar Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). See Details. Default: c("smaj", "smin", "eor").
-#' @param sderr Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.sd", "y.sd").
-#' @param emf An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{get_emf}}). If provided, these values will be used to fill in \code{x.sd} and \code{y.sd} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.
-#' @param predTimes An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all other columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.
+#' @param sderr Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.err", "y.err").
+#' @param emf An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{get_emf}}). If provided, these values will be used to fill in \code{x.err} and \code{y.err} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.
+#' @param predTimes An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.
 #' @param time.unit Character string specifying the time unit for the time steps. Default: ``hours''.
 #' @param tz Character string specifying the time zone for the date/time column. Default: ``UTC''.
 #' @return A data frame of class \code{dataLangevin} containing the formatted tracking data. The data frame contains the following columns:
@@ -23,8 +23,8 @@
 #' \item{smaj}{Semi-major axis of the error ellipse}
 #' \item{smin}{Semi-minor axis of the error ellipse}
 #' \item{eor}{Error ellipse orientation (in radians)}
-#' \item{x.sd}{Standard deviation of the x-coordinate error}
-#' \item{y.sd}{Standard deviation of the y-coordinate error}
+#' \item{x.err}{Standard deviation of the x-coordinate error}
+#' \item{y.err}{Standard deviation of the y-coordinate error}
 #'
 #' @details
 #' \strong{Coordinate Systems and Units:}
@@ -36,7 +36,7 @@
 #' \itemize{
 #'   \item \strong{Argos Least Squares (3, 2, 1, 0, A, B, Z):} Typically lack explicit error parameters. If missing, these can be filled using the \code{emf} argument (see \code{\link{get_emf}}). However, if users explicitly provide error ellipses or standard deviations for any given observation in \code{data}, the user-specified values are preserved and \code{emf} filling is bypassed for this particular observation.
 #'   \item \strong{GPS or Argos Kalman Filter (G):} Can be provided with error ellipses, standard deviations, or no errors (which will be filled by the \code{emf} table if provided).
-#'   \item \strong{Generic Locations (GL):} Locations where standard deviations (\code{x.sd}, \code{y.sd}) are explicitly provided by the user. If \code{emf} is specified but no \code{x.sd} and \code{y.sd} are provided, these rows are not filled unless \code{emf} includes an entry for \code{GL} (otherwise an error is returned).
+#'   \item \strong{Generic Locations (GL):} Locations where standard deviations (\code{x.err}, \code{y.err}) are explicitly provided by the user. If \code{emf} is specified but no \code{x.err} and \code{y.err} are provided, these rows are not filled unless \code{emf} includes an entry for \code{GL} (otherwise an error is returned).
 #'   \item \strong{No Measurement Error:} If the \code{emf} argument is \code{NULL} (the default), observations with \code{NA} for all \code{epar} columns and \code{NA} for all \code{sderr} columns are assumed to have no measurement error. Their existing location class is preserved.
 #' }
 #'
@@ -57,7 +57,7 @@
 #' @importFrom dplyr rename arrange select all_of everything group_by ungroup filter row_number n
 #' @importFrom sf st_coordinates st_drop_geometry st_is_longlat
 #' @export
-formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), emf = NULL, predTimes = NULL, time.unit = "hours", tz = "UTC"){
+formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.err", "y.err"), emf = NULL, predTimes = NULL, time.unit = "hours", tz = "UTC"){
 
   if(inherits(data,"simLangevin") | inherits(data,"dataLangevin")) stop('data is already formatted for fitLangevin')
 
@@ -176,7 +176,7 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
   })
   out$dt <- unsplit(dt_list, out$id)
 
-  out <- out %>% dplyr::select(id, date, dt, x, y, lc, smaj, smin, eor, x.sd, y.sd, dplyr::everything())
+  out <- out %>% dplyr::select(id, date, dt, x, y, lc, smaj, smin, eor, x.err, y.err, dplyr::everything())
 
   # --- EMF INTEGRATION ---
   if (!is.null(emf)) {
@@ -187,7 +187,7 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
     # Identify rows that have valid coordinates but lack ANY error information
     missing_err_idx <- which(!is.na(out$x) & !is.na(out$y) &
                                is.na(out$smaj) & is.na(out$smin) & is.na(out$eor) &
-                               is.na(out$x.sd) & is.na(out$y.sd))
+                               is.na(out$x.err) & is.na(out$y.err))
 
     if (length(missing_err_idx) > 0) {
 
@@ -204,8 +204,8 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
       valid_matches <- !is.na(match_idx)
       update_idx <- missing_err_idx[valid_matches]
 
-      out$x.sd[update_idx] <- emf$emf.x[match_idx[valid_matches]]
-      out$y.sd[update_idx] <- emf$emf.y[match_idx[valid_matches]]
+      out$x.err[update_idx] <- emf$emf.x[match_idx[valid_matches]]
+      out$y.err[update_idx] <- emf$emf.y[match_idx[valid_matches]]
     }
   }
 

@@ -8,7 +8,7 @@ if (!exists("fit")) {
 
   # Base data centered at 250, 250
   df <- data.frame(id=1, date=seq(0,1,0.1), dt=c(0, rep(0.1, 10)), x=250, y=250,
-                   x.sd=1, y.sd=1, smaj=NA_real_, smin=NA_real_, eor=NA_real_)
+                   x.err=1, y.err=1, smaj=NA_real_, smin=NA_real_, eor=NA_real_)
   exDat <- class_dataLangevin(df)
   fit <- suppressMessages(fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE))
 }
@@ -24,7 +24,7 @@ test_that("simLangevin.fitLangevin handles POSIXt date and time.unit resolution"
     id = 1,
     date = as.POSIXct("2024-01-01 12:00:00", tz="UTC") + (0:10)*60,
     dt = c(0, rep(1/60, 10)),
-    x = 250, y = 250, x.sd=1, y.sd=1, smaj=NA, smin=NA, eor=NA
+    x = 250, y = 250, x.err=1, y.err=1, smaj=NA, smin=NA, eor=NA
   )
   attr(df_posix, "time.unit") <- "hours"
   exDat_posix <- class_dataLangevin(df_posix)
@@ -67,7 +67,7 @@ test_that("Imputation vs Predictive Check divergence and GoF validation", {
     dt = c(0, rep(1, 50)),
     x = seq(225, 275, length.out = 51),
     y = seq(225, 275, length.out = 51),
-    x.sd = 0.1, y.sd = 0.1, smaj = NA, smin = NA, eor = NA
+    x.err = 0.1, y.err = 0.1, smaj = NA, smin = NA, eor = NA
   )
   long_dat <- class_dataLangevin(long_df)
 

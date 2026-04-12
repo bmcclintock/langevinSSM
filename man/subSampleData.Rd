@@ -8,7 +8,7 @@ subSampleData(
   data,
   samplingRate = 1,
   propMissing = 0,
-  col_to_na = c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd")
+  col_to_na = c("x", "y", "smaj", "smin", "eor", "x.err", "y.err")
 )
 }
 \arguments{
@@ -18,7 +18,7 @@ subSampleData(
 
 \item{propMissing}{A numeric value between 0 and 1 specifying the proportion of observations to randomly set as missing (NA) in the subsample. Default is 0 (no missing values).}
 
-\item{col_to_na}{A character vector of column names in the data frame for which to introduce missing values. Default is \code{c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd")}. Ignored unless \code{propMissing > 0}.}
+\item{col_to_na}{A character vector of column names in the data frame for which to introduce missing values. Default is \code{c("x", "y", "smaj", "smin", "eor", "x.err", "y.err")}. Ignored unless \code{propMissing > 0}.}
 }
 \value{
 A subsampled \code{dataLangevin} object with the same structure as \code{data}, but with fewer rows (if \code{samplingRate>1}) and missing values (if \code{propMissing>0}) in the \code{col_to_na} columns.

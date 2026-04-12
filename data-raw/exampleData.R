@@ -16,7 +16,7 @@ obsPerAnimal <- 500
 sca <- 200
 examplePar=list(beta=c(-4, 6, 5, -0.1),sigma=5,gamma=0.5)
 ncov <- length(examplePar$beta)
-measurementError <- list(smaj.sd=1.5,smin.sd=0.75,eor=c(0,180))
+measurementError <- list(smaj.sd=1.5,smin.sd=0.75,eor.lim=c(0,180))
 exampleCovs <- lapply(rep(sca,ncov-1),simCov)
 exampleCovs <- lapply(1:(ncov-1),function(x) {
   names(exampleCovs[[x]]) <- paste0("cov",x);
@@ -59,7 +59,7 @@ start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")
 exampleDat$date <- start_time + (exampleDat$date * 3600)
 exampleDat$lc <- NA_character_
 exampleDat$mu.x <- exampleDat$mu.y <- exampleDat$vel.x <- exampleDat$vel.y <- NULL
-exampleDat <- exampleDat[,c("id","date","dt","x","y","lc","smaj","smin","eor","x.sd","y.sd")]
+exampleDat <- exampleDat[,c("id","date","dt","x","y","lc","smaj","smin","eor","x.err","y.err")]
 exampleDat$lc <- as.factor(exampleDat$lc)
 exampleDat$id <- as.factor(exampleDat$id)
 attr(exampleDat,"time.unit") <- "hours"

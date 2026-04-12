@@ -1,5 +1,5 @@
 #' @importFrom utils globalVariables
-utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.sd", "y.sd", "val", "lag", "UD", "type", "theoretical"))
+utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical"))
 
 #' Example Spatial Covariates
 #'
@@ -223,7 +223,7 @@ rasterList <- function (rast)
 ## modified from aniMotum version 1.2-15
 #' @importFrom sf st_as_sf st_crs
 #' @importFrom dplyr tibble
-format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "y"), epar = c("smaj", "smin", "eor"), sderr = c("x.sd", "y.sd"), tz = "UTC") {
+format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "y"), epar = c("smaj", "smin", "eor"), sderr = c("x.err", "y.err"), tz = "UTC") {
 
   if (id %in% names(x))
     stopifnot(`id must be a character string` = is.character(id))
@@ -256,7 +256,7 @@ format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "
   xx <- x[, c(id, date, lc, coord, epar, sderr, xt.vars)]
 
   # Force standard names
-  new_names <- c("id", "date", "lc", coord, "smaj", "smin", "eor", "x.sd", "y.sd", xt.vars)
+  new_names <- c("id", "date", "lc", coord, "smaj", "smin", "eor", "x.err", "y.err", xt.vars)
   names(xx) <- new_names
 
   if (is.factor(xx$id)) xx$id <- droplevels(xx$id)
@@ -280,7 +280,7 @@ format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "
 #' @param gps A numeric value or a vector of length 2 specifying the error multiplication factor for GPS locations. If a single value is provided, it will be used for both x and y axes. Default is 0.1 (i.e. GPS errors are 10x more accurate than Argos \code{lc} 3.
 #' @param emf.x A numeric vector of length 6 specifying the error multiplication factors for the x-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
 #' @param emf.y A numeric vector of length 6 specifying the error multiplication factors for the y-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
-#' @return A data frame with columns \code{lc}, \code{x.sd}, and \code{y.sd} containing the error multiplication factors for each location class. The location classes included are "G" for GPS and "3", "2", "1", "0", "A", "B", and "Z" for Argos satellite telemetry data.
+#' @return A data frame with columns \code{lc}, \code{emf.x}, and \code{emf.y} containing the error multiplication factors for each location class. The location classes included are "G" for GPS and "3", "2", "1", "0", "A", "B", and "Z" for Argos satellite telemetry data.
 #' @export
 get_emf <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
                      emf.y = c(1, 1.29, 2.55, 14.99, 22, 32.53))
@@ -301,18 +301,18 @@ get_emf <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
 checkErrorData <- function(data, coord=c("x","y"), measurementError = NULL, knownError = TRUE){
   if(any(is.na(data[,coord[1]]) & !is.na(data[,coord[2]])) | any(!is.na(data[,coord[1]]) & is.na(data[,coord[2]]))) stop("Missing values (NA) in coordinates must be in both x and y columns.")
   if(knownError){
-    if(any(is.na(data[,coord[1]]) & (!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor) | !is.na(data$x.sd) | !is.na(data$y.sd)))) stop("Measurement error terms must be NA when there are missing values in the coordinates.")
+    if(any(is.na(data[,coord[1]]) & (!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor) | !is.na(data$x.err) | !is.na(data$y.err)))) stop("Measurement error terms must be NA when there are missing values in the coordinates.")
     if(any(is.na(data$smaj) & (!is.na(data$smin) & !is.na(data$eor)))) stop("When using the error ellipse model, smaj, smin, and eor must all be provided or all be NA.")
-    if(any(is.na(data$x.sd) & !is.na(data$y.sd))) stop("When using the x- and y-axis error model, x.sd and y.sd must both be provided or both be NA.")
-    if(any((!is.na(data$smaj) & !is.na(data$smin) & !is.na(data$eor)) & (!is.na(data$x.sd) | !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA.\nIf using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
-    if(any((!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor)) & (!is.na(data$x.sd) & !is.na(data$y.sd)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.sd' and 'y.sd' must both be NA.\nIf using the x- and y-axis error model, 'x.sd' and 'y.sd' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
+    if(any(is.na(data$x.err) & !is.na(data$y.err))) stop("When using the x- and y-axis error model, x.err and y.err must both be provided or both be NA.")
+    if(any((!is.na(data$smaj) & !is.na(data$smin) & !is.na(data$eor)) & (!is.na(data$x.err) | !is.na(data$y.err)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.err' and 'y.err' must both be NA.\nIf using the x- and y-axis error model, 'x.err' and 'y.err' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
+    if(any((!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor)) & (!is.na(data$x.err) & !is.na(data$y.err)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.err' and 'y.err' must both be NA.\nIf using the x- and y-axis error model, 'x.err' and 'y.err' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
     if(isTRUE(any(data$eor<0 | data$eor > pi))) stop("Error ellipse orientation (eor) must be between 0 and pi radians.")
   }
   if(!is.null(measurementError)){
     if(knownError) stop("Cannot provide 'measurementError' parameters when the data already contains measurement error information. Please provide either 'measurementError' or appropriate measurement error columns in 'data', but not both.")
     if(!is.list(measurementError)) stop("'measurementError' must be a list.")
-    if(!all(c("smaj.sd", "smin.sd", "eor") %in% names(measurementError)) && !all(c("x.sd", "y.sd") %in% names(measurementError))) stop("When providing 'measurementError' parameters, you must provide either 'smaj.sd', 'smin.sd', and 'eor' for the error ellipse model, or 'x.sd' and 'y.sd' for the x- and y-axis error model.\nPlease provide the appropriate parameters for your chosen error model.")
-    if(all(c("smaj.sd", "smin.sd", "eor") %in% names(measurementError)) && all(c("x.sd", "y.sd") %in% names(measurementError))) stop("Cannot provide both error ellipse and x- and y-axis error parameters in 'measurementError'.\nPlease provide either 'smaj.sd', 'smin.sd', and 'eor' for the error ellipse model, or 'x.sd' and 'y.sd' for the x- and y-axis error model, but not both.")
+    if(!all(c("smaj.sd", "smin.sd") %in% names(measurementError)) && !all(c("x.sd", "y.sd") %in% names(measurementError))) stop("When providing 'measurementError' parameters, you must provide either 'smaj.sd', 'smin.sd', and 'eor.lim' for the error ellipse model, or 'x.sd' and 'y.sd' for the x- and y-axis error model.\nPlease provide the appropriate parameters for your chosen error model.")
+    if(all(c("smaj.sd", "smin.sd") %in% names(measurementError)) && all(c("x.sd", "y.sd") %in% names(measurementError))) stop("Cannot provide both error ellipse and x- and y-axis error parameters in 'measurementError'.\nPlease provide either 'smaj.sd', 'smin.sd', and 'eor.lim' for the error ellipse model, or 'x.sd' and 'y.sd' for the x- and y-axis error model, but not both.")
   }
 }
 

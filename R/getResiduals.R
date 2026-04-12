@@ -12,7 +12,7 @@
 #' @return An \code{resLangevin} data frame containing the OSA residuals. If \code{run_tests = TRUE}, the data frame will have an attribute \code{"tests"} containing a data frame of goodness-of-fit statistics and p-values.
 #' @examples
 #' par <- list(beta = c(-4, 6, 5, -0.1), sigma = 5, gamma = 0.5)
-#' measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor = c(0,180))
+#' measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor.lim = c(0,180))
 #'
 #' set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 #' # ridiculously small dataset for example purposes
@@ -65,7 +65,7 @@ getResiduals <- function(fit, data, spatialCovs, method = "oneStepGaussianOffMod
   dat$smaj <- data$smaj / cond$scaleFactor
   dat$smin <- data$smin / cond$scaleFactor
   dat$eor <- data$eor
-  dat$K <- as.matrix(data[, c("x.sd", "y.sd")] / cond$scaleFactor)
+  dat$K <- as.matrix(data[, c("x.err", "y.err")] / cond$scaleFactor)
   dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))))
   dat$obs_mod <- rep(NA, ncol(dat$Y))
   dat$obs_mod[dat$isd == 1 & (!is.na(dat$K[,1]) & !is.na(dat$K[,2]))] <- 0

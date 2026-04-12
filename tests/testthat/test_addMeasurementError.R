@@ -43,7 +43,7 @@ test_that("addMeasurementError catches conflicting error types in measurementErr
   bad_err <- list(smaj.sd = 1, smin.sd = 0.5, x.sd = 1, y.sd = 1)
 
   expect_error(addMeasurementError(df, measurementError = bad_err),
-               "Cannot provide both Argos KF")
+               "Cannot provide both error ellipse")
 
   # Not a list
   expect_error(addMeasurementError(df, measurementError = c(x.sd = 1, y.sd = 1)),
@@ -55,23 +55,23 @@ test_that("addMeasurementError catches conflicting error types in measurementErr
 
 test_that("addMeasurementError generates new KF errors correctly", {
   df <- get_base_data()
-  err <- list(smaj.sd = 2, smin.sd = 1, eor = c(0, 180))
+  err <- list(smaj.sd = 2, smin.sd = 1, eor.lim = c(0, 180))
 
   set.seed(123)
   res <- suppressWarnings(addMeasurementError(df, measurementError = err))
 
   # Check columns created
-  expect_true(all(c("x", "y", "smaj", "smin", "eor", "x.sd", "y.sd") %in% names(res)))
+  expect_true(all(c("x", "y", "smaj", "smin", "eor", "x.err", "y.err") %in% names(res)))
 
   # Check data types and structure
   expect_true(is.numeric(res$smaj))
-  expect_true(all(is.na(res$x.sd)))
+  expect_true(all(is.na(res$x.err)))
   expect_true(all(res$lc == "G"))
 
   # Check noise was actually added (x should not perfectly equal mu.x anymore)
   expect_false(isTRUE(all.equal(res$x, res$mu.x)))
 
-  # eor should be bounded between 0 and pi (since input eor was in degrees, rcpp handles the rad conversion)
+  # eor should be bounded between 0 and pi (since input eor.lim was in degrees, rcpp handles the rad conversion)
   expect_true(all(res$eor >= 0 & res$eor <= pi, na.rm = TRUE))
 })
 
@@ -83,7 +83,7 @@ test_that("addMeasurementError generates new LS errors correctly", {
   res <- suppressWarnings(addMeasurementError(df, measurementError = err))
 
   # Check columns
-  expect_true(all(!is.na(res$x.sd) & !is.na(res$y.sd)))
+  expect_true(all(!is.na(res$x.err) & !is.na(res$y.err)))
   expect_true(all(is.na(res$smaj) & is.na(res$smin) & is.na(res$eor)))
 
   # Check noise was added
@@ -113,15 +113,15 @@ test_that("addMeasurementError applies known KF errors correctly", {
   expect_true(all(res$smin == 2))
 
   # LS should be NA
-  expect_true(all(is.na(res$x.sd)))
+  expect_true(all(is.na(res$x.err)))
 })
 
 test_that("addMeasurementError applies known LS errors correctly", {
   df <- get_base_data()
 
   # Pre-populate errors directly
-  df$x.sd <- 5
-  df$y.sd <- 5
+  df$x.err <- 5
+  df$y.err <- 5
 
   set.seed(456)
   res <- suppressWarnings(addMeasurementError(df))
@@ -131,7 +131,7 @@ test_that("addMeasurementError applies known LS errors correctly", {
   expect_true(all(!is.na(res$y)))
 
   # Original sd columns remain intact
-  expect_true(all(res$x.sd == 5))
+  expect_true(all(res$x.err == 5))
 
   # KF columns should be NA
   expect_true(all(is.na(res$smin)))
@@ -142,8 +142,8 @@ test_that("addMeasurementError applies known LS errors correctly", {
 
 test_that("addMeasurementError properly parses natural and working parameter scales", {
   df <- get_base_data()
-  df$x.sd <- 1
-  df$y.sd <- 1
+  df$x.err <- 1
+  df$y.err <- 1
 
   # Using natural scale (tau = 10 scales the standard deviation x10)
   set.seed(111)
@@ -165,8 +165,8 @@ test_that("addMeasurementError catches conflicting error types in data (known er
   df$smaj <- 5
   df$smin <- 2
   df$eor <- 90
-  df$x.sd <- 5
-  df$y.sd <- 5
+  df$x.err <- 5
+  df$y.err <- 5
 
   expect_error(addMeasurementError(df),
                "Cannot provide both error ellipse and x- and y-axis error terms")
@@ -179,8 +179,8 @@ test_that("addMeasurementError correctly handles a mix of valid KF and LS errors
   df$smaj <- NA_real_
   df$smin <- NA_real_
   df$eor  <- NA_real_
-  df$x.sd <- NA_real_
-  df$y.sd <- NA_real_
+  df$x.err <- NA_real_
+  df$y.err <- NA_real_
 
   # Assign KF errors to the first 5 rows
   df$smaj[1:5] <- 5
@@ -188,8 +188,8 @@ test_that("addMeasurementError correctly handles a mix of valid KF and LS errors
   df$eor[1:5]  <- 90
 
   # Assign LS/GPS errors to the last 5 rows
-  df$x.sd[6:10] <- 3
-  df$y.sd[6:10] <- 3
+  df$x.err[6:10] <- 3
+  df$y.err[6:10] <- 3
 
   set.seed(789)
   res <- suppressWarnings(addMeasurementError(df))
@@ -207,8 +207,8 @@ test_that("addMeasurementError correctly handles a mix of valid KF and LS errors
   expect_equal(res$smaj[1:5], rep(5, 5))
   expect_true(all(is.na(res$smaj[6:10])))
 
-  expect_equal(res$x.sd[6:10], rep(3, 5))
-  expect_true(all(is.na(res$x.sd[1:5])))
+  expect_equal(res$x.err[6:10], rep(3, 5))
+  expect_true(all(is.na(res$x.err[1:5])))
 })
 
 # --- Tests: Class Handling (dataLangevin / simLangevin) ---
@@ -300,7 +300,7 @@ test_that("addMeasurementError handles simLangevin objects from simLangevin.fitL
 
   # 4. Generate New Post-hoc Errors (Kalman Filter this time)
   set.seed(456)
-  res <- suppressWarnings(addMeasurementError(sim_fit_dat, measurementError = list(smaj.sd = 2, smin.sd = 1, eor = c(0, 180))))
+  res <- suppressWarnings(addMeasurementError(sim_fit_dat, measurementError = list(smaj.sd = 2, smin.sd = 1, eor.lim = c(0, 180))))
 
   # Verify divergence
   expect_false(isTRUE(all.equal(res$x, res$mu.x)))

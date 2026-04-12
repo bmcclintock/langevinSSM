@@ -11,7 +11,7 @@ formatData(
   coord = c("x", "y"),
   lc = "lc",
   epar = c("smaj", "smin", "eor"),
-  sderr = c("x.sd", "y.sd"),
+  sderr = c("x.err", "y.err"),
   emf = NULL,
   predTimes = NULL,
   time.unit = "hours",
@@ -31,11 +31,11 @@ formatData(
 
 \item{epar}{Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). See Details. Default: c("smaj", "smin", "eor").}
 
-\item{sderr}{Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.sd", "y.sd").}
+\item{sderr}{Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.err", "y.err").}
 
-\item{emf}{An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{get_emf}}). If provided, these values will be used to fill in \code{x.sd} and \code{y.sd} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.}
+\item{emf}{An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{get_emf}}). If provided, these values will be used to fill in \code{x.err} and \code{y.err} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.}
 
-\item{predTimes}{An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all other columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.}
+\item{predTimes}{An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.}
 
 \item{time.unit}{Character string specifying the time unit for the time steps. Default: ``hours''.}
 
@@ -52,8 +52,8 @@ A data frame of class \code{dataLangevin} containing the formatted tracking data
 \item{smaj}{Semi-major axis of the error ellipse}
 \item{smin}{Semi-minor axis of the error ellipse}
 \item{eor}{Error ellipse orientation (in radians)}
-\item{x.sd}{Standard deviation of the x-coordinate error}
-\item{y.sd}{Standard deviation of the y-coordinate error}
+\item{x.err}{Standard deviation of the x-coordinate error}
+\item{y.err}{Standard deviation of the y-coordinate error}
 }
 \description{
 \code{formatData} takes a data frame or \code{sf} object containing tracking data and formats it for use with the \code{\link{fitLangevin}} function. It is a modified version of the \code{format_data} function from the \href{https://ianjonsen.github.io/aniMotum/}{aniMotum} package.
@@ -68,7 +68,7 @@ For x- and y-axis error data, the columns specified in \code{sderr} should conta
 \itemize{
   \item \strong{Argos Least Squares (3, 2, 1, 0, A, B, Z):} Typically lack explicit error parameters. If missing, these can be filled using the \code{emf} argument (see \code{\link{get_emf}}). However, if users explicitly provide error ellipses or standard deviations for any given observation in \code{data}, the user-specified values are preserved and \code{emf} filling is bypassed for this particular observation.
   \item \strong{GPS or Argos Kalman Filter (G):} Can be provided with error ellipses, standard deviations, or no errors (which will be filled by the \code{emf} table if provided).
-  \item \strong{Generic Locations (GL):} Locations where standard deviations (\code{x.sd}, \code{y.sd}) are explicitly provided by the user. If \code{emf} is specified but no \code{x.sd} and \code{y.sd} are provided, these rows are not filled unless \code{emf} includes an entry for \code{GL} (otherwise an error is returned).
+  \item \strong{Generic Locations (GL):} Locations where standard deviations (\code{x.err}, \code{y.err}) are explicitly provided by the user. If \code{emf} is specified but no \code{x.err} and \code{y.err} are provided, these rows are not filled unless \code{emf} includes an entry for \code{GL} (otherwise an error is returned).
   \item \strong{No Measurement Error:} If the \code{emf} argument is \code{NULL} (the default), observations with \code{NA} for all \code{epar} columns and \code{NA} for all \code{sderr} columns are assumed to have no measurement error. Their existing location class is preserved.
 }
 

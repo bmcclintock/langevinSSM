@@ -325,24 +325,24 @@ List measurementError_LS_rcpp(DataFrame data,
     obs_y = clone(muy);
   }
 
-  NumericVector x_sd_vec(n);
-  NumericVector y_sd_vec(n);
+  NumericVector x_err_vec(n);
+  NumericVector y_err_vec(n);
 
   if (knownError) {
-    x_sd_vec = data["x.sd"];
-    y_sd_vec = data["y.sd"];
+    x_err_vec = data["x.err"];
+    y_err_vec = data["y.err"];
   } else {
     for(int i = 0; i < n; i++) {
-      x_sd_vec[i] = std::abs(R::rnorm(0.0, x_sd));
-      y_sd_vec[i] = std::abs(R::rnorm(0.0, y_sd));
+      x_err_vec[i] = std::abs(R::rnorm(0.0, x_sd));
+      y_err_vec[i] = std::abs(R::rnorm(0.0, y_sd));
     }
   }
 
   for(int i = 0; i < n; i++) {
-    if (NumericVector::is_na(x_sd_vec[i])) continue; // Skip if no LS error for this row
+    if (NumericVector::is_na(x_err_vec[i])) continue; // Skip if no LS error for this row
 
-    double s = tau_x * x_sd_vec[i];
-    double q = tau_y * y_sd_vec[i];
+    double s = tau_x * x_err_vec[i];
+    double q = tau_y * y_err_vec[i];
 
     arma::mat cov_obs(2, 2, arma::fill::zeros);
     cov_obs(0,0) = s * s;
@@ -361,6 +361,6 @@ List measurementError_LS_rcpp(DataFrame data,
     return List::create(Named("x") = obs_x, Named("y") = obs_y);
   } else {
     return List::create(Named("x") = obs_x, Named("y") = obs_y,
-                        Named("x.sd") = x_sd_vec, Named("y.sd") = y_sd_vec);
+                        Named("x.err") = x_err_vec, Named("y.err") = y_err_vec);
   }
 }

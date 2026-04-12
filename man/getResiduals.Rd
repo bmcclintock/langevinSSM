@@ -37,7 +37,7 @@ Reconstructs the TMB objective function from a fitted model to calculate OSA res
 }
 \examples{
 par <- list(beta = c(-4, 6, 5, -0.1), sigma = 5, gamma = 0.5)
-measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor = c(0,180))
+measurementError <- list(smaj.sd = 1.5, smin.sd = 0.75, eor.lim = c(0,180))
 
 set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 # ridiculously small dataset for example purposes

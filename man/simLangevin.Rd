@@ -48,9 +48,9 @@ simLangevin(model, ...)
 
 \item{initialPosition}{Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.}
 
-\item{measurementError}{List of specifications to add measurement error (e.g., \code{smaj.sd}, \code{smin.sd}, \code{eor} for Argos KF; or \code{x.sd}, \code{y.sd} for Least Squares). Default: \code{NULL}.}
+\item{measurementError}{A list of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.}
 
-\item{subSample}{List of specifications for subsampling data from the continuous-time process model. Default: \code{NULL}.}
+\item{subSample}{List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
 
 \item{data}{The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.}
 
@@ -96,7 +96,7 @@ simDat_ee <- simLangevin(par = par,
                       spatialCovs = exampleCovs,
                       measurementError = list(smaj.sd = 1.5,
                                               smin.sd = 0.75,
-                                              eor = c(0,180)))
+                                              eor.lim = c(0,180)))
 # x- and y-axis errors
 # exampleCovs included in package; see ?exampleCovs for details
 simDat_xy <- simLangevin(par = par,

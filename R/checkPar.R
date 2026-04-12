@@ -26,7 +26,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL){
       stop("Cannot specify 'psi' in 'par' or 'map' because the data does not contain error ellipse observations.")
     }
     if (!has_ls && (any(c("tau", "rho_o") %in% names(par)) || any(c("tau", "rho_o") %in% names(map)))) {
-      stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard deviation observations.")
+      stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard error observations ('x.err', 'y.err').")
     }
   }
 

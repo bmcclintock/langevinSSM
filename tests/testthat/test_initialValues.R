@@ -94,8 +94,8 @@ test_that("User-provided par values override empirical estimates", {
   dat <- get_mock_dataLangevin()
 
   # inject dummy standard deviations so it is legal to test rho_o
-  dat$x.sd <- rep(1, nrow(dat))
-  dat$y.sd <- rep(1, nrow(dat))
+  dat$x.err <- rep(1, nrow(dat))
+  dat$y.err <- rep(1, nrow(dat))
 
   covs <- get_mock_covs()
 
@@ -190,11 +190,11 @@ test_that("initialValues rejects observation parameters when data lacks correspo
 
   # attempt to pass tau
   expect_error(initialValues(data = dat, par = list(tau = c(1,1)), spatialCovs = covs),
-               "standard deviation observations")
+               "standard error observations")
 
   # attempt to pass rho_o
   expect_error(initialValues(data = dat, par = list(rho_o = 0.5), spatialCovs = covs),
-               "standard deviation observations")
+               "standard error observations")
 })
 
 test_that("User-provided par$mu and par$vel override empirical estimates", {

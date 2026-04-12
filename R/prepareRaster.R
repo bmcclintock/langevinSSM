@@ -95,8 +95,8 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
       stop("Some tracking locations fall outside the boundaries of 'spatialCovs'. Expand the extent of the rasters.")
     }
 
-    err_x_vals <- c(data$x.sd, data$smaj)
-    err_y_vals <- c(data$y.sd, data$smaj)
+    err_x_vals <- c(data$x.err, data$smaj)
+    err_y_vals <- c(data$y.err, data$smaj)
 
     max_err_x <- if (all(is.na(err_x_vals))) 0 else max(err_x_vals, na.rm = TRUE)
     max_err_y <- if (all(is.na(err_y_vals))) 0 else max(err_y_vals, na.rm = TRUE)

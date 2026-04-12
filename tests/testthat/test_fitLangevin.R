@@ -16,8 +16,8 @@ get_valid_dataLangevin <- function() {
     dt = rep(1, 5),
     x = c(40, 45, 50, 55, 60),
     y = c(40, 45, 50, 55, 60),
-    x.sd = rep(1, 5),
-    y.sd = rep(1, 5),
+    x.err = rep(1, 5),
+    y.err = rep(1, 5),
     smaj = rep(NA, 5),
     smin = rep(NA, 5),
     eor = rep(NA, 5),
@@ -132,7 +132,7 @@ test_that("fitLangevin validates parameter lengths and map structures", {
 
 test_that("fitLangevin rejects observation parameters when data lacks corresponding errors", {
   r <- list(habitat = get_valid_raster())
-  dat <- get_valid_dataLangevin() # This mock has x.sd/y.sd, but NO smaj/smin/eor
+  dat <- get_valid_dataLangevin() # This mock has x.err/y.err, but NO smaj/smin/eor
   p <- get_valid_par()
 
   # attempt to pass psi (should fail because there is no ellipse data)
@@ -147,17 +147,17 @@ test_that("fitLangevin rejects observation parameters when data lacks correspond
 
   # now strip LS/GPS data to test tau/rho rejection
   dat_no_err <- dat
-  dat_no_err$x.sd <- NA
-  dat_no_err$y.sd <- NA
+  dat_no_err$x.err <- NA
+  dat_no_err$y.err <- NA
 
   p_bad_tau <- p
   p_bad_tau$tau <- c(1, 1)
   expect_error(suppressMessages(fitLangevin(data = dat_no_err, spatialCovs = r, par = p_bad_tau)),
-               "standard deviation observations")
+               "standard error observations")
 
   # map rho_o should fail
   expect_error(suppressMessages(fitLangevin(data = dat_no_err, spatialCovs = r, par = p, map = list(rho_o = as.factor(NA)))),
-               "standard deviation observations")
+               "standard error observations")
 })
 
 test_that("mapDuplicatedTimes correctly maps duplicate states and preserves user maps", {
@@ -273,8 +273,8 @@ test_that("fitLangevin successfully fits end-to-end with duplicated times", {
     x = x,
     y = y,
     lc = rep("G", n_obs),
-    x.sd = rep(3, n_obs), # 3m GPS error
-    y.sd = rep(3, n_obs)
+    x.err = rep(3, n_obs), # 3m GPS error
+    y.err = rep(3, n_obs)
   )
 
   # 3. Inject Edge Cases
@@ -358,8 +358,8 @@ test_that("fitLangevin respects user-defined map with duplicated times", {
     x = x,
     y = y,
     lc = rep("G", n_obs),
-    x.sd = rep(3, n_obs),
-    y.sd = rep(3, n_obs)
+    x.err = rep(3, n_obs),
+    y.err = rep(3, n_obs)
   )
 
   # 3. Inject a Hard Duplicate (at index 10)
@@ -474,17 +474,17 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   init_par <- list(beta = 0, sigma = 5, gamma=0.5)
 
   dat <- suppressMessages(simLangevin(obsPerAnimal=100,
-    model = "underdamped",
-    spatialCovs = spatialCovs,
-    par = init_par
+                                      model = "underdamped",
+                                      spatialCovs = spatialCovs,
+                                      par = init_par
   ))
 
   start_time <- as.POSIXct("2024-01-01 00:00:00", tz = "UTC")
   dat$date <- start_time + (1:nrow(dat)) * 3600
 
   # FORCEFULLY assign observation errors to everything initially
-  dat$x.sd <- 2
-  dat$y.sd <- 2
+  dat$x.err <- 2
+  dat$y.err <- 2
   dat$lc <- "G"
   dat$id <- "A"
 
@@ -496,9 +496,9 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   dat <- rbind(dat, dup_row1)
 
   # B. Hard Duplicate 2 (Known location, NO observation error)
-  # We set x.sd and y.sd to NA to trigger the "perfect track" logic.
-  dat$x.sd[20] <- NA
-  dat$y.sd[20] <- NA
+  # We set x.err and y.err to NA to trigger the "perfect track" logic.
+  dat$x.err[20] <- NA
+  dat$y.err[20] <- NA
   dup_row2 <- dat[20, ]
   dat <- rbind(dat, dup_row2)
 
@@ -541,7 +541,7 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   # 3. Known Locations (No observation error)
   # Because these have no error, TMB skips their observation likelihood (isd=0).
   # With no likelihood to evaluate, their residuals MUST be NA.
-  known_obs_idx <- which(is.na(fmt_dat$x.sd) & !is.na(fmt_dat$x))
+  known_obs_idx <- which(is.na(fmt_dat$x.err) & !is.na(fmt_dat$x))
   expect_true(length(known_obs_idx) == 2) # The original + the duplicate
   expect_true(all(is.na(fit$residuals$residual.x[known_obs_idx])))
 
@@ -570,17 +570,17 @@ test_that("overdamped fitLangevin calculates OSA residuals correctly with duplic
   init_par <- list(beta = 0, sigma = 5)
 
   dat <- suppressMessages(simLangevin(obsPerAnimal=100,
-                     model = "overdamped",
-                     spatialCovs = spatialCovs,
-                     par = init_par
+                                      model = "overdamped",
+                                      spatialCovs = spatialCovs,
+                                      par = init_par
   ))
 
   start_time <- as.POSIXct("2024-01-01 00:00:00", tz = "UTC")
   dat$date <- start_time + (1:nrow(dat)) * 3600
 
   # FORCEFULLY assign observation errors to everything initially
-  dat$x.sd <- 2
-  dat$y.sd <- 2
+  dat$x.err <- 2
+  dat$y.err <- 2
   dat$lc <- "G"
   dat$id <- "A"
 
@@ -592,9 +592,9 @@ test_that("overdamped fitLangevin calculates OSA residuals correctly with duplic
   dat <- rbind(dat, dup_row1)
 
   # B. Hard Duplicate 2 (Known location, NO observation error)
-  # We set x.sd and y.sd to NA to trigger the "perfect track" logic.
-  dat$x.sd[20] <- NA
-  dat$y.sd[20] <- NA
+  # We set x.err and y.err to NA to trigger the "perfect track" logic.
+  dat$x.err[20] <- NA
+  dat$y.err[20] <- NA
   dup_row2 <- dat[20, ]
   dat <- rbind(dat, dup_row2)
 
@@ -631,7 +631,7 @@ test_that("overdamped fitLangevin calculates OSA residuals correctly with duplic
   expect_true(all(is.na(fit$residuals$residual.x[na_obs_idx])))
 
   # 2. Known Locations (No observation error) MUST be NA
-  known_obs_idx <- which(is.na(fmt_dat$x.sd) & !is.na(fmt_dat$x))
+  known_obs_idx <- which(is.na(fmt_dat$x.err) & !is.na(fmt_dat$x))
   expect_true(length(known_obs_idx) == 2) # The original + the duplicate
   expect_true(all(is.na(fit$residuals$residual.x[known_obs_idx])))
 

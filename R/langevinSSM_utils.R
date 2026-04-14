@@ -282,7 +282,7 @@ format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "
 #' @param emf.y A numeric vector of length 6 specifying the error multiplication factors for the y-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
 #' @return A data frame with columns \code{lc}, \code{emf.x}, and \code{emf.y} containing the error multiplication factors for each location class. The location classes included are "G" for GPS and "3", "2", "1", "0", "A", "B", and "Z" for Argos satellite telemetry data.
 #' @export
-get_emf <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
+getEMF <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
                      emf.y = c(1, 1.29, 2.55, 14.99, 22, 32.53))
 {
   if (!length(gps) %in% 1:2)

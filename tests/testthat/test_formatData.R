@@ -52,7 +52,7 @@ test_that("Custom error parameter names are successfully standardized", {
 
 test_that("EMF integration accurately fills missing NA errors", {
   dat5 <- get_base_data()
-  my_emf <- get_emf()
+  my_emf <- getEMF()
 
   # ensure it is NA before formatting
   expect_true(is.na(dat5$x.err[4]))
@@ -136,7 +136,7 @@ test_that("Argos classes preserve user-specified errors and selectively bypass E
     y.err = c(NA, 75, NA)   # Row 3 (LC B) has NO errors
   )
 
-  my_emf <- get_emf()
+  my_emf <- getEMF()
   res9 <- formatData(dat9, emf = my_emf)
 
   # Row 1 (LC 3): Should KEEP its user-provided ellipse and NOT get EMF SDs

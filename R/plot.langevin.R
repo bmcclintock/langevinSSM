@@ -5,10 +5,11 @@
 #'   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
 #'   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
 #'   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
-#'   \item \strong{\code{plotUD}:} Plots the estimated Utilization Distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
+#'   \item \strong{\code{plot.resLangevin}:} Generates Q-Q and ACF diagnostic plots for One-Step-Ahead (OSA) residuals.
+#'   \item \strong{\code{plotUD}:} Plots the estimated utilization distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 #' }
 #'
-#' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, or \code{udLangevin} object.
+#' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{udLangevin}, or \code{resLangevin} object.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
 #' @param log Logical. For \code{fitLangevin} and \code{simLangevin}, indicates whether to plot the log UD (default: \code{TRUE}) or the probability UD. For \code{udLangevin}, indicates whether to plot the log of the standard error (\code{TRUE}) or natural standard error (default: \code{TRUE}).
@@ -16,9 +17,10 @@
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
-#' @param ... Additional arguments passed to \code{\link{plotRaster}}.
+#' @param tracks Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).
+#' @param ... Additional arguments passed to internal plotting methods.
 #'
-#' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} argument.
+#' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
 #'
 #' @name plot.langevin
 #' @importFrom terra as.data.frame nlyr time crop ext
@@ -79,7 +81,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
     plot_list[[pid]] <- .build_langevin_plot(
       track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
-      track_colors = c("Observed" = "lightgrey", "Estimated" = "tomato"),
+      track_colors = c("Observed" = "lightgrey", "Estimated" = "#E69F00"),
       track_lines = c("Observed" = "dashed", "Estimated" = "solid"), ...
     )
   }
@@ -106,13 +108,13 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
 
   # --- Prepare Tracks ---
   obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
-  true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True (mu)")
+  true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True (\u03bc)")
 
   track_df <- rbind(obs_df, true_df)
-  track_df$type <- factor(track_df$type, levels = c("Observed", "True (mu)"))
+  track_df$type <- factor(track_df$type, levels = c("Observed", "True (\u03bc)"))
 
-  track_colors <- c("Observed" = "lightgrey", "True (mu)" = "tomato")
-  track_lines <- c("Observed" = "dashed", "True (mu)" = "solid")
+  track_colors <- c("Observed" = "lightgrey", "True (\u03bc)" = "#E69F00")
+  track_lines <- c("Observed" = "dashed", "True (\u03bc)" = "solid")
 
   ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, log = log, plot = FALSE)
   ud_layer_name <- if (log) "log_UD" else "UD"
@@ -156,11 +158,11 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
   obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
 
   if (is_sim) {
-    true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True (mu)")
+    true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True (\u03bc)")
     track_df <- rbind(obs_df, true_df)
-    track_df$type <- factor(track_df$type, levels = c("Observed", "True (mu)"))
-    track_colors <- c("Observed" = "lightgrey", "True (mu)" = "tomato")
-    track_lines <- c("Observed" = "dashed", "True (mu)" = "solid")
+    track_df$type <- factor(track_df$type, levels = c("Observed", "True (\u03bc)"))
+    track_colors <- c("Observed" = "lightgrey", "True (\u03bc)" = "#E69F00")
+    track_lines <- c("Observed" = "dashed", "True (\u03bc)" = "solid")
   } else {
     track_df <- obs_df
     track_df$type <- factor(track_df$type, levels = c("Observed"))
@@ -201,6 +203,40 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
   return(main_plot_list)
 }
 
+#' @rdname plot.langevin
+#' @method plot resLangevin
+#' @importFrom stats acf qnorm qchisq ppoints quantile dnorm dchisq na.omit
+#' @export
+plot.resLangevin <- function(x, tracks = NULL, ...) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+
+    stop("Package 'ggplot2' is required for plotting residuals. Please install it.")
+  }
+
+  resids <- x
+
+  if (is.null(tracks)) {
+    return(.generate_res_plots(resids))
+  } else {
+    if (length(tracks) == 1 && tracks[1] == "all") {
+      tracks_to_plot <- unique(resids$id)
+    } else {
+      tracks_to_plot <- tracks
+    }
+
+    out_list <- list()
+    for (trk in tracks_to_plot) {
+      sub_data <- resids[resids$id == trk, ]
+      if (nrow(sub_data) > 0) {
+        out_list[[as.character(trk)]] <- .generate_res_plots(sub_data, paste0(" - ID: ", trk))
+      } else {
+        warning("No data found for track ID: ", trk, ". Skipping this track.")
+      }
+    }
+    return(out_list)
+  }
+}
+
 #' @details Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
 #' @rdname plot.langevin
 #' @export
@@ -211,10 +247,8 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   plot_list <- list()
   layer_names <- names(x)
 
-  # 1. Plot Base UD
   ud_name <- if (any(grepl("^log_UD", layer_names))) "log_UD" else "UD"
 
-  # Safely extract all layers that match the target name
   target_idx <- which(layer_names == ud_name)
   ud_rast <- x[[target_idx]]
 
@@ -226,11 +260,10 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   plot_list[["UD"]] <- plotRaster(ud_rast, legend.title = ud_legend, extent = extent, time = time, ...) +
     ggplot2::labs(title = ud_title)
 
-  # Define common legend expressions for uncertainty plots
   se_legend <- "SE" # if (log) expression(log(SE(pi(x)))) else expression(SE(pi(x)))
   cv_legend <- "CV" #expression(CV(pi(x)))
 
-  # 2. Plot Delta Method Uncertainty
+  # plot Delta method uncertainty
   if ("UD_SE_delta" %in% layer_names && "UD_CV_delta" %in% layer_names) {
     se_idx <- which(layer_names == "UD_SE_delta")
     cv_idx <- which(layer_names == "UD_CV_delta")
@@ -249,18 +282,16 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
       ggplot2::labs(title = "UD coefficient of variation (Delta method)")
   }
 
-  # 3. Plot Simulated Uncertainty (Welford's Algorithm)
+  # plot Monte Carlo undertainty
   if ("UD_SE_sim" %in% layer_names && "UD_CV_sim" %in% layer_names) {
     se_sim_idx <- which(layer_names == "UD_SE_sim")
     cv_sim_idx <- which(layer_names == "UD_CV_sim")
 
     se_rast_sim <- x[[se_sim_idx]]
-
     if (log) {
       se_rast_sim <- log(se_rast_sim)
       names(se_rast_sim) <- rep("log_UD_SE_sim", terra::nlyr(se_rast_sim))
     }
-
     plot_list[["SE_sim"]] <- plotRaster(se_rast_sim, legend.title = se_legend, extent = extent, time = time, ...) +
       ggplot2::labs(title = ifelse(log, "UD log standard error (simulated)", "UD standard error (simulated)"))
 
@@ -268,18 +299,127 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
       ggplot2::labs(title = "UD coefficient of variation (simulated)")
   }
 
+  # return single plot if no uncertainty, otherwise return the full list
   if (length(plot_list) == 1) return(plot_list[[1]])
 
   return(plot_list)
 }
 
-# --- Internal Helper for Plotting Engine ---
-.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent, time, compact, title_text, fill_label, track_colors, track_lines, ...) {
+# --- Internal Helpers for plot.resLangevin ---
 
-  trk_sub <- if (compact) track_df else track_df[track_df$id == pid, ]
+.make_acf_plot <- function(x, title) {
+  x <- stats::na.omit(x)
+  if(length(x) < 2) return(NULL)
+
+  acf_obj <- stats::acf(x, plot = FALSE)
+  acf_df <- data.frame("lag" = acf_obj$lag[, 1, 1], "acf" = acf_obj$acf[, 1, 1])
+  clim <- stats::qnorm(0.975) / sqrt(acf_obj$n.used)
+
+  ggplot2::ggplot(acf_df, ggplot2::aes(x = lag, y = acf)) +
+    ggplot2::geom_hline(yintercept = c(0, -clim, clim),
+                        color = c("black", "blue", "blue"),
+                        linetype = c("solid", "dashed", "dashed")) +
+    ggplot2::geom_segment(ggplot2::aes(xend = lag, yend = 0)) +
+    ggplot2::labs(title = title, x = "Lag", y = "ACF") +
+    ggplot2::theme_minimal()
+}
+
+.make_qq_norm <- function(x, title) {
+  x <- sort(stats::na.omit(x))
+  n <- length(x)
+  if(n < 2) return(NULL)
+
+  p <- stats::ppoints(n)
+  z <- stats::qnorm(p)
+
+  Qx <- stats::quantile(x, c(0.25, 0.75), names = FALSE)
+  Qz <- stats::qnorm(c(0.25, 0.75))
+  slope <- diff(Qx) / diff(Qz)
+  int <- Qx[1] - slope * Qz[1]
+
+  se <- slope / stats::dnorm(z) * sqrt(p * (1 - p) / n)
+  fit_line <- int + slope * z
+  upper <- fit_line + 1.96 * se
+  lower <- fit_line - 1.96 * se
+
+  outlier <- x < lower | x > upper
+
+  df <- data.frame("sample" = x, "theoretical" = z, "lower" = lower, "upper" = upper, "outlier" = outlier)
+
+  ggplot2::ggplot(df, ggplot2::aes(x = theoretical, y = sample)) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper), fill = "grey80", alpha = 0.5) +
+    ggplot2::geom_abline(intercept = int, slope = slope, color = "red", linewidth = 1) +
+    ggplot2::geom_point(ggplot2::aes(color = outlier), alpha = 0.6) +
+    ggplot2::scale_color_manual(values = c("FALSE" = "royalblue", "TRUE" = "red")) +
+    ggplot2::labs(title = title, x = "Theoretical Quantiles", y = "Sample Quantiles") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = "none")
+}
+
+.make_qq_chisq <- function(x, title) {
+  x <- sort(stats::na.omit(x))
+  n <- length(x)
+  if(n < 2) return(NULL)
+
+  p <- stats::ppoints(n)
+  z <- stats::qchisq(p, df = 2)
+
+  slope <- 1
+  int <- 0
+
+  se <- slope / stats::dchisq(z, df = 2) * sqrt(p * (1 - p) / n)
+  fit_line <- int + slope * z
+  upper <- fit_line + 1.96 * se
+  lower <- fit_line - 1.96 * se
+
+  outlier <- x < lower | x > upper
+
+  df <- data.frame("sample" = x, "theoretical" = z, "lower" = lower, "upper" = upper, "outlier" = outlier)
+
+  ggplot2::ggplot(df, ggplot2::aes(x = theoretical, y = sample)) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper), fill = "grey80", alpha = 0.5) +
+    ggplot2::geom_abline(intercept = int, slope = slope, color = "red", linewidth = 1, linetype = "dashed") +
+    ggplot2::geom_point(ggplot2::aes(color = outlier), alpha = 0.6) +
+    ggplot2::scale_color_manual(values = c("FALSE" = "royalblue", "TRUE" = "red")) +
+    ggplot2::labs(title = title, x = "Theoretical Quantiles (Chi-sq, df=2)", y = "Sample Squared Mahalanobis Distance") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = "none")
+}
+
+.generate_res_plots <- function(data_subset, title_suffix = "") {
+  res_x_full <- data_subset$residual.x[!is.na(data_subset$residual.x)]
+  res_y_full <- data_subset$residual.y[!is.na(data_subset$residual.y)]
+
+  valid_idx <- which(!is.na(data_subset$residual.x) & !is.na(data_subset$residual.y))
+  res_x_pair <- data_subset$residual.x[valid_idx]
+  res_y_pair <- data_subset$residual.y[valid_idx]
+  D2 <- res_x_pair^2 + res_y_pair^2
+
+  p_qq_x <- .make_qq_norm(res_x_full, paste0("Normal Q-Q Plot: x residuals", title_suffix))
+  p_qq_y <- .make_qq_norm(res_y_full, paste0("Normal Q-Q Plot: y residuals", title_suffix))
+  p_acf_x <- .make_acf_plot(res_x_full, paste0("ACF: x residuals", title_suffix))
+  p_acf_y <- .make_acf_plot(res_y_full, paste0("ACF: y residuals", title_suffix))
+
+  p_qq_mah <- .make_qq_chisq(D2, paste0("Mahalanobis Q-Q Plot", title_suffix))
+  p_acf_mah <- .make_acf_plot(D2, paste0("ACF: Mahalanobis Distance", title_suffix))
+
+  return(list(
+    qq_x = p_qq_x, qq_y = p_qq_y,
+    acf_x = p_acf_x, acf_y = p_acf_y,
+    qq_mah = p_qq_mah, acf_mah = p_acf_mah
+  ))
+}
+
+# --- Internal Helper for Plotting Engine ---
+.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent = NULL, time = NULL, compact = TRUE, title_text = "", fill_label = "", track_colors = NULL, track_lines = NULL, ...) {
+
+  trk_sub <- NULL
+  if (!is.null(track_df)) {
+    trk_sub <- if (compact) track_df else track_df[track_df$id == pid, ]
+  }
 
   current_extent <- user_extent
-  if (is.null(current_extent)) {
+  if (is.null(current_extent) && !is.null(trk_sub) && nrow(trk_sub) > 0) {
     x_range <- max(trk_sub$x, na.rm = TRUE) - min(trk_sub$x, na.rm = TRUE)
     y_range <- max(trk_sub$y, na.rm = TRUE) - min(trk_sub$y, na.rm = TRUE)
     max_range <- max(x_range, y_range, 1) # Fallback to 1 if point is singular
@@ -307,18 +447,21 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
     ggplot2::theme_minimal() +
     ggplot2::labs(x = "easting (x)", y = "northing (y)", title = title_text)
 
-  if(length(track_colors) > 1) {
-    p <- p +
-      ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, linetype = type, group = interaction(id, type)), linewidth = 0.5, alpha = 0.8) +
-      ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, shape = type), size = 1, alpha = 0.8) +
-      ggplot2::scale_color_manual(name = "Data Type", values = track_colors) +
-      ggplot2::scale_linetype_manual(name = "Data Type", values = track_lines) +
-      ggplot2::scale_shape_manual(name = "Data Type", values = c(16, 16))
-  } else {
-    p <- p +
-      ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, group = id), color = track_colors[1], linetype = track_lines[1], linewidth = 0.5, alpha = 0.8) +
-      ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y), color = track_colors[1], shape = 16, size = 1, alpha = 0.8)
+  if (!is.null(trk_sub) && nrow(trk_sub) > 0) {
+    if(length(track_colors) > 1) {
+      p <- p +
+        ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, linetype = type, group = interaction(id, type)), linewidth = 0.5, alpha = 0.8) +
+        ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, shape = type), size = 1, alpha = 0.8) +
+        ggplot2::scale_color_manual(name = "Tracks", values = track_colors) +
+        ggplot2::scale_linetype_manual(name = "Tracks", values = track_lines) +
+        ggplot2::scale_shape_manual(name = "Tracks", values = c(16, 16))
+    } else {
+      p <- p +
+        ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, group = id), color = track_colors[1], linetype = track_lines[1], linewidth = 0.5, alpha = 0.8) +
+        ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y), color = track_colors[1], shape = 16, size = 1, alpha = 0.8)
+    }
   }
 
   return(p)
 }
+

@@ -75,8 +75,11 @@ rasterOverlap <- function(r1, r2) {
   # Extract final overlap sums as a vector
   bc_val <- terra::global(pq_sqrt, "sum", na.rm = TRUE)[, 1]
 
-  # Name the output vector for clarity if the layers have names
-  names(bc_val) <- names(r1)
+  if (terra::nlyr(r1) == 1) {
+    bc_val <- unname(bc_val)
+  } else {
+    names(bc_val) <- names(r1)
+  }
 
   return(bc_val)
 }

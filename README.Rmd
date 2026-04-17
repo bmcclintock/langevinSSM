@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 
 ####  Habitat-driven Langevin Diffusion with Spatial Uncertainty
 
-`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The habitat-driven Langevin diffusion can provide inferences about habitat selection and utilization distributions. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). Location measurement error can take the form of either (older) Argos Least Squares-based locations or (newer) Argos Kalman Filter-based locations with error ellipse information. The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
+`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The habitat-driven Langevin diffusion provides inferences about both habitat selection and utilization distributions. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). Location measurement error can take the form of  (older) Argos Least Squares-based locations, (newer) Argos Kalman Filter-based locations with error ellipse information, or general x- and y-axis errors (e.g. for GPS data). The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
 
 ## Installation 
 One can install the `langevinSSM` package from CRAN using the following command:
@@ -33,7 +33,7 @@ remotes::install_github("bmcclintock/langevinSSM")
 
 ## Usage
 To simulate animal movement paths using the Langevin diffusion model, one can use the `simLangevin` function. For example:
-```{r,eval=TRUE, echo=c(-14,-23)}
+```{r sim,eval=TRUE, echo=c(-14,-22)}
 library(langevinSSM)
 library(ggplot2)
 library(terra)
@@ -72,8 +72,9 @@ exampleDat <- simLangevin(model = "underdamped",
 
 head(exampleDat)
 ```                                                 
+
 To fit the Langevin diffusion model to observed tracking data, one can use the `formatData` and `fitLangevin` functions. For example:
-```{r,eval=TRUE}
+```{r fit,eval=TRUE}
 # unformatDat is example data appropriate for formatData that loads with the package
 head(unformatDat)
 
@@ -82,33 +83,75 @@ exampleDat <- formatData(unformatDat, time.unit = "hours")
 
 head(exampleDat)
 
-# Fit the underdamped Langevin diffusion model to simulated data with measurement error
-## setting calcResiduals = TRUE will calculate one-step-ahead residuals for model diagnostics
-fit <- fitLangevin(model = "underdamped",
+# Fit the overdamped Langevin diffusion model to simulated data with measurement error
+fit_over <- fitLangevin(model = "overdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE,
-                   calcResiduals = TRUE)  
+                   silent = TRUE)  
 
-fit
+fit_over
 
+# Fit the underdamped Langevin diffusion model
+fit_under <- fitLangevin(model = "underdamped",
+                   data = exampleDat,
+                   spatialCovs = exampleCovs,
+                   silent = TRUE)  
+
+fit_under
+```
+### Post-processing functions
+#### Utilization distribution
+```{r ud,eval=TRUE}
 # calculate the estimated UD
-UD <- getUD(spatialCovs = exampleCovs, fit = fit)
+UD <- getUD(spatialCovs = exampleCovs, fit = fit_under)
 
 # plot the estimated (log) UD with the observed and estimated locations
-plot(fit, spatialCovs = exampleCovs, data = exampleDat)
+plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
+```
+
+#### Other S3 methods for `fitLangevin` objects
+```{r s3,eval=TRUE}
+coef(fit_under) # fixed effect estimates
+
+confint(fit_under) # confidence intervals for fixed effects
+
+mu_ci <- confint(fit_under, type= "mu") # confidence intervals for true locations
+head(mu_ci)
+
+AIC(fit_under) # for comparing models with different fixed effects
+
+BIC(fit_under) # for comparing models with different fixed effects
+```
+#### One-step-ahead residuals
+```{r osa,eval=TRUE,cache=TRUE}
+# calculate one-step-ahead residuals for model diagnostics
+## can also be used to compare "underdamped" vs "overdamped" model fits
+
+res_under <- residuals(fit_under, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
+res_under
 
 # plot residuals to check model fit
-p <- plotResiduals(fit)
-p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
+p_under <- plot(res_under)
+p_under$qq_x + p_under$qq_y + p_under$acf_x + p_under$acf_y + plot_layout(ncol=2)
 
+res_over <- residuals(fit_over, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
+res_over
+
+p_over <- plot(res_over)
+p_over$qq_x + p_over$qq_y + p_over$acf_x + p_over$acf_y + plot_layout(ncol=2)
+```
+
+#### Bhattacharyya's affinity
+```{r ba,eval=TRUE}
 # calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
-
+```
+#### Regional presence probability
+```{r regionProb,eval=TRUE}
 # calculate probability of being in specified region
 ## create a spatial mask for the region of interest
 d2c <- exampleCovs$d2c < 2.5
-reg_prob <- regionProb(fit,
+reg_prob <- regionProb(fit_under,
                        spatialCovs = exampleCovs, 
                        mask = d2c, # region of interest
                        show_progress = FALSE)

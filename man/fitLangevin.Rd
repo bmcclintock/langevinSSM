@@ -23,8 +23,7 @@ fitLangevin(
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
   polishOptim = FALSE,
-  getJointPrecision = FALSE,
-  calcResiduals = FALSE
+  getJointPrecision = FALSE
 )
 }
 \arguments{
@@ -67,8 +66,6 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{polishOptim}{Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization with \code{\link[stats]{nlminb}} has completed. Default: \code{FALSE}.}
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
-
-\item{calcResiduals}{Logical or character string. If \code{TRUE}, calculates one-step-ahead (OSA) residuals using the default \code{"oneStepGaussianOffMode"} method (see \code{\link{getResiduals}}). Alternatively, a character string can be provided to specify a different method (see \code{\link[TMB]{oneStepPredict}}). Note this can take a while for large data sets. Default: \code{FALSE}.}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:
@@ -82,7 +79,6 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
 \item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random'')}.
 \item{conditions}{List containing the optimization settings}
-\item{residuals}{One-step-ahead residuals (if \code{calcResiduals} is not \code{FALSE})}
 \item{signatures}{List containing lightweight fingerprints for \code{data} and \code{spatialCovs} to protect downstream functions}
 \item{tmb_setup}{Blueprint for reconstructing TMB objective function}
 }

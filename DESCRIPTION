@@ -24,7 +24,10 @@ LinkingTo:
     TMB,
     RcppEigen
 Suggests:
+    doFuture,
     fields,
+    foreach,
+    future,
     ggplot2,
     MASS,
     Matrix,

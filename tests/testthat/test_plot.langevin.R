@@ -338,3 +338,107 @@ test_that("plotUD handles dynamic rasters with and without time subsetting", {
   expect_true(inherits(p_sub[["UD"]]$facet, "FacetNull"), info = "Subsetting dynamic UD to a single time layer should remove facet_wrap")
   expect_true(inherits(p_sub[["SE_delta"]]$facet, "FacetNull"), info = "Subsetting dynamic SE to a single time layer should remove facet_wrap")
 })
+
+test_that("plotUD handles log = FALSE for SE without crashing", {
+  ud <- get_mock_ud(with_uncertainty = TRUE)
+  p_list <- plotUD(ud, log = FALSE)
+
+  expect_type(p_list, "list")
+  expect_s3_class(p_list[["SE_delta"]], "ggplot")
+
+  expect_equal(p_list[["SE_delta"]]$labels$title, "UD standard error (Delta method)")
+})
+
+test_that("plotUD applies log transform to SE when log = TRUE", {
+  ud <- get_mock_ud(with_uncertainty = TRUE)
+  p_list <- plotUD(ud, log = TRUE) # Default behavior
+
+  expect_type(p_list, "list")
+  expect_s3_class(p_list[["SE_delta"]], "ggplot")
+
+  # Ensure the title correctly reflects the log status
+  expect_equal(p_list[["SE_delta"]]$labels$title, "UD log standard error (Delta method)")
+})
+
+# ---------------------------------------------------------
+# Tests for plot.resLangevin
+# ---------------------------------------------------------
+
+# --- Helper: Generate a fast mock resLangevin object ---
+get_mock_resLangevin <- function() {
+  set.seed(42, kind="Mersenne-Twister", normal.kind="Inversion")
+
+  df <- data.frame(
+    id = rep(c("A", "B"), each = 50),
+    date = as.POSIXct("2024-01-01 00:00:00", tz = "UTC") + (1:100) * 3600,
+    residual.x = rnorm(100),
+    residual.y = rnorm(100)
+  )
+
+  # Inject a few NAs (simulating the first obs of a track) to test robust na.omit handling
+  df$residual.x[c(1, 51)] <- NA
+  df$residual.y[c(1, 51)] <- NA
+
+  class(df) <- c("resLangevin", "data.frame")
+  return(df)
+}
+
+test_that("plot.resLangevin generates aggregated plots by default", {
+  res <- get_mock_resLangevin()
+  p_list <- plot(res) # S3 Dispatch
+
+  # Should return a single, flat list of 6 plots
+  expect_type(p_list, "list")
+  expect_equal(length(p_list), 6)
+  expect_named(p_list, c("qq_x", "qq_y", "acf_x", "acf_y", "qq_mah", "acf_mah"))
+
+  # Ensure they are actually ggplot objects
+  expect_s3_class(p_list$qq_x, "ggplot")
+  expect_s3_class(p_list$acf_mah, "ggplot")
+})
+
+test_that("plot.resLangevin generates separate nested plots when tracks='all'", {
+  res <- get_mock_resLangevin()
+  p_list <- plot(res, tracks = "all")
+
+  # Should return a list of lists, named by ID
+  expect_type(p_list, "list")
+  expect_named(p_list, c("A", "B"))
+
+  # Check inner structure
+  expect_equal(length(p_list$A), 6)
+  expect_s3_class(p_list$A$qq_x, "ggplot")
+  expect_s3_class(p_list$B$acf_mah, "ggplot")
+})
+
+test_that("plot.resLangevin filters specific tracks correctly", {
+  res <- get_mock_resLangevin()
+  p_list <- plot(res, tracks = c("B"))
+
+  # Should return a list containing ONLY track B
+  expect_type(p_list, "list")
+  expect_named(p_list, c("B"))
+  expect_null(p_list$A)
+})
+
+test_that("plot.resLangevin handles missing/invalid track IDs gracefully", {
+  res <- get_mock_resLangevin()
+
+  # Requesting a track that doesn't exist should throw a warning, not crash
+  expect_warning(
+    p_list <- plot(res, tracks = c("C")),
+    "No data found for track ID: C"
+  )
+
+  # Because "C" was the only request, the resulting list should be empty
+  expect_equal(length(p_list), 0)
+
+  # Requesting a mix of valid and invalid tracks
+  expect_warning(
+    p_list_mixed <- plot(res, tracks = c("A", "C")),
+    "No data found for track ID: C"
+  )
+
+  # It should successfully plot A, and skip C
+  expect_named(p_list_mixed, c("A"))
+})

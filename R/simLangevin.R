@@ -50,7 +50,6 @@
 #'                                               smin.sd = 0.75,
 #'                                               eor.lim = c(0,180)))
 #' # x- and y-axis errors
-#' # exampleCovs included in package; see ?exampleCovs for details
 #' simDat_xy <- simLangevin(par = par,
 #'                       spatialCovs = exampleCovs,
 #'                       measurementError = list(x.sd = 1.5,

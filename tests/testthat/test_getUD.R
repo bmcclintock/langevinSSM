@@ -37,15 +37,15 @@ get_mock_fit_for_ud <- function() {
 
 test_that("getUD enforces matching covariate and beta lengths", {
   covs <- list(hab1 = get_static_raster(), hab2 = get_static_raster())
-  expect_error(getUD(spatialCovs = covs, beta = c(0.5)), "length\\(spatialCovs\\) must equal length\\(beta\\)")
+  expect_error(getUD(spatialCovs = covs, beta = c(0.5), plot = FALSE), "length\\(spatialCovs\\) must equal length\\(beta\\)")
 })
 
 test_that("getUD handles multiple covariates successfully", {
   covs_single <- list(hab1 = get_static_raster())
   covs_multi <- list(hab1 = get_static_raster(), hab2 = get_static_raster())
 
-  out_single <- getUD(covs_single, beta = 0.5)
-  out_multi <- getUD(covs_multi, beta = c(0.5, -0.2))
+  out_single <- getUD(covs_single, beta = 0.5, plot = FALSE)
+  out_multi <- getUD(covs_multi, beta = c(0.5, -0.2), plot = FALSE)
 
   expect_s4_class(out_single, "SpatRaster")
   expect_s4_class(out_multi, "SpatRaster")
@@ -53,7 +53,7 @@ test_that("getUD handles multiple covariates successfully", {
 
 test_that("getUD computes static log UD correctly", {
   covs <- list(hab = get_static_raster())
-  ud <- getUD(spatialCovs = covs, beta = c(1), log = TRUE)
+  ud <- getUD(spatialCovs = covs, beta = c(1), log = TRUE, plot = FALSE)
 
   expect_s4_class(ud, "SpatRaster")
   expect_equal(terra::nlyr(ud), 1)
@@ -64,8 +64,8 @@ test_that("getUD normalizes static probabilities when log = FALSE", {
   covs <- list(hab = get_static_raster())
   beta <- c(0.5)
 
-  ud_log <- getUD(spatialCovs = covs, beta = beta, log = TRUE)
-  ud_prob <- getUD(spatialCovs = covs, beta = beta, log = FALSE)
+  ud_log <- getUD(spatialCovs = covs, beta = beta, log = TRUE, plot = FALSE)
+  ud_prob <- getUD(spatialCovs = covs, beta = beta, log = FALSE, plot = FALSE)
 
   sum_prob <- terra::global(ud_prob[["UD"]], "sum", na.rm = TRUE)$sum
   expect_equal(sum_prob, 1, tolerance = 1e-6)
@@ -78,7 +78,7 @@ test_that("getUD normalizes static probabilities when log = FALSE", {
 
 test_that("getUD properly formats dynamic (time-varying) log UDs", {
   covs_dyn <- list(hab = get_dynamic_raster())
-  ud_dyn <- getUD(spatialCovs = covs_dyn, beta = c(0.5), log = TRUE)
+  ud_dyn <- getUD(spatialCovs = covs_dyn, beta = c(0.5), log = TRUE, plot = FALSE)
 
   expect_equal(terra::nlyr(ud_dyn), 2)
   ud_times <- terra::time(ud_dyn)
@@ -89,7 +89,7 @@ test_that("getUD properly formats dynamic (time-varying) log UDs", {
 
 test_that("getUD dynamic probability UD layers individually sum to 1", {
   covs_dyn <- list(hab = get_dynamic_raster())
-  ud_prob_dyn <- getUD(spatialCovs = covs_dyn, beta = c(0.5), log = FALSE)
+  ud_prob_dyn <- getUD(spatialCovs = covs_dyn, beta = c(0.5), log = FALSE, plot = FALSE)
 
   sums_ud <- terra::global(ud_prob_dyn, "sum", na.rm = TRUE)$sum
   expect_equal(sums_ud[1], 1, tolerance = 1e-6)
@@ -102,7 +102,7 @@ test_that("getUD marginal posterior simulation returns correctly structured rast
   covs <- list(hab1 = get_static_raster(), hab2 = get_static_raster("hab2"))
   fit <- get_mock_fit_for_ud()
 
-  out <- suppressMessages(getUD(spatialCovs = covs, fit = fit, nSims = 5, log = FALSE, show_progress = FALSE))
+  out <- suppressMessages(getUD(spatialCovs = covs, fit = fit, nSims = 5, log = FALSE, show_progress = FALSE, plot = FALSE))
 
   expect_s4_class(out, "SpatRaster")
   expect_equal(terra::nlyr(out), 5)
@@ -119,7 +119,7 @@ test_that("getUD simulation handles dynamic (time-varying) covariates properly",
   )
   class(fit_dyn) <- "fitLangevin"
 
-  out <- suppressMessages(getUD(spatialCovs = covs_dyn, fit = fit_dyn, nSims = 5, show_progress = FALSE))
+  out <- suppressMessages(getUD(spatialCovs = covs_dyn, fit = fit_dyn, nSims = 5, show_progress = FALSE, plot = FALSE))
 
   expect_equal(terra::nlyr(out), 10)
   expect_equal(length(terra::time(out)), 10)
@@ -131,6 +131,6 @@ test_that("getUD catches user errors related to missing fit requirements for nSi
   fit_bad <- get_mock_fit_for_ud()
   fit_bad$covariance$natural <- NULL
 
-  expect_error(getUD(spatialCovs = covs, beta = c(0.5, -0.2), nSims = 5, show_progress = FALSE), "fit\\$covariance\\$natural not found")
-  expect_error(getUD(spatialCovs = covs, fit = fit_bad, nSims = 5, show_progress = FALSE), "Refit model to get covariance matrix.")
+  expect_error(getUD(spatialCovs = covs, beta = c(0.5, -0.2), nSims = 5, show_progress = FALSE, plot = FALSE), "fit\\$covariance\\$natural not found")
+  expect_error(getUD(spatialCovs = covs, fit = fit_bad, nSims = 5, show_progress = FALSE, plot = FALSE), "Refit model to get covariance matrix.")
 })

@@ -118,8 +118,6 @@ vcov.fitLangevin <- function(object, type = "natural", ...) {
 #' @export
 confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ...) {
 
-  # --- Smart catching for common user syntax ---
-  # If a user accidentally passes 'mu' or 'vel' to 'parm', seamlessly route it to 'type'
   if (!missing(parm) && length(parm) == 1 && parm %in% c("mu", "vel")) {
     type <- parm
     is_re_parm <- TRUE
@@ -127,13 +125,12 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
     is_re_parm <- FALSE
   }
 
-  # Calculate the Z multiplier based on the requested confidence level
   a <- (1 - level) / 2
   a <- c(a, 1 - a)
   pct <- paste(format(100 * a, trim = TRUE, scientific = FALSE, digits = 3), "%")
   fac <- stats::qnorm(a)
 
-  # 1. Standard Fixed Effects ("natural" or "working")
+  # fixed effects ("natural" or "working")
   if (type %in% c("natural", "working")) {
     cf <- coef.fitLangevin(object, type = type)
     vc <- vcov.fitLangevin(object, type = type)
@@ -153,7 +150,7 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
 
     return(ci)
 
-    # 2. Random Effects Trajectories ("mu" or "vel")
+    # random effects ("mu" or "vel")
   } else if (type %in% c("mu", "vel")) {
 
     if (is.null(object$estimates$random) || !type %in% names(object$estimates$random)) {
@@ -166,22 +163,18 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
     x_col <- paste0(type, ".x")
     y_col <- paste0(type, ".y")
 
-    # Clean the percentage strings for column names (e.g., "2.5 %" -> "2.5%")
     pct_clean <- gsub(" ", "", pct)
 
-    # Construct the compromised wide-format data frame
     ci_df <- data.frame(
       id = est_df$id,
       # Force integer conversion so tests don't fail against c(1, 2)
       time_step = as.integer(ave(as.character(est_df$id), est_df$id, FUN = seq_along))
     )
 
-    # X-axis Estimates and Bounds
     ci_df[[x_col]] <- est_df[[x_col]]
     ci_df[[paste0(x_col, "_", pct_clean[1])]] <- est_df[[x_col]] + fac[1] * se_df[[x_col]]
     ci_df[[paste0(x_col, "_", pct_clean[2])]] <- est_df[[x_col]] + fac[2] * se_df[[x_col]]
 
-    # Y-axis Estimates and Bounds
     ci_df[[y_col]] <- est_df[[y_col]]
     ci_df[[paste0(y_col, "_", pct_clean[1])]] <- est_df[[y_col]] + fac[1] * se_df[[y_col]]
     ci_df[[paste0(y_col, "_", pct_clean[2])]] <- est_df[[y_col]] + fac[2] * se_df[[y_col]]
@@ -193,17 +186,36 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
   }
 }
 
-#' @rdname langevin_methods
+#' Print a resLangevin object
+#' @method print resLangevin
+#'
+#' @param x A \code{resLangevin} object returned by \code{\link{residuals.fitLangevin}}.
+#' @param ... Additional arguments passed to \code{print}.
+#'
 #' @export
-residuals.fitLangevin <- function(object, ...) {
+print.resLangevin <- function(x, ...) {
 
-  if (is.null(object$residuals)) {
-    stop("Residuals were not calculated during model fitting. Please re-run fitLangevin with 'calcResiduals = TRUE'.")
+  cat("\n=== One-Step-Ahead (OSA) Residuals ===\n")
+
+  n_obs <- nrow(x)
+  n_tracks <- length(unique(x$id))
+  cat("Total observations:", n_obs, "\n")
+  cat("Number of tracks:  ", n_tracks, "\n\n")
+
+  tests_df <- attr(x, "tests")
+  if(!is.null(tests_df)){
+    cat("---- Goodness-of-Fit Tests ----\n")
+    print(tests_df, row.names = FALSE)
+    cat("-------------------------------\n\n")
   }
 
-  res <- object$residuals
+  cat("Residual Summary:\n")
+  res_summary <- summary(x[, c("residual.x", "residual.y")])
+  print(res_summary)
 
-  return(res)
+  #cat("\n* Tip: Use plot() on this object to view diagnostic plots.\n")
+
+  invisible(x)
 }
 
 rasterList <- function (rast)

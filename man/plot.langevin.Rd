@@ -5,6 +5,7 @@
 \alias{plot.fitLangevin}
 \alias{plot.simLangevin}
 \alias{plot.dataLangevin}
+\alias{plot.resLangevin}
 \alias{plotUD}
 \title{Plot Langevin model fits and data}
 \usage{
@@ -32,10 +33,12 @@
 
 \method{plot}{dataLangevin}(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...)
 
+\method{plot}{resLangevin}(x, tracks = NULL, ...)
+
 plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 }
 \arguments{
-\item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, or \code{udLangevin} object.}
+\item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.}
 
@@ -49,12 +52,14 @@ plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 
 \item{compact}{Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).}
 
-\item{...}{Additional arguments passed to \code{\link{plotRaster}}.}
+\item{...}{Additional arguments passed to internal plotting methods.}
 
 \item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.}
+
+\item{tracks}{Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).}
 }
 \value{
-A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} argument.
+A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
 }
 \description{
 These methods plot objects associated with the \code{langevinSSM} package using \code{ggplot2}.
@@ -62,7 +67,8 @@ These methods plot objects associated with the \code{langevinSSM} package using 
   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
-  \item \strong{\code{plotUD}:} Plots the estimated Utilization Distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
+  \item \strong{\code{plot.resLangevin}:} Generates Q-Q and ACF diagnostic plots for One-Step-Ahead (OSA) residuals.
+  \item \strong{\code{plotUD}:} Plots the estimated utilization distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 }
 }
 \details{

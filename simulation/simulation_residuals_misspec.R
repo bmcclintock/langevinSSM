@@ -1,7 +1,9 @@
 library(langevinSSM)
 
-
 n_sims <- 100
+nbAnimals <- 3
+obsPerAnimal <- 5000
+
 p_vals_ks_x <- p_vals_ks_y <- matrix(0,n_sims,2,dimnames=list(1:n_sims, c("correct", "misspec")))
 p_vals_lb_x <- p_vals_lb_y <- matrix(0,n_sims,2,dimnames=list(1:n_sims, c("correct", "misspec")))
 p_vals_ks_mah <- matrix(0,n_sims,2,dimnames=list(1:n_sims, c("correct", "misspec")))
@@ -16,12 +18,13 @@ p_val <- 0.05
 set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 for(i in 1:n_sims) {
 
-  sim_data <- simLangevin(model = true_model, par = true_par, obsPerAnimal = 5000, nbAnimals = 3, subSample = list(samplingRate = 10),
+  sim_data <- simLangevin(model = true_model, par = true_par, obsPerAnimal = obsPerAnimal, nbAnimals = nbAnimals, subSample = list(samplingRate = 10),
                           spatialCovs = exampleCovs, measurementError = list(smaj.sd=1.5,smin.sd=0.75))
 
   fit <- fitLangevin(data = sim_data, model = true_model,
-                           spatialCovs = exampleCovs,
-                           calcResiduals = TRUE, silent = TRUE)
+                           spatialCovs = exampleCovs,silent = TRUE)
+
+  fit$residuals <- residuals(fit, data = sim_data, spatialCovs = exampleCovs, ncores = nbAnimals)
 
   misCovs <- exampleCovs[1:3]
   for(j in 1:3){
@@ -31,8 +34,9 @@ for(i in 1:n_sims) {
   misCovs$d2c <- exampleCovs$d2c
 
   misfit <- fitLangevin(data = sim_data,
-                               spatialCovs = misCovs,
-                               calcResiduals = TRUE, silent = TRUE)
+                               spatialCovs = misCovs, silent = TRUE)
+
+  misfit$residuals <- residuals(misfit, data = sim_data, spatialCovs = misCovs, ncores = nbAnimals)
 
   AIC_mat[i,] <- AIC(fit, misfit)$AIC
 
@@ -52,6 +56,8 @@ for(i in 1:n_sims) {
   p_vals_lb_x[i,"misspec"] <- tests_over$p.value[tests_over$metric == "LB_x"]
   p_vals_lb_y[i,"misspec"] <- tests_over$p.value[tests_over$metric == "LB_y"]
   p_vals_lb_mah[i,"misspec"] <- tests_over$p.value[tests_over$metric == "LB_mah"]
+
+  print(paste0("Simulation ", i, ": AIC favors underdamped in ",round(mean(AIC_mat[1:i,1]<AIC_mat[1:i,2]),2)*100,"% of trials"))
 
   print(paste0("Simulation ", i, ": ",paste(apply(p_vals_ks_x[1:i,,drop=FALSE]< p_val, 2, sum), "rejections for KS_x",colnames(p_vals_ks_x),collapse=";   ")))
   print(paste0("Simulation ", i, ": ",paste(apply(p_vals_ks_y[1:i,,drop=FALSE]< p_val, 2, sum), "rejections for KS_y",colnames(p_vals_ks_y),collapse=";   ")))

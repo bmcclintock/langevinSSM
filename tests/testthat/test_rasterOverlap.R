@@ -102,7 +102,7 @@ test_that("rasterOverlap automatically filters out getUD uncertainty layers", {
   expect_silent(res <- rasterOverlap(r1, r2))
 
   expect_length(res, 1)
-  expect_named(res, "UD")
+  expect_null(names(res)) # Expecting unnamed vector for single-layer
   expect_true(res >= 0 && res <= 1)
 })
 
@@ -120,7 +120,7 @@ test_that("rasterOverlap smart filter works correctly with log_UD", {
   )
 
   expect_length(res, 1)
-  expect_named(res, "log_UD")
+  expect_null(names(res)) # Expecting unnamed vector for single-layer
   expect_true(res >= 0 && res <= 1)
 })
 
@@ -133,7 +133,7 @@ test_that("rasterOverlap calculates pairwise affinities for multi-layer (dynamic
   res <- rasterOverlap(r1, r2)
 
   expect_length(res, 2)
-  expect_named(res, c("UD", "UD"))
+  expect_named(res, c("UD", "UD")) # Expecting named vector for multi-layer
 })
 
 test_that("rasterOverlap calculates pairwise affinities for generic multi-layer rasters", {
@@ -176,4 +176,3 @@ test_that("rasterOverlap catches mismatched layer counts for generic rasters (Us
     "Rasters must have the same number of layers"
   )
 })
-

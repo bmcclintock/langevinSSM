@@ -8,17 +8,17 @@
 `{langevinSSM}` is an R package for simulating and fitting the
 habitat-driven Langevin diffusion to animal tracking data subject to
 location measurement error and temporal irregularity. The habitat-driven
-Langevin diffusion can provide inferences about habitat selection and
+Langevin diffusion provides inferences about both habitat selection and
 utilization distributions. The package provides tools for simulating
 animal movement paths (`simLangevin`) and fitting the Langevin diffusion
 model to observed tracking data (`fitLangevin`). Location measurement
-error can take the form of either (older) Argos Least Squares-based
-locations or (newer) Argos Kalman Filter-based locations with error
-ellipse information. The Langevin diffusion is a continuous-time model
-in state-space form that estimates the underlying movement process while
-accounting for location measurement error and associated uncertainty in
-the spatial (habitat) covariates. Template Model Builder {TMB} is used
-for fast estimation.
+error can take the form of (older) Argos Least Squares-based locations,
+(newer) Argos Kalman Filter-based locations with error ellipse
+information, or general x- and y-axis errors (e.g. for GPS data). The
+Langevin diffusion is a continuous-time model in state-space form that
+estimates the underlying movement process while accounting for location
+measurement error and associated uncertainty in the spatial (habitat)
+covariates. Template Model Builder {TMB} is used for fast estimation.
 
 ## Installation
 
@@ -58,7 +58,7 @@ par <- list(beta = c(-4, 6, 5, -0.1), # habitat selection coefficients
 trueUD <- getUD(spatialCovs = exampleCovs, beta = par$beta)
 ```
 
-![](man/figures/README-unnamed-chunk-4-1.png)<!-- -->
+![](man/figures/README-sim-1.png)<!-- -->
 
 ``` r
 
@@ -88,7 +88,12 @@ measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error el
                          smin.sd = 0.75,     # sd of semi-minor axis of error ellipse
                          eor.lim = c(0,180)) # range of ellipse orientation (in degrees from north)
 
-set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
+exampleDat <- simLangevin(model = "underdamped",
+                         par = par,
+                         spatialCovs = exampleCovs,
+                         nbAnimals = 3,
+                         obsPerAnimal = 500,
+                         measurementError = measurementError)
 
 head(exampleDat)
 #>   id date   dt        x        y      smaj      smin       eor x.err y.err
@@ -114,12 +119,12 @@ use the `formatData` and `fitLangevin` functions. For example:
 # unformatDat is example data appropriate for formatData that loads with the package
 head(unformatDat)
 #>   id                date        x        y      smaj      smin       eor x.err
-#> 1  1 2026-04-11 00:00:00 1023.610 988.7225 3.1904213 0.8238468  25.25334    NA
-#> 2  1 2026-04-11 00:00:36 1024.056 990.0353 0.2602149 0.1929297  48.24272    NA
-#> 3  1 2026-04-11 00:01:12 1022.943 991.0823 1.9072127 0.6294832 126.97307    NA
-#> 4  1 2026-04-11 00:01:48 1024.243 990.1201 0.1952989 0.0469546 126.62606    NA
-#> 5  1 2026-04-11 00:02:24 1024.996 990.5625 1.4343749 1.1175133 164.35512    NA
-#> 6  1 2026-04-11 00:03:00 1024.489 990.9043 0.8349596 0.1392169  26.87534    NA
+#> 1  1 2026-04-14 00:00:00 1023.610 988.7225 3.1904213 0.8238468  25.25334    NA
+#> 2  1 2026-04-14 00:00:36 1024.056 990.0353 0.2602149 0.1929297  48.24272    NA
+#> 3  1 2026-04-14 00:01:12 1022.943 991.0823 1.9072127 0.6294832 126.97307    NA
+#> 4  1 2026-04-14 00:01:48 1024.243 990.1201 0.1952989 0.0469546 126.62606    NA
+#> 5  1 2026-04-14 00:02:24 1024.996 990.5625 1.4343749 1.1175133 164.35512    NA
+#> 6  1 2026-04-14 00:03:00 1024.489 990.9043 0.8349596 0.1392169  26.87534    NA
 #>   y.err
 #> 1    NA
 #> 2    NA
@@ -133,12 +138,12 @@ exampleDat <- formatData(unformatDat, time.unit = "hours")
 
 head(exampleDat)
 #>   id                date   dt        x        y   lc      smaj      smin
-#> 1  1 2026-04-11 00:00:00 0.00 1023.610 988.7225 <NA> 3.1904213 0.8238468
-#> 2  1 2026-04-11 00:00:36 0.01 1024.056 990.0353 <NA> 0.2602149 0.1929297
-#> 3  1 2026-04-11 00:01:12 0.01 1022.943 991.0823 <NA> 1.9072127 0.6294832
-#> 4  1 2026-04-11 00:01:48 0.01 1024.243 990.1201 <NA> 0.1952989 0.0469546
-#> 5  1 2026-04-11 00:02:24 0.01 1024.996 990.5625 <NA> 1.4343749 1.1175133
-#> 6  1 2026-04-11 00:03:00 0.01 1024.489 990.9043 <NA> 0.8349596 0.1392169
+#> 1  1 2026-04-14 00:00:00 0.00 1023.610 988.7225 <NA> 3.1904213 0.8238468
+#> 2  1 2026-04-14 00:00:36 0.01 1024.056 990.0353 <NA> 0.2602149 0.1929297
+#> 3  1 2026-04-14 00:01:12 0.01 1022.943 991.0823 <NA> 1.9072127 0.6294832
+#> 4  1 2026-04-14 00:01:48 0.01 1024.243 990.1201 <NA> 0.1952989 0.0469546
+#> 5  1 2026-04-14 00:02:24 0.01 1024.996 990.5625 <NA> 1.4343749 1.1175133
+#> 6  1 2026-04-14 00:03:00 0.01 1024.489 990.9043 <NA> 0.8349596 0.1392169
 #>         eor x.err y.err
 #> 1 0.4407540    NA    NA
 #> 2 0.8419944    NA    NA
@@ -147,22 +152,48 @@ head(exampleDat)
 #> 5 2.8685380    NA    NA
 #> 6 0.4690632    NA    NA
 
-# Fit the underdamped Langevin diffusion model to simulated data with measurement error
-## setting calcResiduals = TRUE will calculate one-step-ahead residuals for model diagnostics
-fit <- fitLangevin(model = "underdamped",
+# Fit the overdamped Langevin diffusion model to simulated data with measurement error
+fit_over <- fitLangevin(model = "overdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE,
-                   calcResiduals = TRUE)  
+                   silent = TRUE)  
 
-fit
+fit_over
+#> 
+#> Habitat-Driven Langevin Diffusion Model
+#> =======================================
+#> Model type:        Overdamped 
+#> Convergence:       Successful 
+#> Max Log-Likelihood: -2428.077 
+#> Optimization time:  0.35 seconds
+#> 
+#> Parameter Estimates (Natural Scale):
+#> ---------------------------------------
+#>           Estimate Std. Error
+#> beta_cov1   23.597      7.324
+#> beta_cov2   15.901      7.255
+#> beta_cov3   -4.850      6.411
+#> beta_d2c   -13.782      2.137
+#> sigma        1.143      0.035
+#> rho_o        0.000      0.000
+#> tau_1        1.000      0.000
+#> tau_2        1.000      0.000
+#> psi          1.000      0.000
+
+# Fit the underdamped Langevin diffusion model
+fit_under <- fitLangevin(model = "underdamped",
+                   data = exampleDat,
+                   spatialCovs = exampleCovs,
+                   silent = TRUE)  
+
+fit_under
 #> 
 #> Habitat-Driven Langevin Diffusion Model
 #> =======================================
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.97 
-#> Optimization time:  0.62 seconds
+#> Optimization time:  0.63 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
@@ -177,51 +208,156 @@ fit
 #> tau_1       1.0000      0.000
 #> tau_2       1.0000      0.000
 #> psi         1.0000      0.000
-#> 
-#> --- OSA Goodness-of-Fit Results ---
-#>  metric  statistic   p.value
-#>    KS_x 0.01599200 0.8385286
-#>    KS_y 0.02434843 0.3373330
-#>  KS_mah 0.01965255 0.6097253
-#>    LB_x 7.88968961 0.3424215
-#>    LB_y 3.28845523 0.8570979
-#>  LB_mah 5.37979230 0.6137200
-#> -----------------------------------
-
-# calculate the estimated UD
-UD <- getUD(spatialCovs = exampleCovs, fit = fit)
 ```
 
-![](man/figures/README-unnamed-chunk-5-1.png)<!-- -->
+### Post-processing functions
+
+#### Utilization distribution
+
+``` r
+# calculate the estimated UD
+UD <- getUD(spatialCovs = exampleCovs, fit = fit_under)
+```
+
+![](man/figures/README-ud-1.png)<!-- -->
 
 ``` r
 
 # plot the estimated (log) UD with the observed and estimated locations
-plot(fit, spatialCovs = exampleCovs, data = exampleDat)
+plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
 ```
 
-![](man/figures/README-unnamed-chunk-5-2.png)<!-- -->
+![](man/figures/README-ud-2.png)<!-- -->
+
+#### Other S3 methods for `fitLangevin` objects
 
 ``` r
+coef(fit_under) # fixed effect estimates
+#>  beta_cov1  beta_cov2  beta_cov3   beta_d2c      sigma      gamma      rho_o 
+#> -3.5437139  8.6136199  7.5113365 -0.3083557  4.3092006  0.5849726  0.0000000 
+#>      tau_1      tau_2        psi 
+#>  1.0000000  1.0000000  1.0000000
+
+confint(fit_under) # confidence intervals for fixed effects
+#>                2.5 %     97.5 %
+#> beta_cov1 -5.9945650 -1.0928627
+#> beta_cov2  4.1147592 13.1124807
+#> beta_cov3  3.6940963 11.3285766
+#> beta_d2c  -0.9436450  0.3269335
+#> sigma      3.3292213  5.2891798
+#> gamma      0.3012216  0.8687236
+#> rho_o      0.0000000  0.0000000
+#> tau_1      1.0000000  1.0000000
+#> tau_2      1.0000000  1.0000000
+#> psi        1.0000000  1.0000000
+
+mu_ci <- confint(fit_under, type= "mu") # confidence intervals for true locations
+head(mu_ci)
+#>   id time_step     mu.x mu.x_2.5% mu.x_97.5%     mu.y mu.y_2.5% mu.y_97.5%
+#> 1  1         1 1023.966  1023.817   1024.115 990.0594  989.9307   990.1882
+#> 2  1         2 1024.019  1023.889   1024.150 990.1089  989.9969   990.2208
+#> 3  1         3 1024.073  1023.959   1024.187 990.1574  990.0591   990.2557
+#> 4  1         4 1024.126  1024.026   1024.226 990.2050  990.1168   990.2932
+#> 5  1         5 1024.180  1024.091   1024.268 990.2515  990.1697   990.3333
+#> 6  1         6 1024.233  1024.153   1024.313 990.2968  990.2182   990.3754
+
+AIC(fit_under) # for comparing models with different fixed effects
+#> [1] 4135.94
+
+BIC(fit_under) # for comparing models with different fixed effects
+#> [1] 4167.819
+```
+
+#### One-step-ahead residuals
+
+``` r
+# calculate one-step-ahead residuals for model diagnostics
+## can also be used to compare "underdamped" vs "overdamped" model fits
+
+res_under <- residuals(fit_under, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
+res_under
+#> 
+#> === One-Step-Ahead (OSA) Residuals ===
+#> Total observations: 1500 
+#> Number of tracks:   3 
+#> 
+#> ---- Goodness-of-Fit Tests ----
+#>  metric  statistic   p.value
+#>    KS_x 0.01598432 0.8389506
+#>    KS_y 0.02434843 0.3373330
+#>  KS_mah 0.01965255 0.6097253
+#>    LB_x 7.88961085 0.3424286
+#>    LB_y 3.28849949 0.8570934
+#>  LB_mah 5.37975199 0.6137248
+#> -------------------------------
+#> 
+#> Residual Summary:
+#>    residual.x           residual.y      
+#>  Min.   :-3.0898455   Min.   :-3.57833  
+#>  1st Qu.:-0.6737108   1st Qu.:-0.66399  
+#>  Median :-0.0125678   Median : 0.01314  
+#>  Mean   : 0.0003674   Mean   : 0.01898  
+#>  3rd Qu.: 0.6900477   3rd Qu.: 0.71835  
+#>  Max.   : 3.1302167   Max.   : 2.97038  
+#>  NA's   :3            NA's   :3
 
 # plot residuals to check model fit
-p <- plotResiduals(fit)
-p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
+p_under <- plot(res_under)
+p_under$qq_x + p_under$qq_y + p_under$acf_x + p_under$acf_y + plot_layout(ncol=2)
 ```
 
-![](man/figures/README-unnamed-chunk-5-3.png)<!-- -->
+![](man/figures/README-osa-1.png)<!-- -->
 
 ``` r
 
+res_over <- residuals(fit_over, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
+res_over
+#> 
+#> === One-Step-Ahead (OSA) Residuals ===
+#> Total observations: 1500 
+#> Number of tracks:   3 
+#> 
+#> ---- Goodness-of-Fit Tests ----
+#>  metric   statistic      p.value
+#>    KS_x  0.02500516 3.065233e-01
+#>    KS_y  0.02854070 1.744104e-01
+#>  KS_mah  0.01735706 7.579011e-01
+#>    LB_x 33.14761549 2.485147e-05
+#>    LB_y 65.63052339 1.123146e-11
+#>  LB_mah  6.54028837 4.782583e-01
+#> -------------------------------
+#> 
+#> Residual Summary:
+#>    residual.x         residual.y      
+#>  Min.   :-3.11105   Min.   :-3.55955  
+#>  1st Qu.:-0.67883   1st Qu.:-0.72711  
+#>  Median :-0.02908   Median :-0.05798  
+#>  Mean   :-0.03422   Mean   :-0.04454  
+#>  3rd Qu.: 0.63190   3rd Qu.: 0.63178  
+#>  Max.   : 2.89999   Max.   : 2.94656  
+#>  NA's   :3          NA's   :3
+
+p_over <- plot(res_over)
+p_over$qq_x + p_over$qq_y + p_over$acf_x + p_over$acf_y + plot_layout(ncol=2)
+```
+
+![](man/figures/README-osa-2.png)<!-- -->
+
+#### Bhattacharyya’s affinity
+
+``` r
 # calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
-#>    log_UD 
-#> 0.9088081
+#> [1] 0.9088081
+```
 
+#### Regional presence probability
+
+``` r
 # calculate probability of being in specified region
 ## create a spatial mask for the region of interest
 d2c <- exampleCovs$d2c < 2.5
-reg_prob <- regionProb(fit,
+reg_prob <- regionProb(fit_under,
                        spatialCovs = exampleCovs, 
                        mask = d2c, # region of interest
                        show_progress = FALSE)

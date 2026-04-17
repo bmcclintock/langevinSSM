@@ -1,17 +1,15 @@
 # tests/testthat/test_simLangevin.fitLangevin.R
 
-if (!exists("fit")) {
+# Setup mock data unconditionally so testthat always has access to it
+r <- terra::rast(nrows=50, ncols=50, ext=c(0,500,0,500), vals=1:2500)
+names(r) <- "cov"
+exCovs <- list(cov=r)
 
-  # Use a large raster to provide room for random walks
-  r <- terra::rast(nrows=50, ncols=50, ext=c(0,500,0,500), vals=1:2500); names(r) <- "cov"
-  exCovs <- list(cov=r)
-
-  # Base data centered at 250, 250
-  df <- data.frame(id=1, date=seq(0,1,0.1), dt=c(0, rep(0.1, 10)), x=250, y=250,
-                   x.err=1, y.err=1, smaj=NA_real_, smin=NA_real_, eor=NA_real_)
-  exDat <- class_dataLangevin(df)
-  fit <- suppressMessages(fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE))
-}
+# Base data centered at 250, 250
+df <- data.frame(id=1, date=seq(0,1,0.1), dt=c(0, rep(0.1, 10)), x=250, y=250,
+                 x.err=1, y.err=1, smaj=NA_real_, smin=NA_real_, eor=NA_real_)
+exDat <- class_dataLangevin(df)
+fit <- suppressMessages(fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE))
 
 test_that("simLangevin.fitLangevin basic functionality", {
   res <- suppressMessages(simLangevin(fit, data = exDat, spatialCovs = exCovs, timeStep = 0.05, conditional = FALSE))
@@ -72,14 +70,14 @@ test_that("Imputation vs Predictive Check divergence and GoF validation", {
   long_dat <- class_dataLangevin(long_df)
 
   # 2. Fit the model away from edges to ensure valid Hessian and residuals
-  # We request calcResiduals = TRUE to trigger the internal gof_tests call
   long_fit <- suppressMessages(fitLangevin(
     data = long_dat,
     spatialCovs = exCovs,
     par = list(sigma = 2),
-    calcResiduals = TRUE,
     silent = TRUE
   ))
+
+  long_fit$residuals <- suppressMessages(residuals(long_fit, long_dat, exCovs))
 
   # 3. Verify that tests_df was actually created and is not NULL
   # This confirms fitLangevin successfully called gof_tests with valid data

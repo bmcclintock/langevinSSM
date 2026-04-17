@@ -1,7 +1,9 @@
 library(langevinSSM)
 
-
 n_sims <- 100
+nbAnimals <- 3
+obsPerAnimal <- 5000
+
 p_vals_ks_x <- p_vals_ks_y <- matrix(0,n_sims,2,dimnames=list(1:n_sims, c("underdamped", "overdamped")))
 p_vals_lb_x <- p_vals_lb_y <- matrix(0,n_sims,2,dimnames=list(1:n_sims, c("underdamped", "overdamped")))
 p_vals_ks_mah <- matrix(0,n_sims,2,dimnames=list(1:n_sims, c("underdamped", "overdamped")))
@@ -16,18 +18,21 @@ p_val <- 0.05
 set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 for(i in 1:n_sims) {
 
-  sim_data <- simLangevin(model = true_model, par = true_par, obsPerAnimal = 5000, nbAnimals = 3, subSample = list(samplingRate = 10),
+  sim_data <- simLangevin(model = true_model, par = true_par, obsPerAnimal = obsPerAnimal, nbAnimals = nbAnimals, subSample = list(samplingRate = 10),
                          spatialCovs = exampleCovs, measurementError = list(smaj.sd=1.5,smin.sd=0.75))
 
   fit_under <- fitLangevin(data = sim_data,
-                          spatialCovs = exampleCovs,
-                          calcResiduals = TRUE, silent = TRUE)
+                          spatialCovs = exampleCovs, silent = TRUE)
+
+  fit_under$residuals <- residuals(fit_under, data = sim_data, spatialCovs = exampleCovs, ncores = nbAnimals)
 
   fit_over <- fitLangevin(data = sim_data, model = "overdamped",
-                     spatialCovs = exampleCovs,
-                     calcResiduals = TRUE, silent = TRUE)
+                     spatialCovs = exampleCovs, silent = TRUE)
 
-  AIC_mat[i,] <- AIC(fit_under, fit_over)$AIC
+  fit_over$residuals <- residuals(fit_over, data = sim_data, spatialCovs = exampleCovs, ncores = nbAnimals)
+
+
+  AIC_mat[i,] <- AIC(fit_under, fit_over)$AIC # not valid for comparing underdamped vs overdamped
 
   tests_under <- attr(fit_under$residuals, "tests")
   tests_over <- attr(fit_over$residuals, "tests")

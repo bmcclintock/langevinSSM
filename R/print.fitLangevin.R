@@ -32,12 +32,5 @@ print.fitLangevin <- function(x, ...) {
 
   stats::printCoefmat(nat_est, digits = 4, signif.stars = FALSE, na.print = "NA", ...)
 
-  tests_df <- attr(x$residuals,"tests")
-  if(!is.null(tests_df)){
-    cat("\n--- OSA Goodness-of-Fit Results ---\n")
-    print(tests_df, row.names = FALSE)
-    cat("-----------------------------------\n")
-  }
-
   invisible(x)
 }

@@ -6,7 +6,6 @@
 \alias{coef.fitLangevin}
 \alias{vcov.fitLangevin}
 \alias{confint.fitLangevin}
-\alias{residuals.fitLangevin}
 \title{S3 Methods for Langevin model fits}
 \usage{
 \method{logLik}{fitLangevin}(object, ...)
@@ -16,8 +15,6 @@
 \method{vcov}{fitLangevin}(object, type = "natural", ...)
 
 \method{confint}{fitLangevin}(object, parm, level = 0.95, type = "natural", ...)
-
-\method{residuals}{fitLangevin}(object, ...)
 }
 \arguments{
 \item{object}{A \code{fitLangevin} object.}

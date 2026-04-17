@@ -4,7 +4,14 @@
 \alias{regionProb}
 \title{Calculate regional probability from fitted Langevin model}
 \usage{
-regionProb(fit, spatialCovs, mask, nSims = 1000, show_progress = TRUE)
+regionProb(
+  fit,
+  spatialCovs,
+  mask,
+  nSims = 0,
+  level = 0.95,
+  show_progress = TRUE
+)
 }
 \arguments{
 \item{fit}{A \code{fitLangevin} object to supply the covariance matrix.}
@@ -13,15 +20,17 @@ regionProb(fit, spatialCovs, mask, nSims = 1000, show_progress = TRUE)
 
 \item{mask}{A \code{\link[terra]{SpatRaster}} with 1s in the region of interest and NAs/0s elsewhere.}
 
-\item{nSims}{Integer. Number of simulations to generate credible intervals.}
+\item{nSims}{Integer. Number of simulations to generate credible intervals. Default: \code{0}.}
+
+\item{level}{Numeric. The confidence level for the intervals. Default: \code{0.95}.}
 
 \item{show_progress}{Logical. If \code{TRUE}, displays a progress bar and messages. Default: \code{TRUE}.}
 }
 \value{
-A list containing the point estimate, Delta method SE, and Monte Carlo SE/CIs.
+A \code{regLangevin} object (which is a list) containing the point estimate(s), Delta method SE, Monte Carlo SE/CIs, and the underlying spatial rasters (\code{prob_raster} and \code{mask}) used for plotting.
 }
 \description{
-This function calculates the probability of an animal being in a specified region (defined by a mask) based on the fitted Langevin model. It provides both a point estimate and uncertainty quantification using the Delta method and Monte Carlo simulations. The Delta method is a quick approximation, while the Monte Carlo approach captures the full uncertainty from the covariance matrix.
+This function calculates the probability of an animal being in a specified region (defined by a mask) based on the fitted Langevin model. It provides both a point estimate and uncertainty quantification using the Delta method and Monte Carlo simulations. The Delta method is a quick approximation, while the Monte Carlo approach captures the full uncertainty from the covariance matrix. If dynamic (time-varying) covariates are provided, it calculates the regional probability for each temporal layer.
 }
 \examples{
 \donttest{
@@ -37,11 +46,14 @@ d2c <- exampleCovs$d2c < 2.5
 reg_prob <- regionProb(fit = fit,
                        spatialCovs = exampleCovs,
                        mask = d2c,
-                       nSims = 1000)
+                       nSims = 1000,
+                       level = 0.95)
 
 # point estimate and 95\% Monte Carlo credible interval
-reg_prob$Point_Estimate
-reg_prob$CI_sim_95
+reg_prob
+
+# plot the regional probability
+plot(reg_prob, log = FALSE)
 }
 }
 \seealso{

@@ -1,5 +1,5 @@
 #' @importFrom utils globalVariables
-utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical"))
+utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid"))
 
 #' Example Spatial Covariates
 #'
@@ -214,6 +214,67 @@ print.resLangevin <- function(x, ...) {
   print(res_summary)
 
   #cat("\n* Tip: Use plot() on this object to view diagnostic plots.\n")
+
+  invisible(x)
+}
+
+#' @export
+print.regLangevin <- function(x, digits = 4, ...) {
+  n_layers <- length(x$Point_Estimate)
+  conf_level <- x$level * 100
+
+  if (n_layers == 1) {
+    cat("Regional Probability Estimate\n")
+    cat("=============================\n")
+    cat(sprintf("Point Estimate: %.*f\n\n", digits, x$Point_Estimate[1]))
+
+    cat("Delta Method Approximation:\n")
+    cat(sprintf("  Standard Error: %.*f\n", digits, x$SE_delta[1]))
+    cat(sprintf("  %.0f%% CI:         [%.*f, %.*f]\n", conf_level, digits, x$CI_delta[1, 1], digits, x$CI_delta[1, 2]))
+
+    if (!is.null(x$SE_sim)) {
+      cat("\nMonte Carlo Simulation:\n")
+      cat(sprintf("  Standard Error: %.*f\n", digits, x$SE_sim[1]))
+      cat(sprintf("  %.0f%% CI:         [%.*f, %.*f]\n", conf_level, digits, x$CI_sim[1, 1], digits, x$CI_sim[1, 2]))
+      cat(sprintf("  (Based on %d draws)\n", nrow(x$simulated_draws)))
+    }
+
+  } else {
+    cat("Regional Probability Estimates (Multi-Layer)\n")
+    cat("============================================\n")
+
+    time_vals <- tryCatch(terra::time(x$prob_raster), error = function(e) NULL)
+    has_time <- !is.null(time_vals) && !all(is.na(time_vals))
+
+    df_base <- data.frame(Layer = seq_len(n_layers))
+    if (has_time) df_base$Time <- time_vals
+
+    # 1. Point Estimates
+    df_est <- df_base
+    df_est$Estimate <- round(x$Point_Estimate, digits)
+    cat("\n--- Point Estimates ---\n")
+    print(df_est, row.names = FALSE)
+
+    # 2. Delta Method
+    df_delta <- df_base
+    df_delta$SE <- round(x$SE_delta, digits)
+    df_delta$CI <- sprintf(paste0("[%.", digits, "f, %.", digits, "f]"), x$CI_delta[, 1], x$CI_delta[, 2])
+    names(df_delta)[names(df_delta) == "CI"] <- sprintf("%.0f%%_CI", conf_level)
+    cat("\n--- Delta Method Approximation ---\n")
+    print(df_delta, row.names = FALSE)
+
+    # 3. Monte Carlo
+    if (!is.null(x$SE_sim)) {
+      df_sim <- df_base
+      df_sim$SE <- round(x$SE_sim, digits)
+      df_sim$CI <- sprintf(paste0("[%.", digits, "f, %.", digits, "f]"), x$CI_sim[, 1], x$CI_sim[, 2])
+      names(df_sim)[names(df_sim) == "CI"] <- sprintf("%.0f%%_CI", conf_level)
+
+      cat("\n--- Monte Carlo Simulation ---\n")
+      print(df_sim, row.names = FALSE)
+      cat(sprintf("\n(Based on %d draws)\n", nrow(x$simulated_draws)))
+    }
+  }
 
   invisible(x)
 }

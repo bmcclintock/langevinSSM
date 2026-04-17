@@ -6,6 +6,7 @@
 \alias{plot.simLangevin}
 \alias{plot.dataLangevin}
 \alias{plot.resLangevin}
+\alias{plot.regLangevin}
 \alias{plotUD}
 \title{Plot Langevin model fits and data}
 \usage{
@@ -35,14 +36,16 @@
 
 \method{plot}{resLangevin}(x, tracks = NULL, ...)
 
+\method{plot}{regLangevin}(x, extent = NULL, log = FALSE, ...)
+
 plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 }
 \arguments{
-\item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
+\item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.}
 
-\item{log}{Logical. For \code{fitLangevin} and \code{simLangevin}, indicates whether to plot the log UD (default: \code{TRUE}) or the probability UD. For \code{udLangevin}, indicates whether to plot the log of the standard error (\code{TRUE}) or natural standard error (default: \code{TRUE}).}
+\item{log}{Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.}
 
 \item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.}
 
@@ -67,6 +70,7 @@ These methods plot objects associated with the \code{langevinSSM} package using 
   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
+  \item \strong{\code{plot.regLangevin}:} Plots the region of interest defined by the mask and the relative probability of presence within that region.
   \item \strong{\code{plot.resLangevin}:} Generates Q-Q and ACF diagnostic plots for One-Step-Ahead (OSA) residuals.
   \item \strong{\code{plotUD}:} Plots the estimated utilization distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 }

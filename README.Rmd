@@ -154,11 +154,14 @@ d2c <- exampleCovs$d2c < 2.5
 reg_prob <- regionProb(fit_under,
                        spatialCovs = exampleCovs, 
                        mask = d2c, # region of interest
+                       nSims = 1000, # number of Monte Carlo simulations
                        show_progress = FALSE)
 
-reg_prob$Point_Estimate # point estimate
-reg_prob$CI_sim_95 # 95% Monte Carlo credible interval
+reg_prob
+
+plot(reg_prob, log = TRUE)
 ```
+
 ## Citation
 
 If you use `{langevinSSM}` in your research, please cite it as follows:

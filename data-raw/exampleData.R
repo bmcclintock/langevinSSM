@@ -53,7 +53,13 @@ plot(fit,spatialCovs=exampleCovs,data=exampleDat)
 p <- plot(res)
 p$qq_x + p$qq_y + p$acf_x + p$acf_y + plot_layout(ncol=2)
 
-
+d2c <- exampleCovs$d2c < 2.5
+reg_prob <- regionProb(fit,
+                       spatialCovs = exampleCovs,
+                       mask = d2c, # region of interest
+                       nSims = 1000,
+                       show_progress = FALSE)
+reg_prob
 
 start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")
 exampleDat$date <- start_time + (exampleDat$date * 3600)

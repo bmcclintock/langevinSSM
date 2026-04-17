@@ -128,6 +128,17 @@ test_that("plot.fitLangevin compact = FALSE returns a list of individual plots",
   expect_s3_class(p_list[[2]], "ggplot")
 })
 
+test_that("plot.fitLangevin toggles legend label based on log argument", {
+  fit <- get_mock_fit()
+  covs <- get_mock_covs(dynamic = FALSE)
+
+  p_log <- plot(fit, spatialCovs = covs, log = TRUE)
+  p_prob <- plot(fit, spatialCovs = covs, log = FALSE)
+
+  expect_equal(p_log$labels$fill, expression(log(pi(x))))
+  expect_equal(p_prob$labels$fill, expression(pi(x)))
+})
+
 # ---------------------------------------------------------
 # Tests for plot.dataLangevin
 # ---------------------------------------------------------
@@ -261,6 +272,17 @@ test_that("plot.simLangevin handles time subsetting with beta", {
   expect_true(inherits(p$facet, "FacetNull"), info = "Dynamic UD should be reduced to single layer")
 })
 
+test_that("plot.simLangevin toggles legend label based on log argument", {
+  sim <- get_mock_sim()
+  covs <- get_mock_covs(dynamic = FALSE)
+
+  p_log <- plot(sim, spatialCovs = covs, beta = c(1.5), log = TRUE)
+  p_prob <- plot(sim, spatialCovs = covs, beta = c(1.5), log = FALSE)
+
+  expect_equal(p_log$labels$fill, expression(log(pi(x))))
+  expect_equal(p_prob$labels$fill, expression(pi(x)))
+})
+
 # ---------------------------------------------------------
 # Tests for plotUD
 # ---------------------------------------------------------
@@ -297,7 +319,7 @@ test_that("plotUD works for basic UD without uncertainty", {
 
   expect_s3_class(p, "ggplot")
   expect_true(inherits(p$facet, "FacetNull"), info = "Static base UD should not use facet_wrap")
-  expect_equal(p$labels$title, "Utilization distribution")
+  expect_equal(p$labels$title, "Utilization distribution (log scale)")
 })
 
 test_that("plotUD returns list of plots when SE and CV are present", {
@@ -358,6 +380,16 @@ test_that("plotUD applies log transform to SE when log = TRUE", {
 
   # Ensure the title correctly reflects the log status
   expect_equal(p_list[["SE_delta"]]$labels$title, "UD log standard error (Delta method)")
+})
+
+test_that("plotUD toggles legend label based on log argument", {
+  ud <- get_mock_ud(with_uncertainty = FALSE)
+
+  p_log <- plotUD(ud, log = TRUE)
+  p_prob <- plotUD(ud, log = FALSE)
+
+  expect_equal(p_log$labels$fill, expression(log(pi(x))))
+  expect_equal(p_prob$labels$fill, expression(pi(x)))
 })
 
 # ---------------------------------------------------------

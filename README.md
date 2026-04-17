@@ -193,7 +193,7 @@ fit_under
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2061.97 
-#> Optimization time:  0.63 seconds
+#> Optimization time:  0.61 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
@@ -360,13 +360,27 @@ d2c <- exampleCovs$d2c < 2.5
 reg_prob <- regionProb(fit_under,
                        spatialCovs = exampleCovs, 
                        mask = d2c, # region of interest
+                       nSims = 1000, # number of Monte Carlo simulations
                        show_progress = FALSE)
 
-reg_prob$Point_Estimate # point estimate
-#> [1] 0.3098513
-reg_prob$CI_sim_95 # 95% Monte Carlo credible interval
-#> [1] 1.954616e-53 7.103307e-01
+reg_prob
+#> Regional Probability Estimate
+#> =============================
+#> Point Estimate: 0.3099
+#> 
+#> Delta Method Approximation:
+#>   Standard Error: 0.1976
+#>   95% CI:         [0.0000, 0.6972]
+#> 
+#> Monte Carlo Simulation:
+#>   Standard Error: 0.2157
+#>   95% CI:         [0.0000, 0.7103]
+#>   (Based on 1000 draws)
+
+plot(reg_prob, log = TRUE)
 ```
+
+![](man/figures/README-regionProb-1.png)<!-- -->
 
 ## Citation
 

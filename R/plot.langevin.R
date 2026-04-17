@@ -5,14 +5,15 @@
 #'   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
 #'   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
 #'   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
+#'   \item \strong{\code{plot.regLangevin}:} Plots the region of interest defined by the mask and the relative probability of presence within that region.
 #'   \item \strong{\code{plot.resLangevin}:} Generates Q-Q and ACF diagnostic plots for One-Step-Ahead (OSA) residuals.
 #'   \item \strong{\code{plotUD}:} Plots the estimated utilization distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 #' }
 #'
-#' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{udLangevin}, or \code{resLangevin} object.
+#' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
-#' @param log Logical. For \code{fitLangevin} and \code{simLangevin}, indicates whether to plot the log UD (default: \code{TRUE}) or the probability UD. For \code{udLangevin}, indicates whether to plot the log of the standard error (\code{TRUE}) or natural standard error (default: \code{TRUE}).
+#' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
@@ -23,7 +24,7 @@
 #' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
 #'
 #' @name plot.langevin
-#' @importFrom terra as.data.frame nlyr time crop ext
+#' @importFrom terra as.data.frame nlyr time crop ext ifel mask trim
 NULL
 
 #' @rdname plot.langevin
@@ -76,7 +77,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 
   for (pid in plot_ids) {
     title_text <- if (compact) "Estimated utilization distribution and tracks" else paste("Estimated UD and tracks - ID:", pid)
-    fill_label <- ifelse(log, expression(log(pi)), expression(pi))
+    fill_label <- if (log) expression(log(pi(x))) else expression(pi(x))
 
     plot_list[[pid]] <- .build_langevin_plot(
       track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
@@ -132,7 +133,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
 
   for (pid in plot_ids) {
     title_text <- if (compact) "Theoretical utilization distribution and tracks" else paste("Theoretical UD and tracks - ID:", pid)
-    fill_label <- ifelse(log, expression(log(pi)), expression(pi))
+    fill_label <- if (log) expression(log(pi(x))) else expression(pi(x))
 
     plot_list[[pid]] <- .build_langevin_plot(
       track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
@@ -237,6 +238,80 @@ plot.resLangevin <- function(x, tracks = NULL, ...) {
   }
 }
 
+#' @rdname plot.langevin
+#' @method plot regLangevin
+#' @export
+plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+
+  region_prob <- x$prob_raster
+
+  if (log) {
+    region_prob <- log(region_prob)
+    fill_label <- expression(log(pi(x)))
+  } else {
+    fill_label <- expression(pi(x))
+  }
+
+  # Filter out everything outside the region of interest
+  m_na <- terra::ifel(x$mask == 1, 1, NA)
+
+  # terra::mask automatically recycles a 1-layer mask across a multi-layer raster
+  region_prob <- terra::mask(region_prob, m_na)
+
+  # Find the true bounding box of the active region
+  active_ext <- tryCatch(terra::ext(terra::trim(region_prob)), error = function(e) NULL)
+
+  crop_ext <- extent
+  if (is.null(crop_ext)) {
+    crop_ext <- active_ext
+  } else if (!is.null(active_ext)) {
+    # Check if the user's extent crops out any part of the active region
+    user_ext <- tryCatch(terra::ext(crop_ext), error = function(e) NULL)
+    if (!is.null(user_ext)) {
+      # Vectors from terra::ext() format as: xmin, xmax, ymin, ymax
+      if (active_ext[1] < user_ext[1] || active_ext[2] > user_ext[2] ||
+          active_ext[3] < user_ext[3] || active_ext[4] > user_ext[4]) {
+        warning("The provided 'extent' crops out parts of the region of interest. The visible pixels will not sum to the total regional probability.")
+      }
+    }
+  }
+
+  n_layers <- terra::nlyr(region_prob)
+  prob_strings <- sprintf("%.2f%%", x$Point_Estimate * 100)
+
+  if (n_layers == 1) {
+    title_str <- paste("Regional Probability:", prob_strings[1])
+  } else {
+    title_str <- "Regional Probability"
+  }
+
+  p <- .build_langevin_plot(
+    track_df = NULL, pid = "all", raster_obj = region_prob, user_extent = crop_ext, time = NULL,
+    compact = TRUE, title_text = title_str, fill_label = fill_label,
+    ...
+  )
+
+  # Intercept and safely overwrite the facet labels created by plotRaster
+  if (n_layers > 1) {
+    layer_times <- tryCatch(terra::time(region_prob), error = function(e) NULL)
+
+    if (!is.null(layer_times) && !all(is.na(layer_times))) {
+      old_names <- paste0("Time: ", layer_times)
+    } else {
+      old_names <- paste0("Layer ", seq_len(n_layers))
+    }
+
+    # Map the old names to the new strings containing the probabilities
+    new_names <- paste0(old_names, "\n(Prob: ", prob_strings, ")")
+    names(new_names) <- old_names
+
+    p <- p + ggplot2::facet_wrap(~ layer, labeller = ggplot2::as_labeller(new_names))
+  }
+
+  return(p)
+}
+
 #' @details Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
 #' @rdname plot.langevin
 #' @export
@@ -247,21 +322,41 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   plot_list <- list()
   layer_names <- names(x)
 
-  ud_name <- if (any(grepl("^log_UD", layer_names))) "log_UD" else "UD"
+  has_log_ud <- any(grepl("^log_UD$", layer_names))
+  has_ud <- any(grepl("^UD$", layer_names))
 
+  ud_name <- if (has_log_ud) "log_UD" else "UD"
   target_idx <- which(layer_names == ud_name)
   ud_rast <- x[[target_idx]]
 
-  is_log_ud <- (ud_name == "log_UD")
-
-  ud_title <- ifelse(is_log_ud, "Utilization distribution (log scale)", "Utilization distribution")
-  ud_legend <- expression(pi(x)) # if (is_log_ud) expression(log(pi(x))) else expression(pi(x))
+  # Actively transform base UD based on log argument regardless of raster origin
+  if (log) {
+    if (!has_log_ud) {
+      ud_rast <- log(ud_rast)
+    }
+    ud_title <- "Utilization distribution (log scale)"
+    ud_legend <- expression(log(pi(x)))
+  } else {
+    if (has_log_ud) {
+      # Safely normalize the linear predictor back to a probability distribution
+      max_log <- terra::global(ud_rast, "max", na.rm = TRUE)$max
+      for(k in seq_len(terra::nlyr(ud_rast))) {
+        ud_rast[[k]] <- exp(ud_rast[[k]] - max_log[k])
+      }
+      layer_sums <- terra::global(ud_rast, "sum", na.rm = TRUE)$sum
+      for(k in seq_len(terra::nlyr(ud_rast))) {
+        ud_rast[[k]] <- ud_rast[[k]] / layer_sums[k]
+      }
+    }
+    ud_title <- "Utilization distribution"
+    ud_legend <- expression(pi(x))
+  }
 
   plot_list[["UD"]] <- plotRaster(ud_rast, legend.title = ud_legend, extent = extent, time = time, ...) +
-    ggplot2::labs(title = ud_title)
+    ggplot2::labs(title = ud_title, fill = ud_legend)
 
-  se_legend <- "SE" # if (log) expression(log(SE(pi(x)))) else expression(SE(pi(x)))
-  cv_legend <- "CV" #expression(CV(pi(x)))
+  se_legend <- "SE"
+  cv_legend <- "CV"
 
   # plot Delta method uncertainty
   if ("UD_SE_delta" %in% layer_names && "UD_CV_delta" %in% layer_names) {
@@ -276,13 +371,13 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
     }
 
     plot_list[["SE_delta"]] <- plotRaster(se_rast_delta, legend.title = se_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = ifelse(log, "UD log standard error (Delta method)", "UD standard error (Delta method)"))
+      ggplot2::labs(title = ifelse(log, "UD log standard error (Delta method)", "UD standard error (Delta method)"), fill = se_legend)
 
     plot_list[["CV_delta"]] <- plotRaster(x[[cv_idx]], legend.title = cv_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = "UD coefficient of variation (Delta method)")
+      ggplot2::labs(title = "UD coefficient of variation (Delta method)", fill = cv_legend)
   }
 
-  # plot Monte Carlo undertainty
+  # plot Monte Carlo uncertainty
   if ("UD_SE_sim" %in% layer_names && "UD_CV_sim" %in% layer_names) {
     se_sim_idx <- which(layer_names == "UD_SE_sim")
     cv_sim_idx <- which(layer_names == "UD_CV_sim")
@@ -293,10 +388,10 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
       names(se_rast_sim) <- rep("log_UD_SE_sim", terra::nlyr(se_rast_sim))
     }
     plot_list[["SE_sim"]] <- plotRaster(se_rast_sim, legend.title = se_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = ifelse(log, "UD log standard error (simulated)", "UD standard error (simulated)"))
+      ggplot2::labs(title = ifelse(log, "UD log standard error (simulated)", "UD standard error (simulated)"), fill = se_legend)
 
     plot_list[["CV_sim"]] <- plotRaster(x[[cv_sim_idx]], legend.title = cv_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = "UD coefficient of variation (simulated)")
+      ggplot2::labs(title = "UD coefficient of variation (simulated)", fill = cv_legend)
   }
 
   # return single plot if no uncertainty, otherwise return the full list
@@ -381,7 +476,7 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
     ggplot2::geom_abline(intercept = int, slope = slope, color = "red", linewidth = 1, linetype = "dashed") +
     ggplot2::geom_point(ggplot2::aes(color = outlier), alpha = 0.6) +
     ggplot2::scale_color_manual(values = c("FALSE" = "royalblue", "TRUE" = "red")) +
-    ggplot2::labs(title = title, x = "Theoretical Quantiles (Chi-sq, df=2)", y = "Sample Squared Mahalanobis Distance") +
+    ggplot2::labs(title = title, x = "Theoretical Quantiles (Chi-sq, df=2)", y = "Sample Squared Mahalan Distance") +
     ggplot2::theme_minimal() +
     ggplot2::theme(legend.position = "none")
 }
@@ -445,7 +540,7 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
 
   p <- p +
     ggplot2::theme_minimal() +
-    ggplot2::labs(x = "easting (x)", y = "northing (y)", title = title_text)
+    ggplot2::labs(x = "easting (x)", y = "northing (y)", title = title_text, fill = fill_label)
 
   if (!is.null(trk_sub) && nrow(trk_sub) > 0) {
     if(length(track_colors) > 1) {
@@ -464,4 +559,3 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
 
   return(p)
 }
-

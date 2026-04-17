@@ -131,6 +131,6 @@ test_that("getUD catches user errors related to missing fit requirements for nSi
   fit_bad <- get_mock_fit_for_ud()
   fit_bad$covariance$natural <- NULL
 
-  expect_error(getUD(spatialCovs = covs, beta = c(0.5, -0.2), nSims = 5, show_progress = FALSE, plot = FALSE), "fit\\$covariance\\$natural not found")
-  expect_error(getUD(spatialCovs = covs, fit = fit_bad, nSims = 5, show_progress = FALSE, plot = FALSE), "Refit model to get covariance matrix.")
+  expect_error(getUD(spatialCovs = covs, beta = c(0.5, -0.2), nSims = 5, show_progress = FALSE, plot = FALSE), "Cannot estimate uncertainty \\(nSims > 0\\) without a fitted model object")
+  expect_error(getUD(spatialCovs = covs, fit = fit_bad, nSims = 5, show_progress = FALSE, plot = FALSE), "does not contain a covariance matrix")
 })

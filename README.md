@@ -165,7 +165,7 @@ fit_over
 #> Model type:        Overdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2428.077 
-#> Optimization time:  0.35 seconds
+#> Optimization time:  0.34 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------

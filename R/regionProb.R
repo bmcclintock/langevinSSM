@@ -35,7 +35,6 @@
 #' }
 #' @seealso \code{\link{getUD}} for calculating the utilization distribution.
 # #' @importFrom MASS mvrnorm
-#' @importFrom utils setTxtProgressBar txtProgressBar
 #' @importFrom stats quantile sd qnorm
 #' @importFrom terra as.matrix ncell nlyr time
 #' @export
@@ -71,22 +70,11 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, show_pro
   a <- (1 - level) / 2
   z_val <- stats::qnorm(1 - a)
 
-  SE_sim <- if(nSims > 0) numeric(n_layers) else NULL
-  CI_sim <- if(nSims > 0) matrix(NA, nrow = n_layers, ncol = 2) else NULL
-  simulated_draws <- if(nSims > 0) matrix(NA, nrow = nSims, ncol = n_layers) else NULL
-
   pi_mat <- matrix(NA, nrow = n_cells, ncol = n_layers)
 
-  if (nSims > 0) {
-    if (!requireNamespace("MASS", quietly = TRUE)) stop("Package 'MASS' needed for simulation. Please install it.", call. = FALSE)
-    message("Simulating ", nSims, " draws for regional probability...")
-    beta_draws <- MASS::mvrnorm(nSims, beta, beta_cov)
-  }
-
-  total_steps <- if(nSims > 0) n_layers * nSims else n_layers
-  if (show_progress) pb <- utils::txtProgressBar(min = 0, max = total_steps, style = 3)
-  counter <- 0
-
+  # ==========================================
+  # 1. Point Estimates and Delta Method
+  # ==========================================
   for (k in 1:n_layers) {
     mk <- if (ncol(mask_mat) == 1) mask_mat[, 1] else mask_mat[, k]
     mk[is.na(mk)] <- 0
@@ -111,27 +99,43 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, show_pro
 
     SE_delta[k] <- sqrt(pmax(var_P, 0))
     CI_delta[k, ] <- c(max(0, P_est[k] - z_val * SE_delta[k]), min(1, P_est[k] + z_val * SE_delta[k]))
-
-    # Monte Carlo Simulations
-    if (nSims > 0) {
-      P_sims <- numeric(nSims)
-      for (i in 1:nSims) {
-        W_sim <- as.numeric(Ck %*% beta_draws[i, ])
-        pi_sim <- exp(W_sim - max(W_sim, na.rm = TRUE))
-        pi_sim <- pi_sim / sum(pi_sim, na.rm = TRUE)
-        P_sims[i] <- sum(pi_sim * mk, na.rm = TRUE)
-        counter <- counter + 1
-        if (show_progress) utils::setTxtProgressBar(pb, counter)
-      }
-      SE_sim[k] <- stats::sd(P_sims)
-      CI_sim[k, ] <- as.numeric(stats::quantile(P_sims, probs = c(a, 1 - a)))
-      simulated_draws[, k] <- P_sims
-    } else {
-      counter <- counter + 1
-      if (show_progress) utils::setTxtProgressBar(pb, counter)
-    }
   }
-  if (show_progress) close(pb)
+
+  # ==========================================
+  # 2. Monte Carlo Simulations
+  # ==========================================
+  if (nSims > 0) {
+    if (!requireNamespace("MASS", quietly = TRUE)) stop("Package 'MASS' needed for simulation. Please install it.", call. = FALSE)
+    message("   Simulating", ifelse(show_progress," ",paste0(" ",nSims," ")), "draws for regional probability...")
+    beta_draws <- MASS::mvrnorm(nSims, beta, beta_cov)
+
+    mask_mat[is.na(mask_mat)] <- 0
+
+    P_sims_mat <- simulate_regionprob_cpp(
+      nSims = nSims,
+      n_cells = n_cells,
+      n_layers = n_layers,
+      n_covs = n_covs,
+      beta_draws = beta_draws,
+      cov_mats_list = cov_mats,
+      mask_mat = mask_mat,
+      show_progress = show_progress
+    )
+
+    SE_sim <- apply(P_sims_mat, 2, stats::sd, na.rm = TRUE)
+
+    if (n_layers == 1) {
+      CI_sim <- matrix(stats::quantile(P_sims_mat[, 1], probs = c(a, 1 - a), na.rm = TRUE), nrow = 1)
+    } else {
+      CI_sim <- t(apply(P_sims_mat, 2, stats::quantile, probs = c(a, 1 - a), na.rm = TRUE))
+    }
+    simulated_draws <- P_sims_mat
+
+  } else {
+    SE_sim <- NULL
+    CI_sim <- NULL
+    simulated_draws <- NULL
+  }
 
   # Prepare multi-layer raster output
   dyn_idx <- which(sapply(spatialCovs, terra::nlyr) == n_layers)[1]

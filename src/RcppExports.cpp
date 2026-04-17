@@ -64,3 +64,38 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// simulate_regionprob_cpp
+arma::mat simulate_regionprob_cpp(int nSims, int n_cells, int n_layers, int n_covs, const arma::mat& beta_draws, const Rcpp::List& cov_mats_list, const arma::mat& mask_mat, bool show_progress);
+RcppExport SEXP _langevinSSM_simulate_regionprob_cpp(SEXP nSimsSEXP, SEXP n_cellsSEXP, SEXP n_layersSEXP, SEXP n_covsSEXP, SEXP beta_drawsSEXP, SEXP cov_mats_listSEXP, SEXP mask_matSEXP, SEXP show_progressSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type nSims(nSimsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_cells(n_cellsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_layers(n_layersSEXP);
+    Rcpp::traits::input_parameter< int >::type n_covs(n_covsSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type beta_draws(beta_drawsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List& >::type cov_mats_list(cov_mats_listSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type mask_mat(mask_matSEXP);
+    Rcpp::traits::input_parameter< bool >::type show_progress(show_progressSEXP);
+    rcpp_result_gen = Rcpp::wrap(simulate_regionprob_cpp(nSims, n_cells, n_layers, n_covs, beta_draws, cov_mats_list, mask_mat, show_progress));
+    return rcpp_result_gen;
+END_RCPP
+}
+// simulate_ud_cpp
+Rcpp::List simulate_ud_cpp(int nSims, int n_cells, int n_ud_layers, int n_covs, const arma::mat& beta_draws, const Rcpp::List& cov_mats_list, bool show_progress);
+RcppExport SEXP _langevinSSM_simulate_ud_cpp(SEXP nSimsSEXP, SEXP n_cellsSEXP, SEXP n_ud_layersSEXP, SEXP n_covsSEXP, SEXP beta_drawsSEXP, SEXP cov_mats_listSEXP, SEXP show_progressSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type nSims(nSimsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_cells(n_cellsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_ud_layers(n_ud_layersSEXP);
+    Rcpp::traits::input_parameter< int >::type n_covs(n_covsSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type beta_draws(beta_drawsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List& >::type cov_mats_list(cov_mats_listSEXP);
+    Rcpp::traits::input_parameter< bool >::type show_progress(show_progressSEXP);
+    rcpp_result_gen = Rcpp::wrap(simulate_ud_cpp(nSims, n_cells, n_ud_layers, n_covs, beta_draws, cov_mats_list, show_progress));
+    return rcpp_result_gen;
+END_RCPP
+}

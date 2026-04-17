@@ -46,7 +46,7 @@ fit
 res <- residuals(fit,exampleDat, exampleCovs, run_tests = TRUE, ncores=nbAnimals)
 res
 
-estUD <- getUD(fit,spatialCovs=exampleCovs)
+estUD <- getUD(fit,spatialCovs=exampleCovs,nSims=1000)
 
 plot(fit,spatialCovs=exampleCovs,data=exampleDat)
 
@@ -57,8 +57,7 @@ d2c <- exampleCovs$d2c < 2.5
 reg_prob <- regionProb(fit,
                        spatialCovs = exampleCovs,
                        mask = d2c, # region of interest
-                       nSims = 1000,
-                       show_progress = FALSE)
+                       nSims = 1000)
 reg_prob
 
 start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")

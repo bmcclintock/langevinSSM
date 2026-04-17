@@ -10,3 +10,5 @@ langevinSSM.so
 langevinSSM_TMBExports.so
 langevinSSM_init.o
 simulateLangevin.o
+simulate_ud.o
+simulate_regionprob.o

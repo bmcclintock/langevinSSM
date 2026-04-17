@@ -336,6 +336,7 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
     }
     ud_title <- "Utilization distribution (log scale)"
     ud_legend <- expression(log(pi(x)))
+    se_legend <- "log(SE)"
   } else {
     if (has_log_ud) {
       # Safely normalize the linear predictor back to a probability distribution
@@ -350,12 +351,12 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
     }
     ud_title <- "Utilization distribution"
     ud_legend <- expression(pi(x))
+    se_legend <- "SE"
   }
 
   plot_list[["UD"]] <- plotRaster(ud_rast, legend.title = ud_legend, extent = extent, time = time, ...) +
     ggplot2::labs(title = ud_title, fill = ud_legend)
 
-  se_legend <- "SE"
   cv_legend <- "CV"
 
   # plot Delta method uncertainty

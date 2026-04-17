@@ -70,8 +70,12 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nSims = 0, show_progress =
 
   if (can_calc_se) {
     beta_cov <- fit$covariance$natural[beta_idx, beta_idx, drop = FALSE]
-  } else if (nSims > 0) {
-    stop("fit$covariance$natural not found. Refit model to get covariance matrix.")
+  } else {
+    if (missing(fit)) {
+      stop("Cannot estimate uncertainty (nSims > 0) without a fitted model object. Please provide 'fit' instead of 'beta'.")
+    } else {
+      stop("The provided model ('fit') does not contain a covariance matrix. Refit the model to calculate uncertainty.")
+    }
   }
 
   n_cells <- terra::ncell(spatialCovs[[1]])
@@ -92,7 +96,7 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nSims = 0, show_progress =
   # 1. Delta Method Approximation
   # ==========================================
   if (can_calc_se) {
-    if (show_progress) message("   Calculating Delta Method UD uncertainty...")
+    message("   Calculating Delta Method UD uncertainty...")
     delta_se_mat <- matrix(0, nrow = n_cells, ncol = n_ud_layers)
     ud_prob_mat <- terra::as.matrix(ud_prob_rast, wide = FALSE)
 
@@ -135,38 +139,20 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nSims = 0, show_progress =
     if (!requireNamespace("MASS", quietly = TRUE)) stop("Package \"MASS\" needed for simulation Please install it.", call. = FALSE)
 
     beta_draws <- MASS::mvrnorm(nSims, beta, beta_cov)
-    mean_pi <- matrix(0, nrow = n_cells, ncol = n_ud_layers)
-    M2_pi <- matrix(0, nrow = n_cells, ncol = n_ud_layers)
 
-    if (show_progress) pb <- utils::txtProgressBar(min = 0, max = nSims, style = 3)
+    cpp_res <- simulate_ud_cpp(
+      nSims = nSims,
+      n_cells = n_cells,
+      n_ud_layers = n_ud_layers,
+      n_covs = n_covs,
+      beta_draws = beta_draws,
+      cov_mats_list = cov_mats,
+      show_progress = show_progress
+    )
 
-    for (i in 1:nSims) {
-      W <- matrix(0, nrow = n_cells, ncol = n_ud_layers)
-      for (j in 1:n_covs) {
-        b <- beta_draws[i, j]
-        m <- cov_mats[[j]]
-        W <- W + (m * b)
-      }
-
-      pi_sim <- W
-      for (k in 1:n_ud_layers) {
-        max_W <- max(W[, k], na.rm = TRUE)
-        pi_sim[, k] <- exp(W[, k] - max_W)
-        pi_sim[, k] <- pi_sim[, k] / sum(pi_sim[, k], na.rm = TRUE)
-      }
-
-      delta <- pi_sim - mean_pi
-      mean_pi <- mean_pi + delta / i
-      delta2 <- pi_sim - mean_pi
-      M2_pi <- M2_pi + delta * delta2
-
-      if (show_progress) utils::setTxtProgressBar(pb, i)
-    }
-    if (show_progress) close(pb)
-
-    var_pi_mat <- M2_pi / (nSims - 1)
+    var_pi_mat <- cpp_res$M2_pi / (nSims - 1)
     sim_se_mat <- sqrt(pmax(var_pi_mat, 0))
-    sim_cv_mat <- sim_se_mat / mean_pi
+    sim_cv_mat <- sim_se_mat / cpp_res$mean_pi
 
     sim_se_rast <- terra::setValues(template, sim_se_mat)
     names(sim_se_rast) <- rep("UD_SE_sim", n_ud_layers)
@@ -183,17 +169,6 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nSims = 0, show_progress =
     num_blocks <- terra::nlyr(out_rast) / n_ud_layers
     terra::time(out_rast) <- rep(time_vals, num_blocks)
   }
-
-  #if (plot) {
-  #  p <- plotUD(out_rast, log = log)
-  #  if (inherits(p, "ggplot")) {
-  #    print(p)
-  #  } else if (is.list(p)) {
-  #    # Print each plot in the list sequentially
-  #    lapply(p, print)
-  #    invisible() # prevents lapply from cluttering the console output
-  #  }
-  #}
 
   return(out_rast)
 }

@@ -98,7 +98,7 @@ test_that("getUD dynamic probability UD layers individually sum to 1", {
 
 # --- Simulation and Uncertainty Tests (nSims > 0) ---
 
-test_that("getUD marginal posterior simulation returns correctly structured raster stack", {
+test_that("getUD marginal Monte Carlo simulation returns correctly structured raster stack", {
   covs <- list(hab1 = get_static_raster(), hab2 = get_static_raster("hab2"))
   fit <- get_mock_fit_for_ud()
 

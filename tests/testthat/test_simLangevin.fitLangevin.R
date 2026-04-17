@@ -99,14 +99,14 @@ test_that("Imputation vs Predictive Check divergence and GoF validation", {
   expect_gt(dist_pred, dist_imp)
 })
 
-test_that("Full Posterior Draw handles uncertainty propagation", {
+test_that("Joint precision draw handles uncertainty propagation", {
   set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   res_fp <- suppressMessages(simLangevin(fit, data = exDat, spatialCovs = exCovs,
-                                         conditional = TRUE, fullPosterior = TRUE))
+                                         conditional = TRUE, jointPrecision = TRUE))
 
   set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   res_nfp <- suppressMessages(simLangevin(fit, data = exDat, spatialCovs = exCovs,
-                                          conditional = TRUE, fullPosterior = FALSE))
+                                          conditional = TRUE, jointPrecision = FALSE))
 
   expect_false(identical(res_fp$mu.x, res_nfp$mu.x))
 })

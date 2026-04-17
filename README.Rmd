@@ -103,7 +103,18 @@ fit_under
 #### Utilization distribution
 ```{r ud,eval=TRUE}
 # calculate the estimated UD
-UD <- getUD(spatialCovs = exampleCovs, fit = fit_under)
+UD <- getUD(spatialCovs = exampleCovs, 
+            fit = fit_under, 
+            nSims = 1000, # Monte Carlo simulation
+            show_progress = FALSE)
+
+p_UD <- plotUD(UD)
+
+# UD relative uncertainty (Delta method approximation)
+p_UD$CV_delta
+
+# UD relative uncertainty (Monte Carlo simulation)
+p_UD$CV_sim
 
 # plot the estimated (log) UD with the observed and estimated locations
 plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
@@ -111,22 +122,26 @@ plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
 
 #### Other S3 methods for `fitLangevin` objects
 ```{r s3,eval=TRUE}
-coef(fit_under) # fixed effect estimates
+# fixed effect estimates
+coef(fit_under) 
 
-confint(fit_under) # confidence intervals for fixed effects
+# confidence intervals for fixed effects
+confint(fit_under) 
 
-mu_ci <- confint(fit_under, type= "mu") # confidence intervals for true locations
+# confidence intervals for true locations
+mu_ci <- confint(fit_under, type= "mu") 
+
 head(mu_ci)
 
-AIC(fit_under) # for comparing models with different fixed effects
+# AIC for comparing models with different fixed effects
+AIC(fit_under) 
 
-BIC(fit_under) # for comparing models with different fixed effects
+# BIC for comparing models with different fixed effects
+BIC(fit_under) 
 ```
 #### One-step-ahead residuals
 ```{r osa,eval=TRUE,cache=TRUE}
 # calculate one-step-ahead residuals for model diagnostics
-## can also be used to compare "underdamped" vs "overdamped" model fits
-
 res_under <- residuals(fit_under, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
 res_under
 
@@ -134,6 +149,7 @@ res_under
 p_under <- plot(res_under)
 p_under$qq_x + p_under$qq_y + p_under$acf_x + p_under$acf_y + plot_layout(ncol=2)
 
+# can be used to compare "underdamped" vs "overdamped" models
 res_over <- residuals(fit_over, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
 res_over
 
@@ -148,9 +164,9 @@ rasterOverlap(exp(UD), exp(trueUD))
 ```
 #### Regional presence probability
 ```{r regionProb,eval=TRUE}
-# calculate probability of being in specified region
-## create a spatial mask for the region of interest
+# create a spatial mask for the region of interest
 d2c <- exampleCovs$d2c < 2.5
+
 reg_prob <- regionProb(fit_under,
                        spatialCovs = exampleCovs, 
                        mask = d2c, # region of interest

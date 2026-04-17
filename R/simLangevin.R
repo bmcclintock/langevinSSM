@@ -18,7 +18,7 @@
 #' @param subSample List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).
 #'
 #' @param data The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.
-#' @param fullPosterior Logical. If \code{TRUE}, draws parameters and latent states from the full joint precision matrix of both fixed parameters and random effects. If \code{FALSE}, fixes the movement parameters at their point estimates and draws only random effects. Default: \code{FALSE}.
+#' @param jointPrecision Logical. If \code{TRUE}, draws parameters and latent variables from the full joint precision matrix of both fixed parameters and random effects. If \code{FALSE}, fixes the movement parameters at their point estimates and draws only random effects. Default: \code{FALSE}.
 #' @param conditional Logical. If \code{TRUE}, simulates tracks conditional on the observed data (imputation), adding observation error to the drawn latent states based on the measurement error information in \code{data}. If \code{FALSE}, simulates an entirely new track forwards in time (e.g. for posterior predictive check). Default: \code{FALSE}.
 #'
 #' @return A data frame of class \code{dataLangevin} containing the simulated trajectories.
@@ -28,12 +28,12 @@
 #'
 #' @section Simulating from a Fitted Model (fitLangevin Method):
 #' When \code{model} is a \code{fitLangevin} object, the function behaves as a diagnostic and simulation tool.
-#' The \code{conditional} and \code{fullPosterior} arguments define four possible ways to simulate from the fitted model:
+#' The \code{conditional} and \code{jointPrecision} arguments define four possible ways to simulate from the fitted model:
 #' \itemize{
-#'   \item \strong{\code{conditional = TRUE, fullPosterior = TRUE}:} Imputes tracks tied to the \code{data}, drawn from the full joint covariance matrix to account for uncertainty. \code{timeStep} is ignored.
-#'   \item \strong{\code{conditional = TRUE, fullPosterior = FALSE}:} Imputes tracks tied to the \code{data}, drawn from the random effects covariance matrix with the movement parameters fixed at their point estimates. \code{timeStep} is ignored.
-#'   \item \strong{\code{conditional = FALSE, fullPosterior = TRUE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the full joint covariance matrix
-#'   \item \strong{\code{conditional = FALSE, fullPosterior = FALSE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the random effects covariance matrix with the movement parameters fixed at their point estimates.
+#'   \item \strong{\code{conditional = TRUE, jointPrecision = TRUE}:} Imputes tracks tied to the \code{data}, drawn from the full joint covariance matrix to account for uncertainty. \code{timeStep} is ignored.
+#'   \item \strong{\code{conditional = TRUE, jointPrecision = FALSE}:} Imputes tracks tied to the \code{data}, drawn from the random effects covariance matrix with the movement parameters fixed at their point estimates. \code{timeStep} is ignored.
+#'   \item \strong{\code{conditional = FALSE, jointPrecision = TRUE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the full joint covariance matrix
+#'   \item \strong{\code{conditional = FALSE, jointPrecision = FALSE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the random effects covariance matrix with the movement parameters fixed at their point estimates.
 #' }
 #' @examples
 #' # underdamped model with measurement error
@@ -192,7 +192,7 @@ simLangevin.fitLangevin <- function(model,
                                     data,
                                     spatialCovs,
                                     timeStep = 0.01,
-                                    fullPosterior = FALSE,
+                                    jointPrecision = FALSE,
                                     conditional = FALSE,
                                     ...) {
 
@@ -260,9 +260,9 @@ simLangevin.fitLangevin <- function(model,
 
   obj2$fn(fit$par)
 
-  if ((fullPosterior | conditional) && !requireNamespace("Matrix", quietly = TRUE)) stop("The 'Matrix' package is required for full posterior or conditional simulation.")
+  if ((jointPrecision | conditional) && !requireNamespace("Matrix", quietly = TRUE)) stop("The 'Matrix' package is required for Monte Carlo simulation. Please install it.")
 
-  calc_jp <- fullPosterior && is.null(fit$covariance$random$jointPrecision)
+  calc_jp <- jointPrecision && is.null(fit$covariance$random$jointPrecision)
   if(calc_jp) message("   Calculating full covariance matrix using TMB::sdreport(obj, getJointPrecision = TRUE)")
   sdr <- TMB::sdreport(obj2, getJointPrecision = calc_jp)
 
@@ -274,8 +274,7 @@ simLangevin.fitLangevin <- function(model,
   samp_random <- random_est
 
   # --- Drawing and Messaging Logic ---
-  if (fullPosterior) {
-    # Full Joint Posterior Draw
+  if (jointPrecision) {
     if (conditional) {
       message("   Imputing tracks tied to data using the full joint covariance matrix...")
     } else {

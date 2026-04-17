@@ -216,10 +216,31 @@ fit_under
 
 ``` r
 # calculate the estimated UD
-UD <- getUD(spatialCovs = exampleCovs, fit = fit_under)
+UD <- getUD(spatialCovs = exampleCovs, 
+            fit = fit_under, 
+            nSims = 1000, # Monte Carlo simulation
+            show_progress = FALSE)
 ```
 
 ![](man/figures/README-ud-1.png)<!-- -->
+
+``` r
+
+p_UD <- plotUD(UD)
+
+# UD relative uncertainty (Delta method approximation)
+p_UD$CV_delta
+```
+
+![](man/figures/README-ud-2.png)<!-- -->
+
+``` r
+
+# UD relative uncertainty (Monte Carlo simulation)
+p_UD$CV_sim
+```
+
+![](man/figures/README-ud-3.png)<!-- -->
 
 ``` r
 
@@ -227,18 +248,20 @@ UD <- getUD(spatialCovs = exampleCovs, fit = fit_under)
 plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
 ```
 
-![](man/figures/README-ud-2.png)<!-- -->
+![](man/figures/README-ud-4.png)<!-- -->
 
 #### Other S3 methods for `fitLangevin` objects
 
 ``` r
-coef(fit_under) # fixed effect estimates
+# fixed effect estimates
+coef(fit_under) 
 #>  beta_cov1  beta_cov2  beta_cov3   beta_d2c      sigma      gamma      rho_o 
 #> -3.5437139  8.6136199  7.5113365 -0.3083557  4.3092006  0.5849726  0.0000000 
 #>      tau_1      tau_2        psi 
 #>  1.0000000  1.0000000  1.0000000
 
-confint(fit_under) # confidence intervals for fixed effects
+# confidence intervals for fixed effects
+confint(fit_under) 
 #>                2.5 %     97.5 %
 #> beta_cov1 -5.9945650 -1.0928627
 #> beta_cov2  4.1147592 13.1124807
@@ -251,7 +274,9 @@ confint(fit_under) # confidence intervals for fixed effects
 #> tau_2      1.0000000  1.0000000
 #> psi        1.0000000  1.0000000
 
-mu_ci <- confint(fit_under, type= "mu") # confidence intervals for true locations
+# confidence intervals for true locations
+mu_ci <- confint(fit_under, type= "mu") 
+
 head(mu_ci)
 #>   id time_step     mu.x mu.x_2.5% mu.x_97.5%     mu.y mu.y_2.5% mu.y_97.5%
 #> 1  1         1 1023.966  1023.817   1024.115 990.0594  989.9307   990.1882
@@ -261,10 +286,12 @@ head(mu_ci)
 #> 5  1         5 1024.180  1024.091   1024.268 990.2515  990.1697   990.3333
 #> 6  1         6 1024.233  1024.153   1024.313 990.2968  990.2182   990.3754
 
-AIC(fit_under) # for comparing models with different fixed effects
+# AIC for comparing models with different fixed effects
+AIC(fit_under) 
 #> [1] 4135.94
 
-BIC(fit_under) # for comparing models with different fixed effects
+# BIC for comparing models with different fixed effects
+BIC(fit_under) 
 #> [1] 4167.819
 ```
 
@@ -272,8 +299,6 @@ BIC(fit_under) # for comparing models with different fixed effects
 
 ``` r
 # calculate one-step-ahead residuals for model diagnostics
-## can also be used to compare "underdamped" vs "overdamped" model fits
-
 res_under <- residuals(fit_under, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
 res_under
 #> 
@@ -310,6 +335,7 @@ p_under$qq_x + p_under$qq_y + p_under$acf_x + p_under$acf_y + plot_layout(ncol=2
 
 ``` r
 
+# can be used to compare "underdamped" vs "overdamped" models
 res_over <- residuals(fit_over, data = exampleDat, spatialCovs = exampleCovs, ncores = 3)
 res_over
 #> 
@@ -354,9 +380,9 @@ rasterOverlap(exp(UD), exp(trueUD))
 #### Regional presence probability
 
 ``` r
-# calculate probability of being in specified region
-## create a spatial mask for the region of interest
+# create a spatial mask for the region of interest
 d2c <- exampleCovs$d2c < 2.5
+
 reg_prob <- regionProb(fit_under,
                        spatialCovs = exampleCovs, 
                        mask = d2c, # region of interest
@@ -373,8 +399,8 @@ reg_prob
 #>   95% CI:         [0.0000, 0.6972]
 #> 
 #> Monte Carlo Simulation:
-#>   Standard Error: 0.2157
-#>   95% CI:         [0.0000, 0.7103]
+#>   Standard Error: 0.2172
+#>   95% CI:         [0.0000, 0.7124]
 #>   (Based on 1000 draws)
 
 plot(reg_prob, log = TRUE)

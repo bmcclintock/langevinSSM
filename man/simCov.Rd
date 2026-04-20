@@ -15,9 +15,9 @@ simCov(sca = 100, irange = 0.3, sigma2 = 0.1, kappa = 0.5, M = NULL, N = NULL)
 
 \item{kappa}{Numeric value for the smoothness of the Matérn covariance function. Default: 0.5 (exponential covariance).}
 
-\item{M}{Numeric value for the number of rows in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated as the next power of 2 greater than or equal to \code{max(2 * n_grid, n_grid + (2 * decay_distance)}, where \code{n_grid} is the number of rows/columns in the original grid (i.e., \code{2*sca+1}) and \code{decay_distance} is the distance at which the covariance decays to near zero (i.e., \code{4 * phi}, where \code{phi = irange * sca} is the spatial range).}
+\item{M}{Numeric value for the number of rows in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated.}
 
-\item{N}{Numeric value for the number of columns in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated as the next power of 2 greater than or equal to \code{max(2 * n_grid, n_grid + (2 * decay_distance)}, where \code{n_grid} is the number of rows/columns in the original grid (i.e., \code{2*sca+1}) and \code{decay_distance} is the distance at which the covariance decays to near zero (i.e., \code{4 * phi}, where \code{phi = irange * sca} is the spatial range).}
+\item{N}{Numeric value for the number of columns in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated.}
 }
 \value{
 A \code{\link[terra]{SpatRaster-class}} object containing the simulated spatial covariate.

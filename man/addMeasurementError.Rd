@@ -16,17 +16,18 @@ addMeasurementError(
 
 \item{par}{A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.}
 
-\item{measurementError}{A list of parameters used to simulate observation error. The list structure determines the error model used (Argos Kalman Filter vs. Least Squares/GPS).
+\item{measurementError}{A list or data frame used to simulate observation error. The structure determines the error model used:
 \itemize{
-  \item \strong{Argos Kalman Filter (KF):} To simulate error ellipses, the list must contain \code{smaj.sd} (numeric; the standard deviation of the half-normal distribution used to randomly generate the semi-major axis 'smaj'), \code{smin.sd} (numeric; the standard deviation of the half-normal distribution used to generate the semi-minor axis 'smin'), and optionally \code{eor.lim} (numeric vector of length 2; the minimum and maximum boundaries in degrees from north for the uniform distribution used to generate the error ellipse orientation 'eor', defaulting to \code{c(0, 180)}).
-  \item \strong{Least Squares (LS) or GPS:} To simulate x- and y-axis errors, the list must contain \code{x.sd} and \code{y.sd} (numeric; the standard deviations of the half-normal distributions used to randomly generate \code{x.err} and \code{y.err}, respectively).
+  \item \strong{Argos Kalman Filter (KF):} A list containing \code{smaj.sd} (numeric; the SD to generate the semi-major axis), \code{smin.sd} (numeric; the SD to generate the semi-minor axis), and optionally \code{eor.lim} (numeric vector of length 2; boundaries in degrees for uniform orientation, defaulting to \code{c(0, 180)}).
+  \item \strong{Least Squares (LS) or GPS:} A list containing \code{x.sd} and \code{y.sd} (numeric; the SDs of the half-normal distributions used to randomly generate \code{x.err} and \code{y.err}).
+  \item \strong{Location Quality Class (EMF):} A data frame (e.g., as returned by \code{\link{getEMF}}) with an additional column \code{prob} that sums to 1. The function will randomly assign a location class (\code{lc}) to each observation based on these probabilities and simulate \code{x.err} and \code{y.err} using the corresponding \code{emf.x} and \code{emf.y} values.
 }
-You cannot provide parameters for both error models simultaneously. If \code{NULL}, the function assumes known error magnitudes already exist within \code{data} (e.g., \code{smaj}, \code{smin}, \code{eor} or \code{x.err}, \code{y.err}) and applies the error covariance matrix row-by-row.}
+You cannot provide parameters for multiple error models simultaneously. If \code{NULL}, the function assumes known error magnitudes already exist within \code{data} and applies the error covariance matrix row-by-row.}
 
 \item{coord}{A character vector of length 2 specifying the column names in `data` that contain the true x and y locations (default is `c("mu.x", "mu.y")`).}
 }
 \value{
-A data frame with observed locations (`x`, `y`). and measurement error terms added (if applicable).
+A data frame with observed locations (`x`, `y`). and measurement error terms added.
 }
 \description{
 This function adds measurement error to the true locations in the data frame, either by simulating new errors using provided measurement error parameters or by applying existing error columns natively found in the data. It supports both Argos Kalman Filter (KF) and Least Squares (LS)/GPS error models.

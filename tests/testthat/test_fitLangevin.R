@@ -414,8 +414,8 @@ test_that("fitLangevin respects user-defined map with duplicated times", {
     vel = factor(mu_map)
   )
 
-  # 6. Fit the Model
-  suppressMessages(suppressWarnings({
+  # 6. Fit the Model (capture.output suppresses the boundsWarning cat() printout)
+  capture.output(suppressMessages(suppressWarnings({
     fit <- fitLangevin(
       data = fmt_dat,
       model = "underdamped",
@@ -424,7 +424,7 @@ test_that("fitLangevin respects user-defined map with duplicated times", {
       map = user_map,
       silent = TRUE
     )
-  }))
+  })))
 
   # 7. Assertions
   expect_s3_class(fit, "fitLangevin")
@@ -458,7 +458,7 @@ test_that("fitLangevin respects user-defined map with duplicated times", {
     fit$estimates$random$mu$se[15, "mu.x"],
     fit$estimates$random$mu$se[31, "mu.x"]
   )
-  expect_true(all(is.na(fixed_ses)))
+  expect_true(all(fixed_ses == 0))
 })
 
 test_that("S3 methods for fitLangevin work", {
@@ -533,3 +533,68 @@ test_that("S3 methods for fitLangevin work", {
   expect_true(any(grepl("Parameter Estimates \\(Natural Scale\\):", out)))
   expect_true(any(grepl("beta_hab", out)))
 })
+
+test_that("Out-of-bounds warnings trigger across fit and downstream methods", {
+  # 1. Setup Data and Raster
+  r <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 10, 0, 10))
+  terra::values(r) <- 1:100
+  names(r) <- "habitat"
+  spatialCovs <- list(habitat = r)
+
+  dat <- data.frame(
+    id = as.factor(c("A", "A")),
+    date = as.POSIXct(c("2024-01-01 00:00:00", "2024-01-01 01:00:00"), tz="UTC"),
+    dt = c(0, 1),
+    x = c(5, NA),
+    y = c(5, NA),
+    lc = as.factor(c("G", "G")),
+    x.err = c(1, NA),
+    y.err = c(1, NA),
+    smaj = as.numeric(c(NA, NA)),
+    smin = as.numeric(c(NA, NA)),
+    eor = as.numeric(c(NA, NA))
+  )
+  attr(dat, "time.unit") <- "hours"
+  class(dat) <- c("dataLangevin", "data.frame")
+
+  init_par <- list(
+    beta = c(0), sigma = 1, gamma = 1,
+    mu = matrix(c(5, 5, 9.5, 9.5), nrow = 2, byrow = TRUE),
+    vel = matrix(c(0, 0, 0, 0), nrow = 2, byrow = TRUE)
+  )
+
+  user_map <- list(
+    beta = factor(NA), sigma = factor(NA), gamma = factor(NA),
+    mu = factor(c(1, NA, NA, NA)), vel = factor(rep(NA, 4))
+  )
+
+  # 2. Test fitLangevin emits the console message
+  # suppressWarnings catches TMB's internal "empty summary" warnings
+  out_fit <- capture.output(suppressWarnings(suppressMessages({
+    fit <- fitLangevin(
+      data = dat, model = "underdamped", spatialCovs = spatialCovs,
+      par = init_par, map = user_map, silent = TRUE
+    )
+  })))
+
+  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_fit)))
+
+  # Verify the persistent flag was attached
+  expect_true(fit$conditions$out_of_bounds)
+
+  # 3. Test downstream functions print the warning via boundsWarning()
+  out_print <- capture.output(suppressWarnings(print(fit)))
+  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_print)))
+
+  # suppressWarnings catches the "not enough valid residuals" GOF warnings from the 2-row dataset
+  out_res <- capture.output(suppressWarnings(suppressMessages(try(residuals(fit, dat, spatialCovs), silent=TRUE))))
+  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_res)))
+
+  out_ud <- capture.output(suppressWarnings(suppressMessages(getUD(spatialCovs, fit = fit, log = TRUE, plot = FALSE))))
+  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_ud)))
+
+  out_plot <- capture.output(suppressWarnings(suppressMessages(plot(fit, spatialCovs = spatialCovs))))
+  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_plot)))
+})
+
+

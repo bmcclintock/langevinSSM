@@ -7,6 +7,7 @@
 #' @importFrom stats printCoefmat
 #' @export
 print.fitLangevin <- function(x, ...) {
+
   cat("\nHabitat-Driven Langevin Diffusion Model\n")
   cat("=======================================\n")
 
@@ -31,6 +32,8 @@ print.fitLangevin <- function(x, ...) {
   nat_est <- x$estimates$natural
 
   stats::printCoefmat(nat_est, digits = 4, signif.stars = FALSE, na.print = "NA", ...)
+
+  boundsWarning(x)
 
   invisible(x)
 }

@@ -36,6 +36,8 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 
   verify_signatures(x, data = data, spatialCovs = spatialCovs)
 
+  boundsWarning(x)
+
   # --- Prepare Tracks ---
   track_id <- x$estimates$random$mu$est$id
   if (is.null(track_id)) track_id <- rep("1", nrow(x$estimates$random$mu$est))

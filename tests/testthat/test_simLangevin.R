@@ -114,3 +114,74 @@ test_that("simLangevin.default enforces numeric temporal bounding limits", {
                                       initialPosition = c(50, 50)))
   expect_s3_class(res, "dataLangevin")
 })
+
+test_that("simLangevin validates EMF dataframe structure and probabilities", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+
+  # Missing the 'emf.y' column
+  bad_emf_cols <- data.frame(
+    lc = c("3", "2"),
+    emf.x = c(1, 2),
+    prob = c(0.5, 0.5)
+  )
+
+  # Probabilities sum to 1.1 instead of 1.0
+  bad_emf_prob <- data.frame(
+    lc = c("3", "2"),
+    emf.x = c(1, 2),
+    emf.y = c(1, 2),
+    prob = c(0.5, 0.6)
+  )
+
+  expect_error(
+    suppressMessages(simLangevin(par = p, spatialCovs = r, measurementError = bad_emf_cols)),
+    "must contain columns 'lc', 'emf.x', 'emf.y', and 'prob'"
+  )
+
+  expect_error(
+    suppressMessages(simLangevin(par = p, spatialCovs = r, measurementError = bad_emf_prob)),
+    "must sum to 1"
+  )
+})
+
+test_that("simLangevin correctly applies EMF dataframe probabilities to tracks", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+
+  # A valid custom EMF dataframe
+  valid_emf <- data.frame(
+    lc = c("3", "2", "1"),
+    emf.x = c(1.0, 1.5, 3.0),
+    emf.y = c(1.0, 1.5, 3.0),
+    prob = c(0.5, 0.3, 0.2)
+  )
+
+  set.seed(42, kind = "Mersenne-Twister", normal.kind = "Inversion")
+  res <- suppressMessages(simLangevin(
+    model = "underdamped",
+    par = p,
+    spatialCovs = r,
+    nbAnimals = 1,
+    obsPerAnimal = 50,
+    timeStep = 0.1,
+    initialPosition = c(50, 50),
+    measurementError = valid_emf
+  ))
+
+  # Verify the new columns were preserved in the final output
+  expect_true("lc" %in% names(res))
+  expect_true("x.err" %in% names(res))
+  expect_true("y.err" %in% names(res))
+
+  # Verify that Argos KF error columns are cleanly set to NA
+  expect_true(all(is.na(res$smaj)))
+  expect_true(all(is.na(res$smin)))
+
+  # Verify that the location classes drawn are strictly from our provided dataframe
+  expect_true(all(res$lc %in% c("3", "2", "1")))
+
+  # Verify errors were actually generated (no NAs in the LS/GPS columns)
+  expect_false(any(is.na(res$x.err)))
+  expect_false(any(is.na(res$y.err)))
+})

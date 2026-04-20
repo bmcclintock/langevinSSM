@@ -58,7 +58,7 @@ if(model=="overdamped"){
   colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","BA")
 } else colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","gamma","BA")
 
-dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_psi",psi,"_sca",sca,"_covRange",paste0(covRange,collapse="_"),
+dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_sca",sca,"_covRange",paste0(covRange,collapse="_"),
                    ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
 
 set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
@@ -232,4 +232,4 @@ for(isim in 1:nsims){
 }
 
 if(!dir.exists("simulation/results")) dir.create("simulation/results")
-save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,useInitialValues,covTimes,file=paste0("simulation/results/",dataName,"_psi",psi,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))

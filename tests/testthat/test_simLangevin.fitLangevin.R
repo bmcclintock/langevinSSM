@@ -110,3 +110,35 @@ test_that("Joint precision draw handles uncertainty propagation", {
 
   expect_false(identical(res_fp$mu.x, res_nfp$mu.x))
 })
+
+test_that("simLangevin.fitLangevin inherits and applies location classes (lc) and errors", {
+  # Create a dataset with varying location classes and corresponding errors
+  df_lc <- data.frame(
+    id = 1,
+    date = seq(0, 0.4, 0.1),
+    dt = c(0, rep(0.1, 4)),
+    x = seq(250, 254, 1),
+    y = seq(250, 254, 1),
+    lc = c("3", "2", "1", "A", "G"),
+    x.err = c(1.0, 1.5, 3.0, 10.0, 0.1),  # Mock EMF magnitudes
+    y.err = c(1.0, 1.5, 3.0, 10.0, 0.1),
+    smaj = NA_real_, smin = NA_real_, eor = NA_real_
+  )
+  dat_lc <- class_dataLangevin(df_lc)
+  attr(dat_lc, "time.unit") <- "hours"
+
+  fit_lc <- suppressMessages(fitLangevin(data = dat_lc, spatialCovs = exCovs, par = list(sigma = 1), silent = TRUE))
+
+  set.seed(42, kind="Mersenne-Twister", normal.kind = "Inversion")
+  res_pred <- suppressMessages(simLangevin(fit_lc, data = dat_lc, spatialCovs = exCovs, conditional = FALSE))
+
+  # Verify the location classes and base errors were perfectly cloned
+  expect_equal(res_pred$lc, dat_lc$lc)
+  expect_equal(res_pred$x.err, dat_lc$x.err)
+  expect_equal(res_pred$y.err, dat_lc$y.err)
+
+  # Verify that the final observed locations (x, y) were actually shifted
+  # away from the true locations (mu.x, mu.y) by the inherited errors
+  expect_false(isTRUE(all.equal(res_pred$x, res_pred$mu.x)))
+  expect_false(isTRUE(all.equal(res_pred$y, res_pred$mu.y)))
+})

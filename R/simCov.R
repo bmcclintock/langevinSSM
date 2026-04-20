@@ -6,8 +6,8 @@
 #' @param irange Numeric value for the spatial range of the covariate, expressed as a proportion of \code{sca}. The resulting covariate will have spatial range equal to \code{irange} * \code{sca}. Default: 0.3.
 #' @param sigma2 Numeric value for the variance of the covariate. Default: 0.1.
 #' @param kappa Numeric value for the smoothness of the Matérn covariance function. Default: 0.5 (exponential covariance).
-#' @param M Numeric value for the number of rows in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated as the next power of 2 greater than or equal to \code{max(2 * n_grid, n_grid + (2 * decay_distance)}, where \code{n_grid} is the number of rows/columns in the original grid (i.e., \code{2*sca+1}) and \code{decay_distance} is the distance at which the covariance decays to near zero (i.e., \code{4 * phi}, where \code{phi = irange * sca} is the spatial range).
-#' @param N Numeric value for the number of columns in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated as the next power of 2 greater than or equal to \code{max(2 * n_grid, n_grid + (2 * decay_distance)}, where \code{n_grid} is the number of rows/columns in the original grid (i.e., \code{2*sca+1}) and \code{decay_distance} is the distance at which the covariance decays to near zero (i.e., \code{4 * phi}, where \code{phi = irange * sca} is the spatial range).
+#' @param M Numeric value for the number of rows in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated.
+#' @param N Numeric value for the number of columns in the grid used for FFT padding. Default: NULL, in which case the optimal number of columns is dynamically calculated.
 #' @return A \code{\link[terra]{SpatRaster-class}} object containing the simulated spatial covariate.
 #' @export
 simCov <- function(sca = 100,
@@ -25,37 +25,51 @@ simCov <- function(sca = 100,
   phi <- irange * sca
   n_grid <- 2 * sca + 1
 
-  # Dynamically calculate optimal FFT padding
-  if (is.null(M) || is.null(N)) {
-
-    decay_distance <- 4 * phi
-
-    min_pad <- max(2 * n_grid, n_grid + (2 * decay_distance))
-
-    optimal_pad <- 2^ceiling(log2(min_pad))
-
-    if (is.null(M)) M <- optimal_pad
-    if (is.null(N)) N <- optimal_pad
-  }
-
-  # Define the grid
   grid_list <- list(x = seq(-sca - 0.5, sca + 0.5, length.out = n_grid),
                     y = seq(-sca - 0.5, sca + 0.5, length.out = n_grid))
 
-  # Setup the Matérn covariance object with FFT padding
-  obj <- fields::matern.image.cov(setup = TRUE,
-                                  grid = grid_list,
-                                  theta = phi,
-                                  smoothness = kappa,
-                                  M = M,
-                                  N = N)
+  # Dynamically calculate initial baseline FFT padding
+  decay_distance <- 4 * phi
+  min_pad <- max(2 * n_grid, n_grid + (2 * decay_distance))
+  base_pad <- 2^ceiling(log2(min_pad))
 
-  # Simulate and scale by the standard deviation
-  grf_fields <- sqrt(sigma2) * fields::sim.rf(obj)
+  current_M <- if (is.null(M)) base_pad else M
+  current_N <- if (is.null(N)) base_pad else N
+
+  success <- FALSE
+  attempt <- 1
+  max_attempts <- 4
+
+  # Retry loop to exponentially expand padding if negative FFT eigenvalues occur
+  while (!success && attempt <= max_attempts) {
+    obj <- fields::matern.image.cov(setup = TRUE,
+                                    grid = grid_list,
+                                    theta = phi,
+                                    smoothness = kappa,
+                                    M = current_M,
+                                    N = current_N)
+
+    grf_raw <- try(fields::sim.rf(obj), silent = TRUE)
+
+    if (!inherits(grf_raw, "try-error")) {
+      success <- TRUE
+    } else {
+      # If the FFT has negative values, double the padding grid and try again
+      attempt <- attempt + 1
+      if (is.null(M)) current_M <- current_M * 2
+      if (is.null(N)) current_N <- current_N * 2
+    }
+  }
+
+  if (!success) {
+    stop("fields::sim.rf failed: FFT of covariance has negative values even after maximum padding. Try reducing 'irange' or 'sca'.")
+  }
+
+  # Scale by the standard deviation
+  grf_fields <- sqrt(sigma2) * grf_raw
 
   # Transpose the matrix to match spatial orientation
   grf_matrix <- t(grf_fields)
-
   grf_flipped <- grf_matrix[nrow(grf_matrix):1, ]
 
   # Convert directly to a standalone SpatRaster

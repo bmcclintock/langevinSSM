@@ -48,6 +48,8 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
   verify_signatures(object, data = data, spatialCovs = spatialCovs)
 
   cond <- object$conditions
+  boundsWarning(object)
+
   time.unit <- attr(data, "time.unit")
   coord <- cond$coord
 

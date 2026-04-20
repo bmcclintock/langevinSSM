@@ -46,6 +46,8 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, show_pro
 
   verify_signatures(fit, spatialCovs = spatialCovs)
 
+  boundsWarning(fit)
+
   if (!terra::compareGeom(spatialCovs[[1]], mask, stopOnError = FALSE)) {
     stop("The 'mask' raster must share the same projection (CRS), extent, and resolution as the rasters in 'spatialCovs'.")
   }

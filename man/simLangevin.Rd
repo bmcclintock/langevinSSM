@@ -48,7 +48,7 @@ simLangevin(model, ...)
 
 \item{initialPosition}{Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.}
 
-\item{measurementError}{A list of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.}
+\item{measurementError}{A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.}
 
 \item{subSample}{List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
 
@@ -102,6 +102,13 @@ simDat_xy <- simLangevin(par = par,
                       spatialCovs = exampleCovs,
                       measurementError = list(x.sd = 1.5,
                                               y.sd = 1.5))
+
+# location quality classes based on provided probabilities
+emf_df <- getEMF()
+
+simDat_lc <- simLangevin(par = par,
+                         spatialCovs = exampleCovs,
+                         measurementError = emf_df)
 
 \dontrun{
 # simulate from fitted model

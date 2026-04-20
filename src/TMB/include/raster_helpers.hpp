@@ -34,7 +34,7 @@
 
 TEMPLATE_HEADER
 MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
-                             RASTER_TYPE &raster_vals, // Removed 'const' to satisfy TMB
+                             RASTER_TYPE &raster_vals,
                              const VECTOR &all_z_values,
                              const INT_VECTOR &n_zvals_cov,
                              const INT_VECTOR &cov_offset,

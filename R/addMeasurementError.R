@@ -3,21 +3,51 @@
 #' This function adds measurement error to the true locations in the data frame, either by simulating new errors using provided measurement error parameters or by applying existing error columns natively found in the data. It supports both Argos Kalman Filter (KF) and Least Squares (LS)/GPS error models.
 #' @param data A data frame containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).
 #' @param par A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.
-#' @param measurementError A list of parameters used to simulate observation error. The list structure determines the error model used (Argos Kalman Filter vs. Least Squares/GPS).
+#' @param measurementError A list or data frame used to simulate observation error. The structure determines the error model used:
 #' \itemize{
-#'   \item \strong{Argos Kalman Filter (KF):} To simulate error ellipses, the list must contain \code{smaj.sd} (numeric; the standard deviation of the half-normal distribution used to randomly generate the semi-major axis 'smaj'), \code{smin.sd} (numeric; the standard deviation of the half-normal distribution used to generate the semi-minor axis 'smin'), and optionally \code{eor.lim} (numeric vector of length 2; the minimum and maximum boundaries in degrees from north for the uniform distribution used to generate the error ellipse orientation 'eor', defaulting to \code{c(0, 180)}).
-#'   \item \strong{Least Squares (LS) or GPS:} To simulate x- and y-axis errors, the list must contain \code{x.sd} and \code{y.sd} (numeric; the standard deviations of the half-normal distributions used to randomly generate \code{x.err} and \code{y.err}, respectively).
+#'   \item \strong{Argos Kalman Filter (KF):} A list containing \code{smaj.sd} (numeric; the SD to generate the semi-major axis), \code{smin.sd} (numeric; the SD to generate the semi-minor axis), and optionally \code{eor.lim} (numeric vector of length 2; boundaries in degrees for uniform orientation, defaulting to \code{c(0, 180)}).
+#'   \item \strong{Least Squares (LS) or GPS:} A list containing \code{x.sd} and \code{y.sd} (numeric; the SDs of the half-normal distributions used to randomly generate \code{x.err} and \code{y.err}).
+#'   \item \strong{Location Quality Class (EMF):} A data frame (e.g., as returned by \code{\link{getEMF}}) with an additional column \code{prob} that sums to 1. The function will randomly assign a location class (\code{lc}) to each observation based on these probabilities and simulate \code{x.err} and \code{y.err} using the corresponding \code{emf.x} and \code{emf.y} values.
 #' }
-#' You cannot provide parameters for both error models simultaneously. If \code{NULL}, the function assumes known error magnitudes already exist within \code{data} (e.g., \code{smaj}, \code{smin}, \code{eor} or \code{x.err}, \code{y.err}) and applies the error covariance matrix row-by-row.
+#' You cannot provide parameters for multiple error models simultaneously. If \code{NULL}, the function assumes known error magnitudes already exist within \code{data} and applies the error covariance matrix row-by-row.
 #' @param coord A character vector of length 2 specifying the column names in `data` that contain the true x and y locations (default is `c("mu.x", "mu.y")`).
-#' @return A data frame with observed locations (`x`, `y`). and measurement error terms added (if applicable).
+#' @return A data frame with observed locations (`x`, `y`). and measurement error terms added.
 #' @importFrom dplyr %>% mutate
+#' @importFrom stats rnorm
 #' @export
 addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord = c("mu.x", "mu.y")) {
 
   # Initialize x and y to true locations if they don't exist yet
   if (!"x" %in% names(data)) data$x <- data[,coord[1]]
   if (!"y" %in% names(data)) data$y <- data[,coord[2]]
+
+  if (is.data.frame(measurementError)) {
+    if (!all(c("lc", "emf.x", "emf.y", "prob") %in% names(measurementError))) {
+      stop("If 'measurementError' is a data frame, it must contain columns 'lc', 'emf.x', 'emf.y', and 'prob'.")
+    }
+    if (abs(sum(measurementError$prob) - 1) > 1e-6) {
+      stop("The 'prob' column in the 'measurementError' data frame must sum to 1.")
+    }
+
+    n_obs <- nrow(data)
+    drawn_lc <- sample(measurementError$lc, size = n_obs, replace = TRUE, prob = measurementError$prob)
+
+    match_idx <- match(drawn_lc, measurementError$lc)
+    drawn_emf_x <- measurementError$emf.x[match_idx]
+    drawn_emf_y <- measurementError$emf.y[match_idx]
+
+    data$lc <- drawn_lc
+    data$x.err <- abs(stats::rnorm(n_obs, 0, drawn_emf_x))
+    data$y.err <- abs(stats::rnorm(n_obs, 0, drawn_emf_y))
+
+    data$smaj <- NA
+    data$smin <- NA
+    data$eor <- NA
+
+    # Nullify measurementError so it behaves as knownError from here on out
+    measurementError <- NULL
+  }
+  # -----------------------------------
 
   knownError <- is.null(measurementError)
 

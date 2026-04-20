@@ -14,7 +14,7 @@
 #' @param nbAnimals Number of animals to simulate. Default: 1.
 #' @param obsPerAnimal Number of observations to simulate per animal. Default: 500.
 #' @param initialPosition Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.
-#' @param measurementError A list of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.
+#' @param measurementError A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.
 #' @param subSample List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).
 #'
 #' @param data The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.
@@ -54,6 +54,13 @@
 #'                       spatialCovs = exampleCovs,
 #'                       measurementError = list(x.sd = 1.5,
 #'                                               y.sd = 1.5))
+#'
+#' # location quality classes based on provided probabilities
+#' emf_df <- getEMF()
+#'
+#' simDat_lc <- simLangevin(par = par,
+#'                          spatialCovs = exampleCovs,
+#'                          measurementError = emf_df)
 #'
 #' \dontrun{
 #' # simulate from fitted model
@@ -169,10 +176,11 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   }
 
   out$id <- as.factor(out$id)
+
   if(model == "underdamped") {
-    out <- out %>% dplyr::select(id, date, dt, x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y, vel.x, vel.y)
+    out <- out %>% dplyr::select(id, date, dt, dplyr::any_of("lc"), x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y, vel.x, vel.y)
   } else if(model == "overdamped") {
-    out <- out %>% dplyr::select(id, date, dt, x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y, mu.x, mu.y)
+    out <- out %>% dplyr::select(id, date, dt, dplyr::any_of("lc"), x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y)
   }
 
   out <- class_dataLangevin(out)
@@ -373,6 +381,10 @@ simLangevin.fitLangevin <- function(model,
       if ("x.err" %in% names(ind_data)) {
         sim_ind$x.err <- ind_data$x.err; sim_ind$y.err <- ind_data$y.err
       }
+      if ("lc" %in% names(ind_data)) {
+        sim_ind$lc <- ind_data$lc
+      }
+
       out_list[[as.character(i)]] <- sim_ind
     }
     out <- do.call(rbind, out_list)
@@ -380,10 +392,11 @@ simLangevin.fitLangevin <- function(model,
   }
 
   out$id <- as.factor(out$id)
+
   if (fit$conditions$model == "underdamped") {
-    out <- out %>% dplyr::select(id, date, dt, x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y, mu.x, mu.y, vel.x, vel.y)
+    out <- out %>% dplyr::select(id, date, dt, dplyr::any_of("lc"), x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y, vel.x, vel.y)
   } else {
-    out <- out %>% dplyr::select(id, date, dt, x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y, mu.x, mu.y)
+    out <- out %>% dplyr::select(id, date, dt, dplyr::any_of("lc"), x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y)
   }
 
   attr(out,"time.unit") <- time.unit

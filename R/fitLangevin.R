@@ -344,7 +344,9 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     # 3. random effects
     if(length(re)) {
-      ran_est <- summary(sdreport_out, "random")
+      # Safely extract random effects summary; might be empty/NULL if all are mapped out
+      ran_est <- tryCatch(summary(sdreport_out, "random"), error = function(e) NULL)
+
       obj2$fn(fit$par)
       rep_vals <- obj2$report()
       fit$estimates$random <- list()
@@ -352,15 +354,24 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       for(i in seq_along(re)) {
         node <- re[i]
         est_mat <- t(matrix(rep_vals[[node]], nrow = 2)) * scaleFactor
-        node_ran_est <- ran_est[rownames(ran_est) == node, , drop = FALSE]
-        se_full <- rep(NA_real_, length(rep_vals[[node]]))
 
-        if (!is.null(map[[node]])) {
-          map_int <- as.integer(map[[node]])
-          valid_idx <- !is.na(map_int)
-          se_full[valid_idx] <- node_ran_est[map_int[valid_idx], "Std. Error"]
-        } else {
-          se_full <- node_ran_est[, "Std. Error"]
+        # Default to 0.0 for consistency with ADREPORT fixed parameters
+        se_full <- rep(0.0, length(rep_vals[[node]]))
+
+        # Only attempt to extract Standard Errors if the node was actually estimated
+        if (!is.null(ran_est) && nrow(ran_est) > 0 && node %in% rownames(ran_est)) {
+          node_ran_est <- ran_est[rownames(ran_est) == node, , drop = FALSE]
+
+          if (!is.null(map[[node]])) {
+            map_int <- as.integer(map[[node]])
+            valid_idx <- !is.na(map_int)
+            # Apply SEs to the valid (unfrozen) indices, respecting duplicate mappings
+            if (any(valid_idx)) {
+              se_full[valid_idx] <- node_ran_est[map_int[valid_idx], "Std. Error"]
+            }
+          } else {
+            se_full <- node_ran_est[, "Std. Error"]
+          }
         }
 
         se_mat <- t(matrix(se_full, nrow = 2)) * scaleFactor
@@ -386,6 +397,23 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
   }
 
+  out_of_bounds <- FALSE
+  if (!is.null(fit$estimates$random$mu)) {
+    mu_est <- fit$estimates$random$mu$est
+
+    cov_ext <- as.vector(terra::ext(spatialCovs[[1]]))
+    cov_res <- terra::res(spatialCovs[[1]])
+
+    # define a "danger zone" (within 1 cell of the edge, where gradients drop to 0)
+    safe_xmin <- cov_ext["xmin"] + cov_res[1]
+    safe_xmax <- cov_ext["xmax"] - cov_res[1]
+    safe_ymin <- cov_ext["ymin"] + cov_res[2]
+    safe_ymax <- cov_ext["ymax"] - cov_res[2]
+
+    out_of_bounds <- any(mu_est$mu.x < safe_xmin | mu_est$mu.x > safe_xmax |
+                           mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
+  }
+
   # ensure necessary build conditions are saved for residuals.fitLangevin
   fit$conditions <- list(hessian = hessian,
                          method = method,
@@ -399,7 +427,10 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                          npoints = npoints,
                          curweight = curweight,
                          zetaScale = zetaScale,
-                         coord = coord)
+                         coord = coord,
+                         out_of_bounds = out_of_bounds)
+
+  boundsWarning(fit)
 
   fit$signatures <- list(
     data = get_data_signature(data, coord),

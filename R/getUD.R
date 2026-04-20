@@ -29,6 +29,9 @@ getUD <- function(spatialCovs, fit, beta, log = TRUE, nSims = 0, show_progress =
   }
 
   if(length(spatialCovs) != length(beta)) stop("length(spatialCovs) must equal length(beta)")
+  if(!missing(fit)){
+    boundsWarning(fit)
+  }
 
   # --- Internal Helper: Compute a normalized probability UD ---
   calc_prob_ud_base <- function(b_vec) {

@@ -71,6 +71,9 @@ NULL
 #' @rdname langevin_methods
 #' @export
 logLik.fitLangevin <- function(object, ...) {
+
+  boundsWarning(object)
+
   # TMB minimizes the negative log-likelihood
   val <- -object$objective
 
@@ -94,6 +97,8 @@ coef.fitLangevin <- function(object, type = "natural", ...) {
     stop("Estimates for type '", type, "' are not available in this model fit.")
   }
 
+  boundsWarning(object)
+
   # Extract just the Estimate column
   est_vector <- object$estimates[[type]][, "Estimate"]
 
@@ -111,7 +116,10 @@ vcov.fitLangevin <- function(object, type = "natural", ...) {
     stop("Covariance matrix for type '", type, "' is not available in this model fit.")
   }
 
+  boundsWarning(object)
+
   return(object$covariance[[type]])
+
 }
 
 #' @rdname langevin_methods
@@ -124,6 +132,8 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
   } else {
     is_re_parm <- FALSE
   }
+
+  boundsWarning(object)
 
   a <- (1 - level) / 2
   a <- c(a, 1 - a)
@@ -353,10 +363,13 @@ format_data <- function(x, id = "id", date = "date", lc = "lc", coord = c("x", "
 #' @param gps A numeric value or a vector of length 2 specifying the error multiplication factor for GPS locations. If a single value is provided, it will be used for both x and y axes. Default is 0.1 (i.e. GPS errors are 10x more accurate than Argos \code{lc} 3.
 #' @param emf.x A numeric vector of length 6 specifying the error multiplication factors for the x-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
 #' @param emf.y A numeric vector of length 6 specifying the error multiplication factors for the y-axis for each location class (in order: 3, 2, 1, 0, A, B, where Z is assumed equal to B). Default values are based on the EMF values for Argos satellite telemetry data.
-#' @return A data frame with columns \code{lc}, \code{emf.x}, and \code{emf.y} containing the error multiplication factors for each location class. The location classes included are "G" for GPS and "3", "2", "1", "0", "A", "B", and "Z" for Argos satellite telemetry data.
+#' @param prob A numeric vector of length 8 specifying the sampling probability for each location quality class (in order: G, 3, 2, 1, 0, A, B, Z). These probabilities are used internally by \code{\link{simLangevin}} and \code{\link{addMeasurementError}} to simulate observed location quality class data. Default values represent a general approximation of typical marine telemetry Argos distributions, with GPS ("G") and invalid ("Z") locations set to 0. \code{probs} must sum to 1.
+#' @return A data frame with columns \code{lc}, \code{emf.x}, \code{emf.y}, and \code{prob} containing the error multiplication factors and observation probabilities for each location class. The location classes included are "G" for GPS and "3", "2", "1", "0", "A", "B", and "Z" for Argos satellite telemetry data.
 #' @export
-getEMF <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
-                     emf.y = c(1, 1.29, 2.55, 14.99, 22, 32.53))
+getEMF <- function (gps = 0.1,
+                    emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
+                    emf.y = c(1, 1.29, 2.55, 14.99, 22, 32.53),
+                    prob = c(0, 0.05, 0.05, 0.10, 0.15, 0.25, 0.40, 0))
 {
   if (!length(gps) %in% 1:2)
     stop("GPS emf must be a vector of length 1 or 2")
@@ -364,11 +377,18 @@ getEMF <- function (gps = 0.1, emf.x = c(1, 1.54, 3.72, 13.51, 23.9, 44.22),
     stop("Argos emf.x must be a vector of length 6")
   if (length(emf.y) != 6)
     stop("Argos emf.y must be a vector of length 6")
+  if (length(prob) != 8)
+    stop("prob must be a numeric vector of length 8 corresponding to c('G', '3', '2', '1', '0', 'A', 'B', 'Z')")
+  if (abs(sum(prob) - 1) > 1e-6)
+    stop("The 'prob' vector must exactly sum to 1")
+
   if (length(gps) == 1)
     gps <- c(gps, gps)
-  data.frame(emf.x = c(gps[1], emf.x, emf.x[6]), emf.y = c(gps[2],
-                                                           emf.y, emf.y[6]), lc = as.character(c("G", "3", "2",
-                                                                                                 "1", "0", "A", "B", "Z")))
+
+  data.frame(emf.x = c(gps[1], emf.x, emf.x[6]),
+             emf.y = c(gps[2], emf.y, emf.y[6]),
+             lc = as.character(c("G", "3", "2", "1", "0", "A", "B", "Z")),
+             prob = prob)
 }
 
 checkErrorData <- function(data, coord=c("x","y"), measurementError = NULL, knownError = TRUE){
@@ -508,4 +528,12 @@ gof_tests <- function(res_df){
     warning("Not enough valid residuals to calculate quantitative GOF tests.")
   }
   return(tests_df)
+}
+
+boundsWarning <- function(fit){
+  if(isTRUE(fit$conditions$out_of_bounds)){
+    cat("\n*** WARNING: MODEL FIT LIKELY INVALID ***\n")
+    cat("One or more estimated locations fell outside the spatial covariate extent.\n")
+    cat("The raster extent should be expanded and the model refitted.\n")
+  }
 }

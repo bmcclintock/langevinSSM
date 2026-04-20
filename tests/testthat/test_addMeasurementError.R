@@ -308,3 +308,70 @@ test_that("addMeasurementError handles simLangevin objects from simLangevin.fitL
   expect_true(all(!is.na(res$smaj)))
   expect_s3_class(res, "simLangevin")
 })
+
+# --- Tests: EMF Dataframe Errors ---
+
+test_that("addMeasurementError catches invalid EMF dataframe structures", {
+  df <- get_base_data()
+
+  # Missing the 'emf.y' column
+  bad_emf_cols <- data.frame(
+    lc = c("3", "2"),
+    emf.x = c(1, 2),
+    prob = c(0.5, 0.5)
+  )
+
+  # Probabilities sum to 1.1 instead of 1.0
+  bad_emf_prob <- data.frame(
+    lc = c("3", "2"),
+    emf.x = c(1, 2),
+    emf.y = c(1, 2),
+    prob = c(0.5, 0.6)
+  )
+
+  expect_error(
+    addMeasurementError(df, measurementError = bad_emf_cols),
+    "must contain columns 'lc', 'emf.x', 'emf.y', and 'prob'"
+  )
+
+  expect_error(
+    addMeasurementError(df, measurementError = bad_emf_prob),
+    "must sum to 1"
+  )
+})
+
+test_that("addMeasurementError correctly applies EMF dataframe probabilities", {
+  df <- get_base_data()
+
+  # A valid custom EMF dataframe
+  valid_emf <- data.frame(
+    lc = c("3", "2", "1"),
+    emf.x = c(1.0, 1.5, 3.0),
+    emf.y = c(1.0, 1.5, 3.0),
+    prob = c(0.5, 0.3, 0.2)
+  )
+
+  set.seed(42)
+  res <- suppressWarnings(addMeasurementError(df, measurementError = valid_emf))
+
+  # Verify the new columns were created
+  expect_true("lc" %in% names(res))
+  expect_true("x.err" %in% names(res))
+  expect_true("y.err" %in% names(res))
+
+  # Verify that Argos KF error columns are cleanly set to NA
+  expect_true(all(is.na(res$smaj)))
+  expect_true(all(is.na(res$smin)))
+  expect_true(all(is.na(res$eor)))
+
+  # Verify that the location classes drawn are strictly from our provided dataframe
+  expect_true(all(res$lc %in% c("3", "2", "1")))
+
+  # Verify errors were actually generated (no NAs in the LS/GPS columns)
+  expect_false(any(is.na(res$x.err)))
+  expect_false(any(is.na(res$y.err)))
+
+  # Verify coordinates shifted
+  expect_false(isTRUE(all.equal(res$x, res$mu.x)))
+  expect_false(isTRUE(all.equal(res$y, res$mu.y)))
+})

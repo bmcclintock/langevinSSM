@@ -1,3 +1,123 @@
+# --- Helper: Validate Observation Error Parameters ---
+validate_obs_error <- function(par, map, dat) {
+  has_ee <- any(!is.na(dat$smaj))
+  has_ls <- any(!is.na(dat$K[,1]))
+
+  if (!has_ee && ("psi" %in% names(par) || "psi" %in% names(map))) {
+    stop("Cannot specify 'psi' in 'par' or 'map' because the data does not contain error ellipse observations.")
+  }
+  if (!has_ls && (any(c("tau", "rho_o") %in% names(par)) || any(c("tau", "rho_o") %in% names(map)))) {
+    stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard error observations ('x.err', 'y.err').")
+  }
+}
+
+# --- Helper: Parse Bayesian Priors ---
+parse_priors <- function(par, prior, spatialCovs) {
+  pr_mean <- unlist(par) * 0 + NA_real_
+  pr_sd   <- unlist(par) * 0 + NA_real_
+
+  nice_names <- unlist(lapply(names(par), function(nm) {
+    n_elem <- length(par[[nm]])
+    if (n_elem == 1) return(nm)
+    if (nm == "beta" && !is.null(names(spatialCovs)) && length(spatialCovs) == n_elem) {
+      return(paste0("beta_", names(spatialCovs)))
+    }
+    if (nm %in% c("mu", "vel")) {
+      num_steps <- n_elem / 2
+      return(paste0(nm, c(".x_", ".y_"), rep(seq_len(num_steps), each = 2)))
+    }
+    return(paste0(nm, "_", seq_len(n_elem)))
+  }))
+
+  names(pr_mean) <- nice_names
+  names(pr_sd) <- nice_names
+
+  if (!is.null(prior)) {
+    if (!is.data.frame(prior) || ncol(prior) != 2) {
+      stop("'prior' must be a 2-column data frame with mean in col 1 and sd in col 2.")
+    }
+    for (rn in rownames(prior)) {
+      if (rn %in% nice_names) {
+        pr_mean[rn] <- prior[rn, 1]
+        pr_sd[rn]   <- prior[rn, 2]
+      } else if (rn %in% names(par)) {
+        idx <- which(startsWith(nice_names, paste0(rn, "_")) | nice_names == rn)
+        pr_mean[idx] <- prior[rn, 1]
+        pr_sd[idx]   <- prior[rn, 2]
+      } else {
+        beta_names <- nice_names[startsWith(nice_names, "beta_")]
+        if (length(beta_names) == 0) {
+          example_beta_str <- "'beta_1'"
+        } else if (length(beta_names) < 3) {
+          example_beta_str <- paste0("'", beta_names, "'", collapse = ", ")
+        } else {
+          example_beta_str <- paste0("'", beta_names[1], "', ..., '", beta_names[length(beta_names)], "'")
+        }
+        stop("Prior parameter name '", rn, "' is invalid. Acceptable base parameters for this model are: ",
+             paste(names(par), collapse = ", "),
+             "\n  To target specific elements, use their exact working names (e.g., ",
+             example_beta_str, ", 'mu.x_1', 'vel.y_10').")
+      }
+    }
+  }
+
+  pr_mean_list <- utils::relist(unname(pr_mean), skeleton = par)
+  pr_sd_list   <- utils::relist(unname(pr_sd), skeleton = par)
+
+  priors <- list()
+
+  priors$has_prior_beta <- as.integer(any(!is.na(pr_mean_list$beta)))
+  priors$prior_mean_beta <- as.numeric(pr_mean_list$beta)
+  priors$prior_sd_beta   <- as.numeric(pr_sd_list$beta)
+
+  priors$has_prior_log_sigma <- as.integer(any(!is.na(pr_mean_list$log_sigma)))
+  priors$prior_mean_log_sigma <- as.numeric(pr_mean_list$log_sigma)
+  priors$prior_sd_log_sigma   <- as.numeric(pr_sd_list$log_sigma)
+
+  priors$has_prior_log_gamma <- as.integer(!is.null(pr_mean_list$log_gamma) && any(!is.na(pr_mean_list$log_gamma)))
+  priors$prior_mean_log_gamma <- if (!is.null(pr_mean_list$log_gamma)) as.numeric(pr_mean_list$log_gamma) else NA_real_
+  priors$prior_sd_log_gamma   <- if (!is.null(pr_sd_list$log_gamma)) as.numeric(pr_sd_list$log_gamma) else NA_real_
+
+  priors$has_prior_l_psi <- as.integer(!is.null(pr_mean_list$l_psi) && any(!is.na(pr_mean_list$l_psi)))
+  priors$prior_mean_l_psi <- if (!is.null(pr_mean_list$l_psi)) as.numeric(pr_mean_list$l_psi) else NA_real_
+  priors$prior_sd_l_psi   <- if (!is.null(pr_sd_list$l_psi)) as.numeric(pr_sd_list$l_psi) else NA_real_
+
+  priors$has_prior_l_tau <- as.integer(!is.null(pr_mean_list$l_tau) && any(!is.na(pr_mean_list$l_tau)))
+  priors$prior_mean_l_tau <- if (!is.null(pr_mean_list$l_tau)) as.numeric(pr_mean_list$l_tau) else rep(NA_real_, 2)
+  priors$prior_sd_l_tau   <- if (!is.null(pr_sd_list$l_tau)) as.numeric(pr_sd_list$l_tau) else rep(NA_real_, 2)
+
+  priors$has_prior_l_rho_o <- as.integer(!is.null(pr_mean_list$l_rho_o) && any(!is.na(pr_mean_list$l_rho_o)))
+  priors$prior_mean_l_rho_o <- if (!is.null(pr_mean_list$l_rho_o)) as.numeric(pr_mean_list$l_rho_o) else NA_real_
+  priors$prior_sd_l_rho_o   <- if (!is.null(pr_sd_list$l_rho_o)) as.numeric(pr_sd_list$l_rho_o) else NA_real_
+
+  priors$has_prior_mu <- as.integer(!is.null(pr_mean_list$mu) && any(!is.na(pr_mean_list$mu)))
+  if (priors$has_prior_mu == 1L) {
+    valid_mu <- which(!is.na(pr_mean_list$mu))
+    priors$prior_idx_mu <- as.integer(valid_mu - 1L) # 0-based for C++
+    priors$prior_mean_mu_val <- as.numeric(pr_mean_list$mu[valid_mu])
+    priors$prior_sd_mu_val   <- as.numeric(pr_sd_list$mu[valid_mu])
+  } else {
+    priors$prior_idx_mu <- integer(0)
+    priors$prior_mean_mu_val <- numeric(0)
+    priors$prior_sd_mu_val   <- numeric(0)
+  }
+
+  priors$has_prior_vel <- as.integer(!is.null(pr_mean_list$vel) && any(!is.na(pr_mean_list$vel)))
+  if (priors$has_prior_vel == 1L) {
+    valid_vel <- which(!is.na(pr_mean_list$vel))
+    priors$prior_idx_vel <- as.integer(valid_vel - 1L) # 0-based for C++
+    priors$prior_mean_vel_val <- as.numeric(pr_mean_list$vel[valid_vel])
+    priors$prior_sd_vel_val   <- as.numeric(pr_sd_list$vel[valid_vel])
+  } else {
+    priors$prior_idx_vel <- integer(0)
+    priors$prior_mean_vel_val <- numeric(0)
+    priors$prior_sd_vel_val   <- numeric(0)
+  }
+
+  return(priors)
+}
+
+# --- Main checkPar Function ---
 checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL){
 
   if(!is.list(par)) stop("par must be a list.")
@@ -19,15 +139,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
   }
 
   if(!is.null(dat)) {
-    has_ee <- any(!is.na(dat$smaj))
-    has_ls <- any(!is.na(dat$K[,1]))
-
-    if (!has_ee && ("psi" %in% names(par) || "psi" %in% names(map))) {
-      stop("Cannot specify 'psi' in 'par' or 'map' because the data does not contain error ellipse observations.")
-    }
-    if (!has_ls && (any(c("tau", "rho_o") %in% names(par)) || any(c("tau", "rho_o") %in% names(map)))) {
-      stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard error observations ('x.err', 'y.err').")
-    }
+    validate_obs_error(par, map, dat)
   }
 
   if(model=="underdamped"){
@@ -81,7 +193,6 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     stop("par$beta is missing, with no default.")
   }
 
-  # Safely check spatialCovs length
   if(!is.null(spatialCovs)){
     if(length(par$beta) != length(spatialCovs)) {
       stop("par$beta is of length ", length(par$beta), ", but spatialCovs is of length ", length(spatialCovs), ". They must be the same length.")
@@ -177,18 +288,15 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
         re <- if (has_nas) c("mu", "vel") else "vel"
       }
 
-      # Lock known locations to dat$Y, but preserve interpolated par$mu for NAs
       valid_Y <- !is.na(dat$Y)
       par$mu[valid_Y] <- dat$Y[valid_Y]
 
       if (has_nas) {
-        # Create a partial map: fix known locations (NA), estimate missing locations (1:N)
         mu_map <- rep(NA, length(dat$Y))
         na_idx <- which(is.na(dat$Y))
         mu_map[na_idx] <- 1:length(na_idx)
         map$mu <- factor(mu_map)
       } else {
-        # No missing data, completely freeze mu
         map$mu <- factor(rep(NA, length(dat$Y)))
       }
     }
@@ -202,113 +310,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     par <- par[c("beta","log_sigma","log_gamma","mu","vel","l_psi","l_tau","l_rho_o")]
   }
 
-  # ---------------------------------------------------------
-  # PARSE PRIORS (Mapped directly from `par` on the working scale)
-  # ---------------------------------------------------------
-  pr_mean <- unlist(par) * 0 + NA_real_
-  pr_sd   <- unlist(par) * 0 + NA_real_
-
-  nice_names <- unlist(lapply(names(par), function(nm) {
-    n_elem <- length(par[[nm]])
-    if (n_elem == 1) return(nm)
-    if (nm == "beta" && !is.null(names(spatialCovs)) && length(spatialCovs) == n_elem) {
-      return(paste0("beta_", names(spatialCovs)))
-    }
-
-    if (nm %in% c("mu", "vel")) {
-      num_steps <- n_elem / 2
-      return(paste0(nm, c(".x_", ".y_"), rep(seq_len(num_steps), each = 2)))
-    }
-    # -----------------------------------------------
-
-    return(paste0(nm, "_", seq_len(n_elem)))
-  }))
-  names(pr_mean) <- nice_names
-  names(pr_sd) <- nice_names
-
-  if (!is.null(prior)) {
-    if (!is.data.frame(prior) || ncol(prior) != 2) {
-      stop("'prior' must be a 2-column data frame with mean in col 1 and sd in col 2.")
-    }
-    for (rn in rownames(prior)) {
-      if (rn %in% nice_names) {
-        pr_mean[rn] <- prior[rn, 1]
-        pr_sd[rn]   <- prior[rn, 2]
-      } else if (rn %in% names(par)) {
-        idx <- which(startsWith(nice_names, paste0(rn, "_")) | nice_names == rn)
-        pr_mean[idx] <- prior[rn, 1]
-        pr_sd[idx]   <- prior[rn, 2]
-      } else {
-        # Format the beta examples dynamically for the error message
-        beta_names <- nice_names[startsWith(nice_names, "beta_")]
-        if (length(beta_names) == 0) {
-          example_beta_str <- "'beta_1'"
-        } else if (length(beta_names) < 3) {
-          example_beta_str <- paste0("'", beta_names, "'", collapse = ", ")
-        } else {
-          example_beta_str <- paste0("'", beta_names[1], "', ..., '", beta_names[length(beta_names)], "'")
-        }
-
-        stop("Prior parameter name '", rn, "' is invalid. Acceptable base parameters for this model are: ",
-             paste(names(par), collapse = ", "),
-             "\n  To target specific elements, use their exact working names (e.g., ",
-             example_beta_str, ", 'mu.x_1', 'vel.y_10').")
-      }
-    }
-  }
-
-  pr_mean_list <- utils::relist(unname(pr_mean), skeleton = par)
-  pr_sd_list   <- utils::relist(unname(pr_sd), skeleton = par)
-
-  priors <- list()
-
-  priors$has_prior_beta <- as.integer(any(!is.na(pr_mean_list$beta)))
-  priors$prior_mean_beta <- as.numeric(pr_mean_list$beta)
-  priors$prior_sd_beta   <- as.numeric(pr_sd_list$beta)
-
-  priors$has_prior_log_sigma <- as.integer(any(!is.na(pr_mean_list$log_sigma)))
-  priors$prior_mean_log_sigma <- as.numeric(pr_mean_list$log_sigma)
-  priors$prior_sd_log_sigma   <- as.numeric(pr_sd_list$log_sigma)
-
-  priors$has_prior_log_gamma <- as.integer(!is.null(pr_mean_list$log_gamma) && any(!is.na(pr_mean_list$log_gamma)))
-  priors$prior_mean_log_gamma <- if (!is.null(pr_mean_list$log_gamma)) as.numeric(pr_mean_list$log_gamma) else NA_real_
-  priors$prior_sd_log_gamma   <- if (!is.null(pr_sd_list$log_gamma)) as.numeric(pr_sd_list$log_gamma) else NA_real_
-
-  priors$has_prior_l_psi <- as.integer(!is.null(pr_mean_list$l_psi) && any(!is.na(pr_mean_list$l_psi)))
-  priors$prior_mean_l_psi <- if (!is.null(pr_mean_list$l_psi)) as.numeric(pr_mean_list$l_psi) else NA_real_
-  priors$prior_sd_l_psi   <- if (!is.null(pr_sd_list$l_psi)) as.numeric(pr_sd_list$l_psi) else NA_real_
-
-  priors$has_prior_l_tau <- as.integer(!is.null(pr_mean_list$l_tau) && any(!is.na(pr_mean_list$l_tau)))
-  priors$prior_mean_l_tau <- if (!is.null(pr_mean_list$l_tau)) as.numeric(pr_mean_list$l_tau) else rep(NA_real_, 2)
-  priors$prior_sd_l_tau   <- if (!is.null(pr_sd_list$l_tau)) as.numeric(pr_sd_list$l_tau) else rep(NA_real_, 2)
-
-  priors$has_prior_l_rho_o <- as.integer(!is.null(pr_mean_list$l_rho_o) && any(!is.na(pr_mean_list$l_rho_o)))
-  priors$prior_mean_l_rho_o <- if (!is.null(pr_mean_list$l_rho_o)) as.numeric(pr_mean_list$l_rho_o) else NA_real_
-  priors$prior_sd_l_rho_o   <- if (!is.null(pr_sd_list$l_rho_o)) as.numeric(pr_sd_list$l_rho_o) else NA_real_
-
-  priors$has_prior_mu <- as.integer(!is.null(pr_mean_list$mu) && any(!is.na(pr_mean_list$mu)))
-  if (priors$has_prior_mu == 1L) {
-    valid_mu <- which(!is.na(pr_mean_list$mu))
-    priors$prior_idx_mu <- as.integer(valid_mu - 1L) # 0-based for C++
-    priors$prior_mean_mu_val <- as.numeric(pr_mean_list$mu[valid_mu])
-    priors$prior_sd_mu_val   <- as.numeric(pr_sd_list$mu[valid_mu])
-  } else {
-    priors$prior_idx_mu <- integer(0)
-    priors$prior_mean_mu_val <- numeric(0)
-    priors$prior_sd_mu_val   <- numeric(0)
-  }
-
-  priors$has_prior_vel <- as.integer(!is.null(pr_mean_list$vel) && any(!is.na(pr_mean_list$vel)))
-  if (priors$has_prior_vel == 1L) {
-    valid_vel <- which(!is.na(pr_mean_list$vel))
-    priors$prior_idx_vel <- as.integer(valid_vel - 1L) # 0-based for C++
-    priors$prior_mean_vel_val <- as.numeric(pr_mean_list$vel[valid_vel])
-    priors$prior_sd_vel_val   <- as.numeric(pr_sd_list$vel[valid_vel])
-  } else {
-    priors$prior_idx_vel <- integer(0)
-    priors$prior_mean_vel_val <- numeric(0)
-    priors$prior_sd_vel_val   <- numeric(0)
-  }
+  priors <- parse_priors(par, prior, spatialCovs)
 
   if(!is.null(dat)){
     out <- list(par=par, map=map, re=re, priors=priors)

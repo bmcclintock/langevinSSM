@@ -2,12 +2,14 @@
 
 # --- Helpers ---
 get_base_data <- function() {
-  data.frame(
+  df <- data.frame(
     id = rep("A", 10),
     date = as.POSIXct("2024-01-01 00:00:00", tz = "UTC") + (1:10) * 3600,
     mu.x = seq(0, 100, length.out = 10),
     mu.y = seq(0, 100, length.out = 10)
   )
+  class(df) <- c("dataLangevin", class(df))
+  return(df)
 }
 
 # --- Tests: User Error Catching ---
@@ -99,7 +101,7 @@ test_that("addMeasurementError applies known KF errors correctly", {
   # Pre-populate errors directly into the dataframe
   df$smaj <- 5
   df$smin <- 2
-  df$eor <- 90
+  df$eor <- 1.5
 
   set.seed(456)
   res <- suppressWarnings(addMeasurementError(df)) # measurementError list intentionally omitted
@@ -185,7 +187,7 @@ test_that("addMeasurementError correctly handles a mix of valid KF and LS errors
   # Assign KF errors to the first 5 rows
   df$smaj[1:5] <- 5
   df$smin[1:5] <- 2
-  df$eor[1:5]  <- 90
+  df$eor[1:5]  <- 1.5
 
   # Assign LS/GPS errors to the last 5 rows
   df$x.err[6:10] <- 3

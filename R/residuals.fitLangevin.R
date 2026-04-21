@@ -52,38 +52,10 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
   time.unit <- attr(data, "time.unit")
   coord <- cond$coord
 
-  raster_data <- prepareRaster(spatialCovs, scaleFactor = cond$scaleFactor, time.unit = time.unit, data = data, coord = coord)
+  dat <- build_tmb_data(data, spatialCovs, cond$model, coord, cond$scaleFactor,
+                        cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale)
 
-  if (inherits(data$date, "POSIXt") || inherits(data$date, "Date")) {
-    track_times <- as.numeric(difftime(data$date, as.POSIXct("1970-01-01 00:00:00", tz = "UTC"), units = time.unit))
-  } else {
-    track_times <- as.numeric(data$date)
-  }
-
-  dat <- list(
-    process_model = ifelse(cond$model == "underdamped", 1, 0),
-    Y = t(data[, coord]) / cond$scaleFactor,
-    times = track_times,
-    dt = data$dt
-  )
-
-  dat$skip_step <- as.integer(dat$dt < 1.e-6)
-  dat$smaj <- data$smaj / cond$scaleFactor
-  dat$smin <- data$smin / cond$scaleFactor
-  dat$eor <- data$eor
-  dat$K <- as.matrix(data[, c("x.err", "y.err")] / cond$scaleFactor)
-  dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))))
-  dat$obs_mod <- rep(NA, ncol(dat$Y))
-  dat$obs_mod[dat$isd == 1 & (!is.na(dat$K[,1]) & !is.na(dat$K[,2]))] <- 0
-  dat$obs_mod[dat$isd == 1 & (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))] <- 1
-  dat$ID <- data$id
-  dat$nbObs <- rep(1, ncol(dat$Y))
-  dat$scale_factor <- cond$scaleFactor
-  dat <- c(dat, raster_data)
-  dat$smoothGradient <- ifelse(cond$smoothGradient, 1, 0)
-  dat$weights <- c(cond$curweight, rep((1 - cond$curweight) / cond$npoints, cond$npoints))
-  dat$zetaScale <- cond$zetaScale
-
+  # Re-attach priors from the blueprint
   dat <- c(dat, object$tmb_setup$priors)
 
   subset_track_data <- function(dat, parList, mapList, uid, model_type) {

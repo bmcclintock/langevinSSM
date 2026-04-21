@@ -1,3 +1,160 @@
+# --- Helper: Build TMB Data List ---
+build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale) {
+  time.unit <- attr(data, "time.unit")
+  raster_data <- prepareRaster(spatialCovs, scaleFactor = scaleFactor, time.unit = time.unit, data = data, coord = coord)
+
+  if (inherits(data$date, "POSIXt") || inherits(data$date, "Date")) {
+    track_times <- as.numeric(difftime(data$date, as.POSIXct("1970-01-01 00:00:00", tz = "UTC"), units = time.unit))
+  } else {
+    track_times <- as.numeric(data$date)
+  }
+
+  dat <- list(
+    process_model = ifelse(model == "underdamped", 1, 0),
+    Y = t(data[, coord]) / scaleFactor,
+    times = track_times,
+    dt = data$dt
+  )
+
+  dat$skip_step <- as.integer(dat$dt < 1.e-6)
+  dat$smaj <- data$smaj / scaleFactor
+  dat$smin <- data$smin / scaleFactor
+  dat$eor <- data$eor
+  dat$K <- as.matrix(data[, c("x.err", "y.err")] / scaleFactor)
+  dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))))
+  dat$obs_mod <- rep(NA, ncol(dat$Y))
+  dat$obs_mod[dat$isd == 1 & (!is.na(dat$K[,1]) & !is.na(dat$K[,2]))] <- 0
+  dat$obs_mod[dat$isd == 1 & (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))] <- 1
+  dat$ID <- data$id
+  dat$nbObs <- rep(1, ncol(dat$Y))
+  dat$scale_factor <- scaleFactor
+  dat <- c(dat, raster_data)
+  dat$smoothGradient <- ifelse(smoothGradient, 1, 0)
+  dat$weights <- c(curweight, rep((1 - curweight) / npoints, npoints))
+  dat$zetaScale <- zetaScale
+
+  return(dat)
+}
+
+# --- Helper: Extract and Format TMB Estimates ---
+extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFactor, spatialCovs, getJointPrecision) {
+  estimates <- list()
+  covariance <- list()
+
+  if (inherits(sdreport_out, "try-error")) {
+    warning("TMB::sdreport failed to calculate standard errors. Trajectory and point estimates were recovered from the report, but SEs are unavailable.")
+
+    # 1. working scale
+    working_names <- names(fit$par)
+    name_counts <- table(working_names)
+    is_dup <- working_names %in% names(name_counts[name_counts > 1])
+    if (any(is_dup)) {
+      suffix <- ave(working_names, working_names, FUN = seq_along)
+      working_names[is_dup] <- paste0(working_names[is_dup], "_", suffix[is_dup])
+    }
+    estimates$working <- data.frame("Estimate" = as.numeric(fit$par), "Std. Error" = NA_real_, check.names = FALSE)
+    rownames(estimates$working) <- working_names
+
+    # 2. natural scale
+    rep_vals <- obj$report()
+    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi")
+    existing_names <- nat_names[nat_names %in% names(rep_vals)]
+    nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
+    names(nat_list) <- existing_names
+    nat_est <- unlist(nat_list, use.names=FALSE)
+
+    nat_rn <- unlist(lapply(names(nat_list), function(x) {
+      if (length((nat_list[[x]])) == 1) return(x)
+      else return(paste0(x, "_", 1:length(nat_list[[x]])))
+    }))
+
+    estimates$natural <- data.frame("Estimate" = as.numeric(nat_est), "Std. Error" = NA_real_, check.names = FALSE)
+    rownames(estimates$natural) <- nat_rn
+
+    # 3. random effects (mu/vel)
+    if(length(re)) {
+      estimates$random <- list()
+      for(i in seq_along(re)) {
+        node <- re[i]
+        estimates$random[[node]] <- list(
+          est = data.frame(id = data$id, date = data$date, t(rep_vals[[node]]) * scaleFactor),
+          se = NULL
+        )
+        colnames(estimates$random[[node]]$est) <- c("id", "date", paste0(node, ".", c("x", "y")))
+      }
+    }
+  } else {
+
+    estimates$natural <- as.data.frame(summary(sdreport_out, "report"))
+    estimates$working <- as.data.frame(summary(sdreport_out, "fixed"))
+
+    covariance$natural <- sdreport_out$cov
+    covariance$working <- sdreport_out$cov.fixed
+
+    for (est_type in c("natural", "working")) {
+      rn <- rownames(estimates[[est_type]])
+      name_counts <- table(rn)
+      is_dup <- rn %in% names(name_counts[name_counts > 1])
+      if (any(is_dup)) {
+        suffix <- ave(rn, rn, FUN = seq_along)
+        rn[is_dup] <- paste0(rn[is_dup], "_", suffix[is_dup])
+      }
+      rownames(estimates[[est_type]]) <- rn
+    }
+
+    # 3. random effects
+    if(length(re)) {
+      ran_est <- tryCatch(summary(sdreport_out, "random"), error = function(e) NULL)
+
+      obj$fn(fit$par)
+      rep_vals <- obj$report()
+      estimates$random <- list()
+
+      for(i in seq_along(re)) {
+        node <- re[i]
+        est_mat <- t(matrix(rep_vals[[node]], nrow = 2)) * scaleFactor
+        se_full <- rep(0.0, length(rep_vals[[node]]))
+
+        if (!is.null(ran_est) && nrow(ran_est) > 0 && node %in% rownames(ran_est)) {
+          node_ran_est <- ran_est[rownames(ran_est) == node, , drop = FALSE]
+
+          if (!is.null(map[[node]])) {
+            map_int <- as.integer(map[[node]])
+            valid_idx <- !is.na(map_int)
+            if (any(valid_idx)) {
+              se_full[valid_idx] <- node_ran_est[map_int[valid_idx], "Std. Error"]
+            }
+          } else {
+            se_full <- node_ran_est[, "Std. Error"]
+          }
+        }
+
+        se_mat <- t(matrix(se_full, nrow = 2)) * scaleFactor
+        estimates$random[[node]] <- list()
+        estimates$random[[node]]$est <- data.frame(id = data$id, date = data$date, est_mat)
+        estimates$random[[node]]$se  <- data.frame(id = data$id, date = data$date, se_mat)
+        colnames(estimates$random[[node]]$est) <- c("id", "date", paste0(node, ".", c("x", "y")))
+        colnames(estimates$random[[node]]$se)  <- c("id", "date", paste0(node, ".", c("x", "y")))
+      }
+      if(getJointPrecision) covariance$random$jointPrecision <- sdreport_out$jointPrecision
+    }
+  }
+
+  for (est_type in c("natural", "working")) {
+    if (!is.null(estimates[[est_type]])) {
+      rn <- rownames(estimates[[est_type]])
+      beta_idx <- which(rn == "beta" | grepl("^beta_[0-9]+$", rn))
+
+      if (length(beta_idx) == length(spatialCovs) && !is.null(names(spatialCovs))) {
+        rn[beta_idx] <- paste0("beta_", names(spatialCovs))
+        rownames(estimates[[est_type]]) <- rn
+      }
+    }
+  }
+
+  return(list(estimates = estimates, covariance = covariance))
+}
+
 #' Fit the habitat-driven Langevin diffusion
 #'
 #' Fit the underdamped or overdamped Langevin model to the location data provided, via numerical optimization of the log-likelihood
@@ -92,61 +249,24 @@
 fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
-
   model <- match.arg(model)
 
-  time.unit <- attr(data,"time.unit")
-
-  # Prepare raster data
-  raster_data <- prepareRaster(spatialCovs,scaleFactor=scaleFactor,time.unit=time.unit,data=data,coord=coord)
-
   if(!all(coord %in% colnames(data))) stop("coord not found in data.")
-
   if(smoothGradient & isFALSE(npoints %in% c(4,8))) stop("npoints must be 4 or 8")
   if(smoothGradient & isFALSE(curweight>=0 & curweight<1)) stop("curweight must be >=0 and <1")
   if(smoothGradient & isFALSE(zetaScale>0)) stop("zetaScale must be >0")
 
-  if (inherits(data$date, "POSIXt") || inherits(data$date, "Date")) {
-    track_times <- as.numeric(difftime(data$date, as.POSIXct("1970-01-01 00:00:00", tz = "UTC"), units = time.unit))
-  } else {
-    track_times <- as.numeric(data$date)
-  }
-
   checkErrorData(data, coord)
 
-  if(any(!coord %in% colnames(data))) stop("'coord' not found in data.")
-  dat <-  list(process_model=ifelse(model=="underdamped",1,0),
-               Y=t(data[,coord])/scaleFactor,
-               times=track_times,
-               dt=data$dt)
+  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale)
 
-  dat$skip_step <- as.integer(dat$dt < 1.e-6) # very small dt's assume the animal didn't move between the corresponding observations
-
-  dat$smaj <- data$smaj / scaleFactor
-  dat$smin <- data$smin / scaleFactor
-  dat$eor <- data$eor
-  dat$K <- as.matrix(data[,c("x.err","y.err")] / scaleFactor)
-  dat$isd <- as.numeric(!is.na(dat$Y[1,]) & ((!is.na(dat$K[,1]) & !is.na(dat$K[,2])) | (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))))
-  dat$obs_mod <- rep(NA,ncol(dat$Y))
-  dat$obs_mod[dat$isd==1 & (!is.na(dat$K[,1]) & !is.na(dat$K[,2]))] <- 0
-  dat$obs_mod[dat$isd==1 & (!is.na(dat$smaj) & !is.na(dat$smin) & !is.na(dat$eor))] <- 1
-  dat$ID <- data$id
-  dat$nbObs <- rep(1,ncol(dat$Y))
-  dat$scale_factor <- scaleFactor
-  dat <- c(dat,raster_data)
-  dat$smoothGradient <- ifelse(smoothGradient,1,0)
-  dat$weights <- c(curweight,rep((1-curweight)/npoints,npoints))
-  dat$zetaScale <- zetaScale
-
-  par <- initialValues(data,model,par,spatialCovs,coord)
-
+  par <- initialValues(data, model, par, spatialCovs, coord)
   cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior)
   par <- cp$par
   map <- cp$map
   re <- cp$re
 
   dat <- c(dat, cp$priors)
-
   map <- mapDuplicatedTimes(dat, map, par, re)
 
   # scale parameters internally for TMB
@@ -155,301 +275,88 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   par$vel <- par$vel / scaleFactor
 
   message("   Fitting ",model," Langevin model...")
+
   if(initialInner){
-
-    # Create the map to freeze fixed effects for the inner optimization
     map_inner <- lapply(par[names(par)[!names(par) %in% c("mu","vel")]], function(x) factor(rep(NA,length(x))))
-
-    # Preserve the user's map (and duplicate time map) for the random effects
     if(!is.null(map$mu)) map_inner$mu <- map$mu
     if(!is.null(map$vel)) map_inner$vel <- map$vel
 
     obj1 <- try({
-      TMB::MakeADFun(
-        c(model="langevinSSM",dat),
-        par,
-        map = map_inner,
-        random = re,
-        DLL = "langevinSSM_TMBExports",
-        hessian = hessian,
-        method = method,
-        silent = silent,
-        inner.control =  inner.control
-      )
+      TMB::MakeADFun(c(model="langevinSSM",dat), par, map = map_inner, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
     }, silent = TRUE)
 
-    if (inherits(obj1, "try-error")) {
-      stop("Initial inner optimization (obj1) failed during TMB::MakeADFun. Check parameter initial values or data.\nError details: ", attr(obj1, "condition")$message)
-    }
+    if (inherits(obj1, "try-error")) stop("Initial inner optimization (obj1) failed during TMB::MakeADFun. Check parameter initial values or data.\nError details: ", attr(obj1, "condition")$message)
 
     obj1$fn()
-
     smoothed_pars <- obj1$env$parList()
 
     if("mu" %in% re) par$mu <- smoothed_pars$mu
     if("vel" %in% re) par$vel <- smoothed_pars$vel
 
-    # re-inject the fixed values
     if(!is.null(map$mu)) par$mu[is.na(map$mu)] <- (cp$par$mu / scaleFactor)[is.na(map$mu)]
     if(!is.null(map$vel)) par$vel[is.na(map$vel)] <- (cp$par$vel / scaleFactor)[is.na(map$vel)]
   }
 
   obj2 <- try({
-    TMB::MakeADFun(
-      c(model="langevinSSM",dat),
-      par,
-      map = map,
-      random = re,
-      DLL = "langevinSSM_TMBExports",
-      hessian = hessian,
-      method = method,
-      silent = silent,
-      inner.control =  inner.control
-    )
+    TMB::MakeADFun(c(model="langevinSSM",dat), par, map = map, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
   }, silent = TRUE)
 
-  if (inherits(obj2, "try-error")) {
-    stop("TMB::MakeADFun failed to construct the objective function. Check parameter initial values or data constraints.\nError details: ", attr(obj2, "condition")$message)
-  }
+  if (inherits(obj2, "try-error")) stop("TMB::MakeADFun failed to construct the objective function. Check parameter initial values or data constraints.\nError details: ", attr(obj2, "condition")$message)
 
   if (length(obj2$par) == 0) {
-    # Edge case: All fixed parameters are mapped out (frozen)
     start <- proc.time()
-    fit <- list(
-      par = obj2$par,
-      objective = obj2$fn(obj2$par),
-      convergence = 0,
-      message = "All parameters fixed; no outer optimization required",
-      iterations = 0,
-      evaluations = c("function" = 1, "gradient" = 0)
-    )
+    fit <- list(par = obj2$par, objective = obj2$fn(obj2$par), convergence = 0, message = "All parameters fixed; no outer optimization required", iterations = 0, evaluations = c("function" = 1, "gradient" = 0))
     fit$elapsedTime <- proc.time() - start
   } else {
     start <- proc.time()
     fit <- try({
-      do.call(stats::nlminb,args = list(
-        start = obj2$par,
-        objective = obj2$fn,
-        gradient = obj2$gr,
-        control=control))
+      do.call(stats::nlminb,args = list(start = obj2$par, objective = obj2$fn, gradient = obj2$gr, control=control))
     }, silent = TRUE)
 
-    if (inherits(fit, "try-error") || !is.list(fit)) {
-      stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
-    } else {
-      if(polishOptim==TRUE){
+    if (inherits(fit, "try-error") || !is.list(fit)) stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
 
-        obj2$fn(fit$par)
-
-        message("   Polishing optimization with nlminb...")
-        fit_polished <- try({
-          do.call(stats::nlminb, args = list(
-            start = fit$par,
-            objective = obj2$fn,
-            gradient = obj2$gr,
-            control = control))
-        }, silent = TRUE)
-
-        if (!inherits(fit_polished, "try-error") && fit_polished$objective < fit$objective) {
-          fit <- fit_polished
-        }
-      }
+    if(polishOptim==TRUE){
+      obj2$fn(fit$par)
+      message("   Polishing optimization with nlminb...")
+      fit_polished <- try({
+        do.call(stats::nlminb, args = list(start = fit$par, objective = obj2$fn, gradient = obj2$gr, control = control))
+      }, silent = TRUE)
+      if (!inherits(fit_polished, "try-error") && fit_polished$objective < fit$objective) fit <- fit_polished
     }
 
     fit$elapsedTime <- proc.time() - start
-
-    # Check for non-convergence (nlminb convergence code != 0)
-    if (!is.null(fit$convergence) && fit$convergence != 0) {
-      warning("nlminb optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
-    }
+    if (!is.null(fit$convergence) && fit$convergence != 0) warning("nlminb optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
   }
 
   message("   Calculating SEs...")
-  #fit$report <- obj2$report()
   sdreport_out <- try({
     TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
   }, silent = TRUE)
 
-  fit$estimates <- list()
-
-  if (inherits(sdreport_out, "try-error")) {
-    warning("TMB::sdreport failed to calculate standard errors. Trajectory and point estimates were recovered from the report, but SEs are unavailable.")
-
-    # 1. working scale
-    working_names <- names(fit$par)
-    name_counts <- table(working_names)
-    is_dup <- working_names %in% names(name_counts[name_counts > 1])
-    if (any(is_dup)) {
-      suffix <- ave(working_names, working_names, FUN = seq_along)
-      working_names[is_dup] <- paste0(working_names[is_dup], "_", suffix[is_dup])
-    }
-    fit$estimates$working <- data.frame(
-      "Estimate" = as.numeric(fit$par),
-      "Std. Error" = NA_real_,
-      check.names = FALSE
-    )
-    rownames(fit$estimates$working) <- working_names
-
-    # 2. natural scale
-    rep_vals <- obj2$report()
-    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi")
-    existing_names <- nat_names[nat_names %in% names(rep_vals)]
-    nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
-    names(nat_list) <- existing_names
-    nat_est <- unlist(nat_list, use.names=FALSE)
-
-    nat_rn <- unlist(lapply(names(nat_list), function(x) {
-      if (length((nat_list[[x]])) == 1) return(x)
-      else return(paste0(x, "_", 1:length(nat_list[[x]])))
-    }))
-
-    fit$estimates$natural <- data.frame(
-      "Estimate" = as.numeric(nat_est),
-      "Std. Error" = NA_real_,
-      check.names = FALSE
-    )
-    rownames(fit$estimates$natural) <- nat_rn
-
-    # 3. random effects (mu/vel)
-    if(length(re)) {
-      fit$estimates$random <- list()
-      for(i in seq_along(re)) {
-        node <- re[i]
-        fit$estimates$random[[node]] <- list(
-          est = data.frame(
-            id = data$id,
-            date = data$date,
-            t(rep_vals[[node]]) * scaleFactor
-          ),
-          se = NULL
-        )
-        colnames(fit$estimates$random[[node]]$est) <- c("id", "date", paste0(node, ".", c("x", "y")))
-      }
-    }
-  } else {
-
-    fit$estimates <- list(natural = summary(sdreport_out, "report"),
-                          working = summary(sdreport_out, "fixed"))
-
-    fit$covariance <- list(natural = sdreport_out$cov,
-                           working = sdreport_out$cov.fixed)
-
-    for (est_type in c("natural", "working")) {
-      rn <- rownames(fit$estimates[[est_type]])
-      name_counts <- table(rn)
-      is_dup <- rn %in% names(name_counts[name_counts > 1])
-      if (any(is_dup)) {
-        suffix <- ave(rn, rn, FUN = seq_along)
-        rn[is_dup] <- paste0(rn[is_dup], "_", suffix[is_dup])
-      }
-      fit$estimates[[est_type]] <- as.data.frame(fit$estimates[[est_type]])
-      rownames(fit$estimates[[est_type]]) <- rn
-    }
-
-    # 3. random effects
-    if(length(re)) {
-      # Safely extract random effects summary; might be empty/NULL if all are mapped out
-      ran_est <- tryCatch(summary(sdreport_out, "random"), error = function(e) NULL)
-
-      obj2$fn(fit$par)
-      rep_vals <- obj2$report()
-      fit$estimates$random <- list()
-
-      for(i in seq_along(re)) {
-        node <- re[i]
-        est_mat <- t(matrix(rep_vals[[node]], nrow = 2)) * scaleFactor
-
-        # Default to 0.0 for consistency with ADREPORT fixed parameters
-        se_full <- rep(0.0, length(rep_vals[[node]]))
-
-        # Only attempt to extract Standard Errors if the node was actually estimated
-        if (!is.null(ran_est) && nrow(ran_est) > 0 && node %in% rownames(ran_est)) {
-          node_ran_est <- ran_est[rownames(ran_est) == node, , drop = FALSE]
-
-          if (!is.null(map[[node]])) {
-            map_int <- as.integer(map[[node]])
-            valid_idx <- !is.na(map_int)
-            # Apply SEs to the valid (unfrozen) indices, respecting duplicate mappings
-            if (any(valid_idx)) {
-              se_full[valid_idx] <- node_ran_est[map_int[valid_idx], "Std. Error"]
-            }
-          } else {
-            se_full <- node_ran_est[, "Std. Error"]
-          }
-        }
-
-        se_mat <- t(matrix(se_full, nrow = 2)) * scaleFactor
-        fit$estimates$random[[node]] <- list()
-        fit$estimates$random[[node]]$est <- data.frame(id = data$id, date = data$date, est_mat)
-        fit$estimates$random[[node]]$se  <- data.frame(id = data$id, date = data$date, se_mat)
-        colnames(fit$estimates$random[[node]]$est) <- c("id", "date", paste0(node, ".", c("x", "y")))
-        colnames(fit$estimates$random[[node]]$se)  <- c("id", "date", paste0(node, ".", c("x", "y")))
-      }
-      if(getJointPrecision) fit$covariance$random$jointPrecision <- sdreport_out$jointPrecision
-    }
-  }
-
-  for (est_type in c("natural", "working")) {
-    if (!is.null(fit$estimates[[est_type]])) {
-      rn <- rownames(fit$estimates[[est_type]])
-      beta_idx <- which(rn == "beta" | grepl("^beta_[0-9]+$", rn))
-
-      if (length(beta_idx) == length(spatialCovs) && !is.null(names(spatialCovs))) {
-        rn[beta_idx] <- paste0("beta_", names(spatialCovs))
-        rownames(fit$estimates[[est_type]]) <- rn
-      }
-    }
-  }
+  extracted <- extract_tmb_estimates(fit, obj2, sdreport_out, re, map, data, scaleFactor, spatialCovs, getJointPrecision)
+  fit$estimates <- extracted$estimates
+  fit$covariance <- extracted$covariance
 
   out_of_bounds <- FALSE
   if (!is.null(fit$estimates$random$mu)) {
     mu_est <- fit$estimates$random$mu$est
-
     cov_ext <- as.vector(terra::ext(spatialCovs[[1]]))
     cov_res <- terra::res(spatialCovs[[1]])
 
-    # define a "danger zone" (within 1 cell of the edge, where gradients drop to 0)
-    safe_xmin <- cov_ext["xmin"] + cov_res[1]
-    safe_xmax <- cov_ext["xmax"] - cov_res[1]
-    safe_ymin <- cov_ext["ymin"] + cov_res[2]
-    safe_ymax <- cov_ext["ymax"] - cov_res[2]
+    safe_xmin <- cov_ext["xmin"] + cov_res[1]; safe_xmax <- cov_ext["xmax"] - cov_res[1]
+    safe_ymin <- cov_ext["ymin"] + cov_res[2]; safe_ymax <- cov_ext["ymax"] - cov_res[2]
 
     out_of_bounds <- any(mu_est$mu.x < safe_xmin | mu_est$mu.x > safe_xmax |
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
   }
 
-  # ensure necessary build conditions are saved for residuals.fitLangevin
-  fit$conditions <- list(hessian = hessian,
-                         method = method,
-                         silent = silent,
-                         initialInner = initialInner,
-                         inner.control = inner.control,
-                         control = control,
-                         scaleFactor = scaleFactor,
-                         model = model,
-                         smoothGradient = smoothGradient,
-                         npoints = npoints,
-                         curweight = curweight,
-                         zetaScale = zetaScale,
-                         coord = coord,
-                         out_of_bounds = out_of_bounds)
+  fit$conditions <- list(hessian = hessian, method = method, silent = silent, initialInner = initialInner, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, coord = coord, out_of_bounds = out_of_bounds)
 
   boundsWarning(fit)
 
-  fit$signatures <- list(
-    data = get_data_signature(data, coord),
-    covs = get_covs_signature(spatialCovs)
-  )
-
-  # Save the blueprint
-  fit$tmb_setup <- list(
-    parList = obj2$env$parList(fit$par),
-    map = map,
-    random = re,
-    priors = cp$priors
-  )
+  fit$signatures <- list(data = get_data_signature(data, coord), covs = get_covs_signature(spatialCovs))
+  fit$tmb_setup <- list(parList = obj2$env$parList(fit$par), map = map, random = re, priors = cp$priors)
 
   fit <- class_fitLangevin(fit)
-
   return(fit)
 }

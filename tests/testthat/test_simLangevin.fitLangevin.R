@@ -142,3 +142,32 @@ test_that("simLangevin.fitLangevin inherits and applies location classes (lc) an
   expect_false(isTRUE(all.equal(res_pred$x, res_pred$mu.x)))
   expect_false(isTRUE(all.equal(res_pred$y, res_pred$mu.y)))
 })
+
+test_that("simLangevin.fitLangevin handles error ellipse (KF) measurement errors correctly without radian conversion issues", {
+  df_ee <- data.frame(
+    id = 1,
+    date = seq(0, 0.4, 0.1),
+    dt = c(0, rep(0.1, 4)),
+    x = seq(250, 254, 1),
+    y = seq(250, 254, 1),
+    smaj = rep(2, 5),
+    smin = rep(1, 5),
+    eor = rep(1.5, 5),
+    x.err = NA_real_,
+    y.err = NA_real_
+  )
+  dat_ee <- class_dataLangevin(df_ee)
+  attr(dat_ee, "time.unit") <- "hours"
+
+  # Suppress warnings to ignore the "NaNs produced" from the tiny mock track's Hessian
+  fit_ee <- suppressWarnings(suppressMessages(fitLangevin(data = dat_ee, spatialCovs = exCovs, par = list(sigma = 1), silent = TRUE)))
+
+  set.seed(42, kind="Mersenne-Twister", normal.kind = "Inversion")
+
+  expect_no_warning(
+    res_ee <- suppressWarnings(suppressMessages(simLangevin(fit_ee, data = dat_ee, spatialCovs = exCovs, conditional = FALSE)))
+  )
+
+  expect_equal(res_ee$eor, dat_ee$eor)
+  expect_false(isTRUE(all.equal(res_ee$x, res_ee$mu.x)))
+})

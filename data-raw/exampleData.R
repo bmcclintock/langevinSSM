@@ -46,6 +46,8 @@ fit
 res <- residuals(fit,exampleDat, exampleCovs, run_tests = TRUE, ncores=nbAnimals)
 res
 
+sim <- simLangevin(model=fit,data=exampleDat,spatialCovs=exampleCovs,jointPrecision = TRUE)
+
 estUD <- getUD(fit,spatialCovs=exampleCovs,nSims=1000)
 
 plot(fit,spatialCovs=exampleCovs,data=exampleDat)

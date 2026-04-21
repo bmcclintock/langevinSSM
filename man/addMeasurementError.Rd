@@ -12,9 +12,9 @@ addMeasurementError(
 )
 }
 \arguments{
-\item{data}{A data frame containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).}
+\item{data}{A \code{dataLangevin} object containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).}
 
-\item{par}{A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.}
+\item{par}{A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.}
 
 \item{measurementError}{A list or data frame used to simulate observation error. The structure determines the error model used:
 \itemize{

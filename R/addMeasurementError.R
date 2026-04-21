@@ -1,8 +1,8 @@
 #' Add measurement error to true locations
 #'
 #' This function adds measurement error to the true locations in the data frame, either by simulating new errors using provided measurement error parameters or by applying existing error columns natively found in the data. It supports both Argos Kalman Filter (KF) and Least Squares (LS)/GPS error models.
-#' @param data A data frame containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).
-#' @param par A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.
+#' @param data A \code{dataLangevin} object containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).
+#' @param par A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. See \code{\link{fitLangevin}}.
 #' @param measurementError A list or data frame used to simulate observation error. The structure determines the error model used:
 #' \itemize{
 #'   \item \strong{Argos Kalman Filter (KF):} A list containing \code{smaj.sd} (numeric; the SD to generate the semi-major axis), \code{smin.sd} (numeric; the SD to generate the semi-minor axis), and optionally \code{eor.lim} (numeric vector of length 2; boundaries in degrees for uniform orientation, defaulting to \code{c(0, 180)}).
@@ -16,6 +16,10 @@
 #' @importFrom stats rnorm
 #' @export
 addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord = c("mu.x", "mu.y")) {
+
+  if (!inherits(data, "dataLangevin")) {
+    stop("'data' must be a 'dataLangevin' object (as returned by formatData or simLangevin.")
+  }
 
   # Initialize x and y to true locations if they don't exist yet
   if (!"x" %in% names(data)) data$x <- data[,coord[1]]
@@ -64,13 +68,6 @@ addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord
   psi <- if (!is.null(par$psi)) par$psi else if (!is.null(par$l_psi)) exp(par$l_psi) else 1
   tau <- if (!is.null(par$tau)) par$tau else if (!is.null(par$l_tau)) exp(par$l_tau) else c(1, 1)
   rho_o <- if (!is.null(par$rho_o)) par$rho_o else if (!is.null(par$l_rho_o)) (2 / (1 + exp(-par$l_rho_o)) - 1) else 0
-
-  if(knownError & ("smaj" %in% names(data) && "smin" %in% names(data) && "eor" %in% names(data))) {
-    if(!all(is.na(data$eor)) && max(data$eor, na.rm = TRUE) < pi) {
-      warning("eor values were converted to radians, but they appear to have been provided in radians rather than degrees from north. Please ensure that the eor column was provided in degrees from north.")
-    }
-    data$eor <- data$eor * pi / 180 # convert from degrees to radians
-  }
 
   checkErrorData(data, coord, measurementError, knownError)
 

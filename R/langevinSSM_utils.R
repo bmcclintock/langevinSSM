@@ -60,19 +60,69 @@ NULL
 #' Standard S3 methods for extracting information from \code{fitLangevin} objects.
 #'
 #' @param object A \code{fitLangevin} object.
-#' @param type Character string indicating which scale to extract. Options are \code{"natural"} (default), \code{"working"}, \code{"mu"}, or \code{"vel"} (depending on the method).
-#' @param parm A specification of which parameters are to be given confidence intervals.
+#' @param type Character string indicating which scale or state to extract. For \code{coef}, \code{vcov}, and \code{confint}, options are \code{"natural"} (default) or \code{"working"}. For \code{fitted}, options are \code{"mu"} (default) or \code{"vel"}. \code{confint} also accepts \code{"mu"} or \code{"vel"}.
+#' @param parm A specification of which parameters are to be given confidence intervals. Can be a vector of character names (e.g., \code{"sigma"}), or the name of a latent state (\code{"mu"} or \code{"vel"}).
 #' @param level The confidence level required. Default: \code{0.95}.
 #' @param ... Further arguments passed to or from other methods.
 #'
+#' @return
+#' \itemize{
+#'   \item \strong{\code{logLik}:} Returns an object of class \code{logLik} containing the maximized log-likelihood, with attributes for degrees of freedom (\code{df}) and number of observations (\code{nobs}).
+#'   \item \strong{\code{coef}:} Returns a named numeric vector of parameter point estimates.
+#'   \item \strong{\code{vcov}:} Returns the variance-covariance matrix of the estimated parameters.
+#'   \item \strong{\code{confint}:} For fixed parameters (e.g., \code{type = "natural"}), returns a numeric matrix with lower and upper bounds. For random effects (\code{type = "mu"} or \code{"vel"}), returns a wide data frame containing the \code{id}, \code{date}, and the upper and lower confidence bounds for the x and y coordinates.
+#'   \item \strong{\code{fitted}:} Returns a data frame containing the \code{id}, \code{date}, and the estimated expected values of the latent states (either \code{mu.x} and \code{mu.y}, or \code{vel.x} and \code{vel.y}).
+#'   \item \strong{\code{summary}:} Returns a \code{summary.fitLangevin} object containing convergence details and matrices of coefficients with standard errors (and Z-test p-values for habitat selection coefficients).
+#' }
+#'
 #' @name langevin_methods
 NULL
+
+#' Print a fitLangevin object
+#'
+#' @param x A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
+#' @param ... Additional arguments passed to \code{print}.
+#'
+#' @rdname langevin_methods
+#' @importFrom stats printCoefmat
+#' @export
+print.fitLangevin <- function(x, ...) {
+
+  cat("\nHabitat-Driven Langevin Diffusion Model\n")
+  cat("=======================================\n")
+
+  # Determine model type
+  model_type <- ifelse("vel" %in% names(x$estimates$random), "Underdamped", "Overdamped")
+  cat("Model type:       ", model_type, "\n")
+
+  # Convergence status
+  conv_text <- ifelse(x$convergence == 0, "Successful", paste("Failed (Code", x$convergence, ")"))
+  cat("Convergence:      ", conv_text, "\n")
+  if (x$convergence != 0 && !is.null(x$message)) {
+    cat("Message:          ", x$message, "\n")
+  }
+
+  cat("Max Log-Likelihood:", -x$objective, "\n")
+  cat("Optimization time: ", round(x$elapsedTime[3], 2), "seconds\n\n")
+
+  cat("Parameter Estimates (Natural Scale):\n")
+  cat("---------------------------------------\n")
+
+  # Clean up the rownames for the natural estimates matrix
+  nat_est <- x$estimates$natural
+
+  stats::printCoefmat(nat_est, digits = 4, signif.stars = FALSE, na.print = "NA", ...)
+
+  boundsWarning(x, as_warning = FALSE)
+
+  invisible(x)
+}
 
 #' @rdname langevin_methods
 #' @export
 logLik.fitLangevin <- function(object, ...) {
 
-  boundsWarning(object)
+  boundsWarning(object, as_warning = FALSE)
 
   # TMB minimizes the negative log-likelihood
   val <- -object$objective
@@ -97,7 +147,7 @@ coef.fitLangevin <- function(object, type = "natural", ...) {
     stop("Estimates for type '", type, "' are not available in this model fit.")
   }
 
-  boundsWarning(object)
+  boundsWarning(object, as_warning = FALSE)
 
   # Extract just the Estimate column
   est_vector <- object$estimates[[type]][, "Estimate"]
@@ -116,7 +166,7 @@ vcov.fitLangevin <- function(object, type = "natural", ...) {
     stop("Covariance matrix for type '", type, "' is not available in this model fit.")
   }
 
-  boundsWarning(object)
+  boundsWarning(object, as_warning = FALSE)
 
   return(object$covariance[[type]])
 
@@ -133,14 +183,13 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
     is_re_parm <- FALSE
   }
 
-  boundsWarning(object)
+  boundsWarning(object, as_warning = FALSE)
 
   a <- (1 - level) / 2
   a <- c(a, 1 - a)
   pct <- paste(format(100 * a, trim = TRUE, scientific = FALSE, digits = 3), "%")
   fac <- stats::qnorm(a)
 
-  # fixed effects ("natural" or "working")
   if (type %in% c("natural", "working")) {
     cf <- coef.fitLangevin(object, type = type)
     vc <- vcov.fitLangevin(object, type = type)
@@ -160,7 +209,6 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
 
     return(ci)
 
-    # random effects ("mu" or "vel")
   } else if (type %in% c("mu", "vel")) {
 
     if (is.null(object$estimates$random) || !type %in% names(object$estimates$random)) {
@@ -175,17 +223,15 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
 
     pct_clean <- gsub(" ", "", pct)
 
-    ci_df <- data.frame(
-      id = est_df$id,
-      # Force integer conversion so tests don't fail against c(1, 2)
-      time_step = as.integer(ave(as.character(est_df$id), est_df$id, FUN = seq_along))
-    )
+    ci_df <- data.frame(id = est_df$id)
+    if ("date" %in% names(est_df)) {
+      ci_df$date <- est_df$date
+    }
 
-    ci_df[[x_col]] <- est_df[[x_col]]
+    # Calculate wide bounds without point estimates
     ci_df[[paste0(x_col, "_", pct_clean[1])]] <- est_df[[x_col]] + fac[1] * se_df[[x_col]]
     ci_df[[paste0(x_col, "_", pct_clean[2])]] <- est_df[[x_col]] + fac[2] * se_df[[x_col]]
 
-    ci_df[[y_col]] <- est_df[[y_col]]
     ci_df[[paste0(y_col, "_", pct_clean[1])]] <- est_df[[y_col]] + fac[1] * se_df[[y_col]]
     ci_df[[paste0(y_col, "_", pct_clean[2])]] <- est_df[[y_col]] + fac[2] * se_df[[y_col]]
 
@@ -194,6 +240,92 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
   } else {
     stop("The 'type' argument must be one of: 'natural', 'working', 'mu', or 'vel'.")
   }
+}
+
+#' @rdname langevin_methods
+#' @export
+fitted.fitLangevin <- function(object, type = c("mu", "vel"), ...) {
+
+  type <- match.arg(type)
+
+  boundsWarning(object, as_warning = FALSE)
+
+  if (is.null(object$estimates$random[[type]])) {
+    stop("Latent state '", type, "' was not estimated in this model.")
+  }
+
+  return(object$estimates$random[[type]]$est)
+}
+
+#' @rdname langevin_methods
+#' @export
+summary.fitLangevin <- function(object, ...) {
+
+  boundsWarning(object, as_warning = FALSE)
+
+  nat_est <- object$estimates$natural
+  beta_idx <- grepl("^beta", rownames(nat_est))
+
+  coef_beta <- nat_est[beta_idx, , drop = FALSE]
+
+  se_zero <- coef_beta[, "Std. Error"] == 0
+  z_val <- ifelse(se_zero, NA_real_, coef_beta[, "Estimate"] / coef_beta[, "Std. Error"])
+  p_val <- ifelse(se_zero, NA_real_, 2 * stats::pnorm(abs(z_val), lower.tail = FALSE))
+
+  coef_beta$z_value <- z_val
+  coef_beta$`Pr(>|z|)` <- p_val
+
+  coef_process <- nat_est[!beta_idx, , drop = FALSE]
+
+  res <- list(
+    model_type = ifelse("vel" %in% names(object$estimates$random), "Underdamped", "Overdamped"),
+    convergence = object$convergence,
+    message = object$message,
+    loglik = -object$objective,
+    elapsed = object$elapsedTime[3],
+    coef_beta = as.matrix(coef_beta), # printCoefmat prefers matrices
+    coef_process = as.matrix(coef_process)
+  )
+
+  class(res) <- "summary.fitLangevin"
+  return(res)
+}
+
+#' Print summary of a fitLangevin object
+#'
+#' @param x A \code{summary.fitLangevin} object.
+#' @param digits Minimal number of significant digits, see \code{\link[stats]{printCoefmat}}.
+#' @param signif.stars Logical. See \code{\link[stats]{printCoefmat}}.
+#' @param ... further arguments passed to \code{\link{print.default}}.
+#'
+#' @importFrom stats printCoefmat
+#' @export
+print.summary.fitLangevin <- function(x, digits = 4, signif.stars = TRUE, ...) {
+
+  cat("\nHabitat-Driven Langevin Diffusion Model\n")
+  cat("=======================================\n")
+  cat("Model type:       ", x$model_type, "\n")
+
+  conv_text <- ifelse(x$convergence == 0, "Successful", paste("Failed (Code", x$convergence, ")"))
+  cat("Convergence:      ", conv_text, "\n")
+  if (x$convergence != 0 && !is.null(x$message)) {
+    cat("Message:          ", x$message, "\n")
+  }
+
+  cat("Max Log-Likelihood:", x$loglik, "\n")
+  cat("Optimization time: ", round(x$elapsed, 2), "seconds\n\n")
+
+  cat("Habitat Selection Coefficients:\n")
+  cat("---------------------------------------\n")
+  stats::printCoefmat(x$coef_beta, digits = digits, signif.stars = signif.stars,
+                      na.print = "NA", has.Pvalue = TRUE, ...)
+
+  cat("\nProcess & Observation Parameters (Natural Scale):\n")
+  cat("---------------------------------------\n")
+  stats::printCoefmat(x$coef_process, digits = digits, signif.stars = FALSE,
+                      na.print = "NA", ...)
+
+  invisible(x)
 }
 
 #' Print a resLangevin object
@@ -530,10 +662,15 @@ gof_tests <- function(res_df){
   return(tests_df)
 }
 
-boundsWarning <- function(fit){
-  if(isTRUE(fit$conditions$out_of_bounds)){
-    cat("\n*** WARNING: MODEL FIT LIKELY INVALID ***\n")
-    cat("One or more estimated locations fell outside the spatial covariate extent.\n")
-    cat("The raster extent should be expanded and the model refitted.\n")
+boundsWarning <- function(fit, as_warning = TRUE) {
+  if (isTRUE(fit$conditions$out_of_bounds)) {
+    msg_text <- "One or more estimated locations fell outside the spatial covariate extent. The raster extent should be expanded and the model refitted."
+
+    if (as_warning) {
+      warning("MODEL FIT LIKELY INVALID: ", msg_text, call. = FALSE, immediate. = TRUE)
+    } else {
+      cat("\n*** WARNING: MODEL FIT LIKELY INVALID ***\n")
+      cat(msg_text, "\n")
+    }
   }
 }

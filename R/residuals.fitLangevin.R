@@ -29,7 +29,6 @@
 #'                    silent = TRUE,
 #'                    control = list(trace = 1))
 #'
-#' # Standard R way to get residuals:
 #' res <- residuals(fit, data = smallDat, spatialCovs = exampleCovs)
 #' print(res)
 #'

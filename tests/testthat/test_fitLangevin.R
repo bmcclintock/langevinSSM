@@ -472,8 +472,8 @@ test_that("S3 methods for fitLangevin work", {
       working = data.frame(Estimate = c(1.5, log(2)), "Std. Error" = c(0.1, 0.1), row.names = c("beta_hab", "log_sigma"), check.names = FALSE),
       random = list(
         mu = list(
-          est = data.frame(id = c("A", "A"), mu.x = c(10, 20), mu.y = c(15, 25)),
-          se = data.frame(id = c("A", "A"), mu.x = c(1, 1), mu.y = c(2, 2))
+          est = data.frame(id = c("A", "A"), date = as.POSIXct(c("2023-01-01", "2023-01-02"), tz="UTC"), mu.x = c(10, 20), mu.y = c(15, 25)),
+          se = data.frame(id = c("A", "A"), date = as.POSIXct(c("2023-01-01", "2023-01-02"), tz="UTC"), mu.x = c(1, 1), mu.y = c(2, 2))
         )
       )
     ),
@@ -514,14 +514,12 @@ test_that("S3 methods for fitLangevin work", {
   # Error catching in confint
   expect_error(confint(mock_fit, parm = "nonsense"), "Parameter\\(s\\) not found")
 
-  # 4. confint() for Random Effects (mu/vel layout)
+  # 4. confint() for Random Effects (wide layout, no point estimates)
   ci_mu <- confint(mock_fit, type = "mu")
   expect_true(is.data.frame(ci_mu))
-  # Should have 8 columns: id, time_step, x, x_lwr, x_upr, y, y_lwr, y_upr
-  expect_equal(colnames(ci_mu), c("id", "time_step", "mu.x", "mu.x_2.5%", "mu.x_97.5%",
-                                  "mu.y", "mu.y_2.5%", "mu.y_97.5%"))
+  # Should have 6 columns: id, date, x bounds, y bounds
+  expect_equal(colnames(ci_mu), c("id", "date", "mu.x_2.5%", "mu.x_97.5%", "mu.y_2.5%", "mu.y_97.5%"))
   expect_equal(nrow(ci_mu), 2)
-  expect_equal(ci_mu$time_step, c(1, 2))
 
   # Verify auto-correction of parm="mu" to type="mu"
   ci_mu_param_intercept <- confint(mock_fit, parm = "mu")
@@ -532,6 +530,79 @@ test_that("S3 methods for fitLangevin work", {
   expect_true(any(grepl("Habitat-Driven Langevin Diffusion Model", out)))
   expect_true(any(grepl("Parameter Estimates \\(Natural Scale\\):", out)))
   expect_true(any(grepl("beta_hab", out)))
+})
+
+test_that("summary, fitted, and numeric dates work correctly across S3 methods", {
+
+  # Build mock fit with numeric dates and vel explicitly added
+  mock_fit_num <- list(
+    par = c(beta_hab = 1.5, sigma = 2),
+    objective = 150.5,
+    estimates = list(
+      natural = data.frame(Estimate = c(1.5, 2.0), "Std. Error" = c(0.1, 0.2), row.names = c("beta_hab", "sigma"), check.names = FALSE),
+      working = data.frame(Estimate = c(1.5, log(2)), "Std. Error" = c(0.1, 0.1), row.names = c("beta_hab", "log_sigma"), check.names = FALSE),
+      random = list(
+        mu = list(
+          est = data.frame(id = c("A", "A"), date = c(10, 20), mu.x = c(10, 20), mu.y = c(15, 25)),
+          se = data.frame(id = c("A", "A"), date = c(10, 20), mu.x = c(1, 1), mu.y = c(2, 2))
+        ),
+        vel = list(
+          est = data.frame(id = c("A", "A"), date = c(10, 20), vel.x = c(0.1, 0.2), vel.y = c(0.3, 0.4)),
+          se = data.frame(id = c("A", "A"), date = c(10, 20), vel.x = c(0.01, 0.01), vel.y = c(0.02, 0.02))
+        )
+      )
+    ),
+    covariance = list(
+      natural = matrix(c(0.01, 0.005, 0.005, 0.04), nrow = 2, dimnames = list(c("beta_hab", "sigma"), c("beta_hab", "sigma")))
+    ),
+    signatures = list(data = list(nrow = 50)),
+    convergence = 0,
+    message = "relative convergence",
+    elapsedTime = c(user = 1, system = 0, elapsed = 1.5)
+  )
+  class(mock_fit_num) <- "fitLangevin"
+
+  # 1. fitted() method
+  fit_mu <- fitted(mock_fit_num) # default is "mu"
+  expect_true(is.data.frame(fit_mu))
+  expect_true("date" %in% names(fit_mu))
+  expect_true(is.numeric(fit_mu$date)) # Because we initialized with numeric
+  expect_equal(fit_mu$date, c(10, 20))
+
+  fit_vel <- fitted(mock_fit_num, type = "vel")
+  expect_true("vel.x" %in% names(fit_vel))
+  expect_true(is.numeric(fit_vel$date))
+
+  # Error catching in fitted
+  expect_error(fitted(mock_fit_num, type = "nonsense"), "should be one of")
+
+  # 2. confint() with numeric dates
+  ci_mu <- confint(mock_fit_num, type = "mu")
+  expect_true("date" %in% names(ci_mu))
+  expect_true(is.numeric(ci_mu$date))
+  expect_equal(ci_mu$date, c(10, 20))
+
+  ci_vel <- confint(mock_fit_num, type = "vel")
+  expect_true("date" %in% names(ci_vel))
+  expect_true(is.numeric(ci_vel$date))
+  expect_equal(colnames(ci_vel), c("id", "date", "vel.x_2.5%", "vel.x_97.5%", "vel.y_2.5%", "vel.y_97.5%"))
+
+  # 3. summary() method
+  sum_fit <- summary(mock_fit_num)
+  expect_s3_class(sum_fit, "summary.fitLangevin")
+
+  # Ensure p-values were only calculated for habitat selection coefficients (beta)
+  expect_true("Pr(>|z|)" %in% colnames(sum_fit$coef_beta))
+  expect_false("Pr(>|z|)" %in% colnames(sum_fit$coef_process))
+  expect_equal(rownames(sum_fit$coef_beta), "beta_hab")
+  expect_equal(rownames(sum_fit$coef_process), "sigma")
+
+  # 4. print.summary() method
+  out_sum <- capture.output(print(sum_fit))
+  expect_true(any(grepl("Habitat Selection Coefficients:", out_sum)))
+  expect_true(any(grepl("Process & Observation Parameters (Natural Scale):", out_sum,fixed=TRUE)))
+  expect_true(any(grepl("beta_hab", out_sum)))
+  expect_true(any(grepl("sigma", out_sum)))
 })
 
 test_that("Out-of-bounds warnings trigger across fit and downstream methods", {
@@ -568,33 +639,47 @@ test_that("Out-of-bounds warnings trigger across fit and downstream methods", {
     mu = factor(c(1, NA, NA, NA)), vel = factor(rep(NA, 4))
   )
 
-  # 2. Test fitLangevin emits the console message
-  # suppressWarnings catches TMB's internal "empty summary" warnings
-  out_fit <- capture.output(suppressWarnings(suppressMessages({
-    fit <- fitLangevin(
-      data = dat, model = "underdamped", spatialCovs = spatialCovs,
-      par = init_par, map = user_map, silent = TRUE
-    )
-  })))
+  # 2. Test Computation Functions (Expect Formal Warnings)
+  # Chain expect_warning to absorb both the custom bounds warning
+  # AND the TMB "empty summary" warning caused by the completely frozen mock map
+  expect_warning(
+    expect_warning(
+      suppressMessages({
+        fit <- fitLangevin(
+          data = dat, model = "underdamped", spatialCovs = spatialCovs,
+          par = init_par, map = user_map, silent = TRUE
+        )
+      }),
+      "MODEL FIT LIKELY INVALID"
+    ),
+    "empty summary"
+  )
 
-  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_fit)))
-
-  # Verify the persistent flag was attached
   expect_true(fit$conditions$out_of_bounds)
 
-  # 3. Test downstream functions print the warning via boundsWarning()
-  out_print <- capture.output(suppressWarnings(print(fit)))
+  # residuals() throws the bounds warning FIRST, then an OSA warning due to the tiny mock dataset.
+  expect_warning(
+    expect_warning(
+      suppressMessages(try(residuals(fit, dat, spatialCovs, run_tests = FALSE), silent=TRUE)),
+      "MODEL FIT LIKELY INVALID"
+    ),
+    "OSA calculation failed"
+  )
+
+  expect_warning(
+    suppressMessages(getUD(spatialCovs, fit = fit, log = TRUE, plot = FALSE)),
+    "MODEL FIT LIKELY INVALID"
+  )
+
+  expect_warning(
+    suppressMessages(plot(fit, spatialCovs = spatialCovs)),
+    "MODEL FIT LIKELY INVALID"
+  )
+
+  # 3. Test Inspection Functions (Expect Printed Text via cat)
+  out_print <- capture.output(print(fit))
   expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_print)))
 
-  # suppressWarnings catches the "not enough valid residuals" GOF warnings from the 2-row dataset
-  out_res <- capture.output(suppressWarnings(suppressMessages(try(residuals(fit, dat, spatialCovs), silent=TRUE))))
-  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_res)))
-
-  out_ud <- capture.output(suppressWarnings(suppressMessages(getUD(spatialCovs, fit = fit, log = TRUE, plot = FALSE))))
-  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_ud)))
-
-  out_plot <- capture.output(suppressWarnings(suppressMessages(plot(fit, spatialCovs = spatialCovs))))
-  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_plot)))
+  out_summary <- capture.output(print(summary(fit)))
+  expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_summary)))
 })
-
-

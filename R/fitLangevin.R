@@ -315,11 +315,12 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
         fit$estimates$random[[node]] <- list(
           est = data.frame(
             id = data$id,
+            date = data$date,
             t(rep_vals[[node]]) * scaleFactor
           ),
           se = NULL
         )
-        colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
+        colnames(fit$estimates$random[[node]]$est) <- c("id", "date", paste0(node, ".", c("x", "y")))
       }
     }
   } else {
@@ -376,10 +377,10 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
         se_mat <- t(matrix(se_full, nrow = 2)) * scaleFactor
         fit$estimates$random[[node]] <- list()
-        fit$estimates$random[[node]]$est <- data.frame(id = data$id, est_mat)
-        fit$estimates$random[[node]]$se  <- data.frame(id = data$id, se_mat)
-        colnames(fit$estimates$random[[node]]$est) <- c("id", paste0(node, ".", c("x", "y")))
-        colnames(fit$estimates$random[[node]]$se)  <- c("id", paste0(node, ".", c("x", "y")))
+        fit$estimates$random[[node]]$est <- data.frame(id = data$id, date = data$date, est_mat)
+        fit$estimates$random[[node]]$se  <- data.frame(id = data$id, date = data$date, se_mat)
+        colnames(fit$estimates$random[[node]]$est) <- c("id", "date", paste0(node, ".", c("x", "y")))
+        colnames(fit$estimates$random[[node]]$se)  <- c("id", "date", paste0(node, ".", c("x", "y")))
       }
       if(getJointPrecision) fit$covariance$random$jointPrecision <- sdreport_out$jointPrecision
     }

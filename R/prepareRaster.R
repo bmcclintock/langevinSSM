@@ -108,7 +108,7 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
     if (max_err_x > 0 || max_err_y > 0) {
       if ((data_xmin - buffer_x) < cov_ext["xmin"] || (data_xmax + buffer_x) > cov_ext["xmax"] ||
           (data_ymin - buffer_y) < cov_ext["ymin"] || (data_ymax + buffer_y) > cov_ext["ymax"]) {
-        warning("Some tracking locations are close to the edge of 'spatialCovs' relative to their measurement error. Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates, the model may attempt to push locations outside the raster extent during fitting, causing convergence failures or crashes. Consider expanding the spatial extent of your rasters.")
+        warning("Some tracking locations are close to the edge of 'spatialCovs' relative to their measurement error. Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates, the model may attempt to push locations outside the raster extent during fitting. Consider expanding the spatial extent of your rasters.",call. = FALSE, immediate. = TRUE)
       }
     }
   }

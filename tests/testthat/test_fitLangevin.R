@@ -683,3 +683,96 @@ test_that("Out-of-bounds warnings trigger across fit and downstream methods", {
   out_summary <- capture.output(print(summary(fit)))
   expect_true(any(grepl("WARNING: MODEL FIT LIKELY INVALID", out_summary)))
 })
+
+test_that("fitLangevin validates prior inputs correctly", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+  dat <- get_valid_dataLangevin()
+
+  # 1. Not a data frame / Wrong dimensions
+  expect_error(
+    suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, prior = c(0, 1))),
+    "must be a 2-column data frame"
+  )
+
+  bad_df <- data.frame(mean = 0, sd = 1, extra = 2, row.names = "beta")
+  expect_error(
+    suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, prior = bad_df)),
+    "must be a 2-column data frame"
+  )
+
+  # 2. Invalid base parameter name
+  bad_pr1 <- data.frame(mean = 0, sd = 1, row.names = "beta_wrong_name")
+  expect_error(
+    suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, prior = bad_pr1)),
+    "is invalid. Acceptable base parameters"
+  )
+
+  # 3. Invalid random effect subscript syntax
+  bad_pr2 <- data.frame(mean = 0, sd = 1, row.names = "mu.z_1")
+  expect_error(
+    suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, prior = bad_pr2)),
+    "is invalid. Acceptable base parameters"
+  )
+})
+
+test_that("Priors correctly influence the likelihood and parameter estimates", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+  dat <- get_valid_dataLangevin()
+
+  # 1. Fit Baseline Model
+  suppressMessages(suppressWarnings({
+    fit_base <- fitLangevin(data = dat, spatialCovs = r, par = p, silent = TRUE)
+  }))
+
+  # 2. Fit with a strong, highly informative prior pulling beta toward 10
+  pr <- data.frame(mean = 10, sd = 0.05, row.names = "beta")
+  suppressMessages(suppressWarnings({
+    fit_prior <- fitLangevin(data = dat, spatialCovs = r, par = p, prior = pr, silent = TRUE)
+  }))
+
+  # The likelihood surface must shift due to the prior penalty
+  expect_true(fit_base$objective != fit_prior$objective)
+
+  # The estimate for beta should shrink heavily toward 10 compared to the baseline
+  est_base <- coef(fit_base)["beta_habitat"]
+  est_prior <- coef(fit_prior)["beta_habitat"]
+
+  # Distance to 10 should be smaller for the prior fit
+  expect_true(abs(est_prior - 10) < abs(est_base - 10))
+
+  # Ensure the blueprint correctly recorded the prior flag for residuals to use later
+  expect_equal(fit_prior$tmb_setup$priors$has_prior_beta, 1)
+})
+
+test_that("Sparse random effect priors map correctly during track subsetting in residuals", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+
+  # Create a 2-animal dataset (5 points each, 10 points total)
+  dat1 <- get_valid_dataLangevin()
+  dat2 <- get_valid_dataLangevin()
+  dat2$id <- as.factor(rep("B", 5))
+  dat_multi <- rbind(dat1, dat2)
+  class(dat_multi) <- append("dataLangevin", class(dat_multi))
+
+  # Place a prior on the 8th observation's X coordinate (which belongs to Animal B)
+  # and the 2nd observation's Y velocity (which belongs to Animal A)
+  pr <- data.frame(
+    mean = c(50, 0),
+    sd = c(1, 1),
+    row.names = c("mu.x_8", "vel.y_2")
+  )
+
+  suppressMessages(suppressWarnings({
+    fit_sparse <- fitLangevin(data = dat_multi, spatialCovs = r, par = p, prior = pr, silent = TRUE)
+  }))
+
+  res <- suppressWarnings(suppressMessages(
+    residuals(fit_sparse, dat_multi, r, run_tests = FALSE)
+  ))
+
+  expect_s3_class(res, "resLangevin")
+  expect_equal(nrow(res), 10)
+})

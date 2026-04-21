@@ -60,6 +60,41 @@ Type langevinSSM(objective_function<Type>* obj)
   PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale)
   PARAMETER(l_rho_o);           // measurement error correlation b/w x,y
 
+  // PRIOR INPUTS
+  DATA_INTEGER(has_prior_beta);
+  DATA_VECTOR(prior_mean_beta);
+  DATA_VECTOR(prior_sd_beta);
+
+  DATA_INTEGER(has_prior_log_sigma);
+  DATA_VECTOR(prior_mean_log_sigma);
+  DATA_VECTOR(prior_sd_log_sigma);
+
+  DATA_INTEGER(has_prior_log_gamma);
+  DATA_VECTOR(prior_mean_log_gamma);
+  DATA_VECTOR(prior_sd_log_gamma);
+
+  DATA_INTEGER(has_prior_l_psi);
+  DATA_VECTOR(prior_mean_l_psi);
+  DATA_VECTOR(prior_sd_l_psi);
+
+  DATA_INTEGER(has_prior_l_tau);
+  DATA_VECTOR(prior_mean_l_tau);
+  DATA_VECTOR(prior_sd_l_tau);
+
+  DATA_INTEGER(has_prior_l_rho_o);
+  DATA_VECTOR(prior_mean_l_rho_o);
+  DATA_VECTOR(prior_sd_l_rho_o);
+
+  DATA_INTEGER(has_prior_mu);
+  DATA_IVECTOR(prior_idx_mu);
+  DATA_VECTOR(prior_mean_mu_val);
+  DATA_VECTOR(prior_sd_mu_val);
+
+  DATA_INTEGER(has_prior_vel);
+  DATA_IVECTOR(prior_idx_vel);
+  DATA_VECTOR(prior_mean_vel_val);
+  DATA_VECTOR(prior_sd_vel_val);
+
   Type psi = exp(l_psi);
   vector<Type> tau = exp(l_tau);
   Type rho_o = Type(2.0) / (Type(1.0) + exp(-l_rho_o)) - Type(1.0);
@@ -195,6 +230,78 @@ Type langevinSSM(objective_function<Type>* obj)
         nll -= (dnorm(mu(0,idx+1), Ex, sd, true) +
           dnorm(mu(1,idx+1), Ey, sd, true));
       }
+    }
+  }
+
+
+  // PRIOR PENALIZATION
+
+  // beta
+  if (has_prior_beta == 1) {
+    for(int i=0; i<beta.size(); i++){
+      if(!R_IsNA(asDouble(prior_mean_beta(i)))) {
+        nll -= dnorm(beta(i), prior_mean_beta(i), prior_sd_beta(i), true);
+      }
+    }
+  }
+
+  // log_sigma
+  if (has_prior_log_sigma == 1) {
+    if(!R_IsNA(asDouble(prior_mean_log_sigma(0)))) {
+      Type log_sigma_user = log_sigma + log(scale_factor);
+      nll -= dnorm(log_sigma_user, prior_mean_log_sigma(0), prior_sd_log_sigma(0), true);
+    }
+  }
+
+  // log_gamma
+  if (has_prior_log_gamma == 1 && process_model == 1) {
+    if(!R_IsNA(asDouble(prior_mean_log_gamma(0)))) {
+      nll -= dnorm(log_gamma, prior_mean_log_gamma(0), prior_sd_log_gamma(0), true);
+    }
+  }
+
+  // l_psi
+  if (has_prior_l_psi == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_psi(0)))) {
+      nll -= dnorm(l_psi, prior_mean_l_psi(0), prior_sd_l_psi(0), true);
+    }
+  }
+
+  // l_tau
+  if (has_prior_l_tau == 1) {
+    for(int i=0; i<l_tau.size(); i++){
+      if(!R_IsNA(asDouble(prior_mean_l_tau(i)))) {
+        nll -= dnorm(l_tau(i), prior_mean_l_tau(i), prior_sd_l_tau(i), true);
+      }
+    }
+  }
+
+  // l_rho_o
+  if (has_prior_l_rho_o == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_rho_o(0)))) {
+      nll -= dnorm(l_rho_o, prior_mean_l_rho_o(0), prior_sd_l_rho_o(0), true);
+    }
+  }
+
+  // mu
+  if (has_prior_mu == 1) {
+    for(int k=0; k < prior_idx_mu.size(); k++){
+      int idx = prior_idx_mu(k);
+      int i = idx % 2; // Row: 0 for x, 1 for y
+      int j = idx / 2; // Column (time step)
+      Type mu_user = mu(i,j) * scale_factor;
+      nll -= dnorm(mu_user, prior_mean_mu_val(k), prior_sd_mu_val(k), true);
+    }
+  }
+
+  // vel
+  if (has_prior_vel == 1 && process_model == 1) {
+    for(int k=0; k < prior_idx_vel.size(); k++){
+      int idx = prior_idx_vel(k);
+      int i = idx % 2;
+      int j = idx / 2;
+      Type vel_user = vel(i,j) * scale_factor;
+      nll -= dnorm(vel_user, prior_mean_vel_val(k), prior_sd_vel_val(k), true);
     }
   }
 

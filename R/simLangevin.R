@@ -251,6 +251,8 @@ simLangevin.fitLangevin <- function(model,
   dat$weights <- c(cond$curweight, rep((1 - cond$curweight) / cond$npoints, cond$npoints))
   dat$zetaScale <- cond$zetaScale
 
+  dat <- c(dat, fit$tmb_setup$priors)
+
   obj2 <- try({
     TMB::MakeADFun(
       data = c(model = "langevinSSM", dat),

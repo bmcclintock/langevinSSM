@@ -84,6 +84,8 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
   dat$weights <- c(cond$curweight, rep((1 - cond$curweight) / cond$npoints, cond$npoints))
   dat$zetaScale <- cond$zetaScale
 
+  dat <- c(dat, object$tmb_setup$priors)
+
   subset_track_data <- function(dat, parList, mapList, uid, model_type) {
     track_idx <- which(dat$ID == uid)
 
@@ -100,6 +102,44 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     t_dat$obs_mod <- t_dat$obs_mod[track_idx]
     t_dat$ID <- t_dat$ID[track_idx]
     t_dat$nbObs <- t_dat$nbObs[track_idx]
+
+    # --- Re-index Sparse Priors for the Subsetted Track ---
+    global_cols <- track_idx - 1L # 0-based global columns
+
+    if (t_dat$has_prior_mu == 1L) {
+      c_global_mu <- t_dat$prior_idx_mu %/% 2L
+      keep_mu <- c_global_mu %in% global_cols
+
+      if (any(keep_mu)) {
+        c_local_mu <- match(c_global_mu[keep_mu], global_cols) - 1L
+        t_dat$prior_idx_mu <- as.integer((t_dat$prior_idx_mu[keep_mu] %% 2L) + 2L * c_local_mu)
+        t_dat$prior_mean_mu_val <- t_dat$prior_mean_mu_val[keep_mu]
+        t_dat$prior_sd_mu_val <- t_dat$prior_sd_mu_val[keep_mu]
+      } else {
+        t_dat$has_prior_mu <- 0L
+        t_dat$prior_idx_mu <- integer(0)
+        t_dat$prior_mean_mu_val <- numeric(0)
+        t_dat$prior_sd_mu_val <- numeric(0)
+      }
+    }
+
+    if (t_dat$has_prior_vel == 1L) {
+      c_global_vel <- t_dat$prior_idx_vel %/% 2L
+      keep_vel <- c_global_vel %in% global_cols
+
+      if (any(keep_vel)) {
+        c_local_vel <- match(c_global_vel[keep_vel], global_cols) - 1L
+        t_dat$prior_idx_vel <- as.integer((t_dat$prior_idx_vel[keep_vel] %% 2L) + 2L * c_local_vel)
+        t_dat$prior_mean_vel_val <- t_dat$prior_mean_vel_val[keep_vel]
+        t_dat$prior_sd_vel_val <- t_dat$prior_sd_vel_val[keep_vel]
+      } else {
+        t_dat$has_prior_vel <- 0L
+        t_dat$prior_idx_vel <- integer(0)
+        t_dat$prior_mean_vel_val <- numeric(0)
+        t_dat$prior_sd_vel_val <- numeric(0)
+      }
+    }
+    # ------------------------------------------------------
 
     t_pars <- parList
     t_pars$mu <- t_pars$mu[, track_idx, drop = FALSE]

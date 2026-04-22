@@ -7,7 +7,7 @@
 simCov(sca = 100, irange = 0.3, sigma2 = 0.1, kappa = 0.5, M = NULL, N = NULL)
 }
 \arguments{
-\item{sca}{Numeric value for the spatial scale of the covariate. The resulting covariate will be on a grid of size (2*sca+1) x (2*sca+1). Default: 100.}
+\item{sca}{Numeric value for the spatial scale of the covariate. The resulting covariate will be on a grid of size (2*sca) x (2*sca). Default: 100.}
 
 \item{irange}{Numeric value for the spatial range of the covariate, expressed as a proportion of \code{sca}. The resulting covariate will have spatial range equal to \code{irange} * \code{sca}. Default: 0.3.}
 

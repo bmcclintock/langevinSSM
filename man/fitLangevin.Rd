@@ -12,6 +12,8 @@ fitLangevin(
   prior = NULL,
   map = NULL,
   coord = c("x", "y"),
+  barrier = NULL,
+  lambda = NULL,
   scaleFactor = 1,
   smoothGradient = FALSE,
   npoints = 4,
@@ -43,6 +45,10 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{map}{List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.}
 
 \item{coord}{Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.}
+
+\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.}
+
+\item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{suggestLambda}} for a strategy to determine the optimal penalty.}
 
 \item{scaleFactor}{Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.}
 
@@ -101,6 +107,7 @@ where \eqn{(x.y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (
   For the standard deviation model, \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix},}
   with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.err}=\sigma_x,\text{y.err}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for the correlation between the x- and y-axis errors.
 }
+
 \strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}):}
 These parameters control the scaling and correlation of measurement errors and can be specified via \code{par} and \code{map}:
 \itemize{
@@ -108,9 +115,24 @@ These parameters control the scaling and correlation of measurement errors and c
   \item \strong{2. Estimated from data:} To estimate one or more of these parameters, include them in \code{par} with an initial starting value (e.g., \code{par = list(psi = 1.2)}).
   \item \strong{3. Fixed to custom values:} To fix a parameter to a specific value *other* than the default, include the custom value in \code{par} and explicitly map it to \code{NA} in \code{map} (e.g., \code{par = list(psi = 1.5), map = list(psi = factor(NA))}).
 }
+
 \strong{Gradient smoothing:} Setting \code{smoothGradient=TRUE} applies the smoothing approach of Blackwell and Matthiopoulos (2024) to the gradients of the habitat selection covariates (\code{spatialCovs}), which can help reduce attenuation bias in habitat selection coefficients when observations are obtained at a coarser time resolution than the underlying continuous-time movement process.
 This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, where the weights are determined by a Gaussian kernel based on the distance between locations and the specified neighborhood parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
 The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sigma}, while the neightborhood for the overdamped model is \code{zetaScale * sigma / sqrt(2)}. See Blackwell and Matthiopoulos (2024) for more details.
+
+\strong{Barrier Constraints:}
+When a \code{barrier} is specified, the model restricts animal movement using a physical penalty method for stochastic differential equations (SDEs).
+Internally, the binary mask provided in \code{spatialCovs[[barrier]]} (where 1 indicates unrestricted areas and 0 indicates restricted areas) is converted into a continuous signed distance function (SDF), denoted as \eqn{d(\boldsymbol{\mu})}. Distance is calculated as positive in the unrestricted areas (allowed space) and negative in the restricted areas.
+
+To prevent the animal from entering the restricted zone (where \eqn{d(\boldsymbol{\mu}) \le 0}), the model applies a harmonic oscillator penalty, treating the boundary like a spring. The potential energy (\eqn{U}) of this spring is a quadratic function of the distance traveled into the restricted zone:
+\deqn{U(\boldsymbol{\mu}) = \frac{1}{2} \lambda d(\boldsymbol{\mu})^2}
+
+In Langevin dynamics, the force acting on the animal is the negative spatial gradient of the potential energy (\eqn{ -\nabla U(\boldsymbol{\mu})}). Applying the chain rule to the potential energy function yields the exact force applied during simulation and model fitting:
+\deqn{\text{Force} = -\lambda d(\boldsymbol{\mu}) \nabla d(\boldsymbol{\mu})}
+
+Because \eqn{d(\boldsymbol{\mu})} is negative in the restricted zone, the equation produces a positive force that pushes the animal in the direction of the shortest path back to the unrestricted area (\eqn{\nabla d(\boldsymbol{\mu})}).
+
+The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if \code{barrier = "barrier"}). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{suggestLambda}} for a strategy to determine the optimal penalty).
 }
 \examples{
 # fit underdamped model with measurement error
@@ -125,6 +147,47 @@ fit_od <- fitLangevin(data = exampleDat,
                       model = "overdamped",
                       spatialCovs = exampleCovs,
                       silent = TRUE)
+
+\dontrun{
+# simulating with a barrier and passing the penalty to fitLangevin
+
+par <- list(beta = c(-4, 6, 5, -0.1),
+            sigma = 5,
+            gamma = 0.5)
+
+# create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
+coast_barrier <- exampleCovs[[1]]
+terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
+                                 >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+names(coast_barrier) <- "coast_barrier"
+
+# add the mask to the spatial covariates list
+exampleCovs_barrier <- exampleCovs
+exampleCovs_barrier$coast_barrier <- coast_barrier
+
+# add a beta coefficient for the barrier to the parameter list
+par_barrier <- par
+par_barrier$beta <- c(par_barrier$beta, -0.2)
+
+# simulate the data
+set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
+simDat_barrier <- simLangevin(par = par_barrier,
+                              spatialCovs = exampleCovs_barrier,
+                              barrier = "coast_barrier",
+                              measurementError = list(smaj.sd = 1.5,
+                                                      smin.sd = 0.75,
+                                                      eor.lim = c(0,180)))
+
+# Because simDat_barrier is a simLangevin object, fitLangevin will automatically
+# detect and use the exact barrier penalty (lambda) that generated the data
+fit_barrier <- fitLangevin(data = simDat_barrier,
+                           spatialCovs = exampleCovs_barrier,
+                           barrier = "coast_barrier",
+                           silent = TRUE)
+
+plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier)
+}
+
 }
 \references{
 Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.

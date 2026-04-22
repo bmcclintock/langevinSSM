@@ -776,3 +776,59 @@ test_that("Sparse random effect priors map correctly during track subsetting in 
   expect_s3_class(res, "resLangevin")
   expect_equal(nrow(res), 10)
 })
+
+test_that("fitLangevin pushes latent locations out of restricted barrier zones", {
+
+  # create a binary raster: left half restricted (0), right half allowed (1)
+  r <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 100, 0, 100))
+  terra::values(r) <- ifelse(terra::crds(r)[, "x"] >= 50, 1, 0)
+  names(r) <- "coast_barrier"
+  spatialCovs <- list(coast_barrier = r)
+
+  # create track data
+  # Obs 3 is deliberately placed deep in the restricted zone (x = 30)
+  df <- data.frame(
+    id = as.factor(rep("A", 5)),
+    date = as.POSIXct("2024-01-01 12:00:00", tz = "UTC") + (0:4) * 3600,
+    dt = c(0, 1, 1, 1, 1),
+    x = c(60, 60, 30, 60, 60),
+    y = c(50, 55, 60, 65, 70),
+    x.err = c(1, 1, 20, 1, 1), # High error on obs 3 so it can be pushed easily
+    y.err = c(1, 1, 20, 1, 1),
+    smaj = NA, smin = NA, eor = NA, lc = as.factor("G")
+  )
+  attr(df, "time.unit") <- "hours"
+  class(df) <- c("dataLangevin", "data.frame")
+
+  # set up parameters and freeze fixed effects for a lightning-fast test
+  init_par <- list(beta = -.1, sigma = 5)
+  m <- list(
+    beta = factor(NA),
+    sigma = factor(NA)
+  )
+
+  # fit the model using the overdamped engine (simpler/faster without velocity)
+  fit <- suppressMessages(suppressWarnings(
+    fitLangevin(
+      data = df,
+      model = "overdamped",
+      spatialCovs = spatialCovs,
+      par = init_par,
+      map = m,
+      barrier = "coast_barrier",
+      lambda = 100, # Strong boundary penalty
+      silent = TRUE
+    )
+  ))
+
+  mu_est <- fit$estimates$random$mu$est
+
+  # verify the observed point was indeed restricted
+  expect_equal(df$x[3], 30)
+
+  # verify the model successfully pushed the latent location to the allowed zone
+  expect_true(mu_est$mu.x[3] >= 49.5)
+
+  # verify the valid observations were not drastically moved
+  expect_true(all(mu_est$mu.x[c(1, 2, 4, 5)] > 55))
+})

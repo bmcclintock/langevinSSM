@@ -13,3 +13,5 @@
 ^README_cache$
 tests/testthat/_problems
 tests/testthat/Rplots.pdf
+^man-roxygen$
+^presentations$

@@ -4,14 +4,15 @@
 #' \itemize{
 #'   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
 #'   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
-#'   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
+#'   \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting tracks on spatial covariates).
 #'   \item \strong{\code{plot.regLangevin}:} Plots the region of interest defined by the mask and the relative probability of presence within that region.
 #'   \item \strong{\code{plot.resLangevin}:} Generates Q-Q and ACF diagnostic plots for One-Step-Ahead (OSA) residuals.
 #'   \item \strong{\code{plotUD}:} Plots the estimated utilization distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.
 #' }
 #'
 #' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.
-#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
+#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{maskBarrier = TRUE}.
+#' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. Required by \code{plotUD} if \code{maskBarrier = TRUE}.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
 #' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
@@ -19,6 +20,7 @@
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
 #' @param tracks Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).
+#' @param maskBarrier Logical. If \code{TRUE}, restricted areas defined by the barrier are masked out (set to \code{NA}) before plotting the UD. This prevents the barrier penalty from compressing the color scale of the UD in the unrestricted areas. Set to \code{FALSE} to visualize the raw UD including the barrier penalty. Default: \code{FALSE}
 #' @param ... Additional arguments passed to internal plotting methods.
 #'
 #' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
@@ -30,7 +32,7 @@ NULL
 #' @rdname plot.langevin
 #' @method plot fitLangevin
 #' @export
-plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = NULL, time = NULL, compact = TRUE, ...) {
+plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = NULL, time = NULL, compact = TRUE, maskBarrier = FALSE, ...) {
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
 
@@ -39,15 +41,20 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   boundsWarning(x)
 
   # --- Prepare Tracks ---
-  track_id <- x$estimates$random$mu$est$id
-  if (is.null(track_id)) track_id <- rep("1", nrow(x$estimates$random$mu$est))
+  has_est <- !is.null(x$estimates$random$mu$est)
+  track_df <- data.frame()
 
-  track_df <- data.frame(
-    x = x$estimates$random$mu$est[, "mu.x"],
-    y = x$estimates$random$mu$est[, "mu.y"],
-    id = as.character(track_id),
-    type = "Estimated"
-  )
+  if (has_est) {
+    track_id <- x$estimates$random$mu$est$id
+    if (is.null(track_id)) track_id <- rep("1", nrow(x$estimates$random$mu$est))
+
+    track_df <- data.frame(
+      x = x$estimates$random$mu$est[, "mu.x"],
+      y = x$estimates$random$mu$est[, "mu.y"],
+      id = as.character(track_id),
+      type = "Estimated"
+    )
+  }
 
   if (!is.null(data)) {
     if (inherits(data, "dataLangevin")) {
@@ -57,35 +64,63 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
       warning("'data' is not a dataLangevin object. Skipping observed locations.")
     }
   }
-  track_df$type <- factor(track_df$type, levels = c("Observed", "Estimated"))
+
+  # style the tracks based on what is available
+  if (nrow(track_df) == 0) {
+    if (!has_est) message("Note: Model was fit without measurement error. Provide 'data' to overlay the tracks.")
+  } else {
+    if (has_est && !is.null(data)) {
+      track_df$type <- factor(track_df$type, levels = c("Observed", "Estimated"))
+      track_colors <- c("Observed" = "lightgrey", "Estimated" = "#E69F00")
+      track_lines <- c("Observed" = "dashed", "Estimated" = "solid")
+    } else if (has_est && is.null(data)) {
+      track_df$type <- factor(track_df$type, levels = c("Estimated"))
+      track_colors <- c("Estimated" = "#E69F00")
+      track_lines <- c("Estimated" = "solid")
+    } else if (!has_est && !is.null(data)) {
+      track_df$type <- factor(track_df$type, levels = c("Observed"))
+      track_colors <- c("Observed" = "black")
+      track_lines <- c("Observed" = "solid")
+    }
+  }
 
   # --- Prepare UD Raster ---
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
+  barrier <- x$conditions$barrier
+  lambda <- x$conditions$lambda
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, log = log, plot = FALSE)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier = barrier, lambda = lambda, log = log, plot = FALSE)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
   target_idx <- which(names(ud_full) == ud_layer_name)
   ud_raster <- ud_full[[target_idx]]
 
+  # --- MASK OUT THE BARRIER FOR VISUALIZATION ---
+  if (!is.null(barrier) && maskBarrier) {
+    sp_mask <- spatialCovs[[barrier]]
+    # Safely convert restricted areas (<=0) to NA so they don't crush the ggplot color scale
+    m_na <- terra::ifel(sp_mask <= 0, NA, 1)
+    ud_raster <- terra::mask(ud_raster, m_na)
+  }
+
   if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
   }
 
-  plot_ids <- if (compact) "all" else as.character(unique(track_df$id))
+  plot_ids <- if (compact || nrow(track_df) == 0) "all" else as.character(unique(track_df$id))
   plot_list <- list()
 
   for (pid in plot_ids) {
-    title_text <- if (compact) "Estimated utilization distribution and tracks" else paste("Estimated UD and tracks - ID:", pid)
+    title_text <- if (compact || nrow(track_df) == 0) "Estimated utilization distribution and tracks" else paste("Estimated UD and tracks - ID:", pid)
     fill_label <- if (log) expression(log(pi(x))) else expression(pi(x))
 
     plot_list[[pid]] <- .build_langevin_plot(
       track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
-      track_colors = c("Observed" = "lightgrey", "Estimated" = "#E69F00"),
-      track_lines = c("Observed" = "dashed", "Estimated" = "solid"), ...
+      track_colors = track_colors,
+      track_lines = track_lines, ...
     )
   }
 
@@ -95,12 +130,13 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 #' @rdname plot.langevin
 #' @method plot simLangevin
 #' @export
-plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, time = NULL, compact = TRUE, ...) {
+plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, time = NULL, compact = TRUE, maskBarrier = FALSE, ...) {
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
 
   # If no beta is provided, fall back to dataLangevin plotting behavior
-  if (is.null(beta)) {
-    return(plot.dataLangevin(x, spatialCovs, extent = extent, time = time, compact = compact, ...))
+  if (is.null(beta)){
+    if(maskBarrier==FALSE) return(plot.dataLangevin(x, spatialCovs, extent = extent, time = time, compact = compact, ...))
+    stop("'beta' must be provided in order to mask the theoretical UD plot.")
   }
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
@@ -109,22 +145,49 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     stop("The length of 'beta' must match the number of covariates in 'spatialCovs'.")
   }
 
+  # --- Smart Extraction of Barrier and Lambda ---
+  barrier <- attr(x, "barrier")
+  lambda <- attr(x, "lambda")
+
   # --- Prepare Tracks ---
-  obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
-  true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True (\u03bc)")
+  err_cols <- c("smaj", "smin", "eor", "x.err", "y.err")
+  existing_err_cols <- intersect(err_cols, names(x))
+  has_error <- FALSE
+  if (length(existing_err_cols) > 0) {
+    has_error <- any(!is.na(x[existing_err_cols]))
+  }
 
-  track_df <- rbind(obs_df, true_df)
-  track_df$type <- factor(track_df$type, levels = c("Observed", "True (\u03bc)"))
+  true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True")
 
-  track_colors <- c("Observed" = "lightgrey", "True (\u03bc)" = "#E69F00")
-  track_lines <- c("Observed" = "dashed", "True (\u03bc)" = "solid")
+  if (has_error) {
+    obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
+    track_df <- rbind(obs_df, true_df)
+    track_df$type <- factor(track_df$type, levels = c("Observed", "True"))
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, log = log, plot = FALSE)
+    track_colors <- c("Observed" = "lightgrey", "True" = "#E69F00")
+    track_lines <- c("Observed" = "dashed", "True" = "solid")
+  } else {
+    track_df <- true_df
+    track_df$type <- factor(track_df$type, levels = c("True"))
+
+    track_colors <- c("True" = "#E69F00")
+    track_lines <- c("True" = "solid")
+  }
+
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = log, plot = FALSE)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
   target_idx <- which(names(ud_full) == ud_layer_name)
   ud_raster <- ud_full[[target_idx]]
+
+  # --- MASK OUT THE BARRIER FOR VISUALIZATION ---
+  if (!is.null(barrier) && maskBarrier) {
+    sp_mask <- spatialCovs[[barrier]]
+    # Safely convert restricted areas (<=0) to NA so they don't crush the ggplot color scale
+    m_na <- terra::ifel(sp_mask <= 0, NA, 1)
+    ud_raster <- terra::mask(ud_raster, m_na)
+  }
 
   if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
@@ -158,15 +221,30 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
   is_sim <- inherits(x, "simLangevin")
 
   # --- Prepare Tracks ---
-  obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
-
   if (is_sim) {
-    true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True (\u03bc)")
-    track_df <- rbind(obs_df, true_df)
-    track_df$type <- factor(track_df$type, levels = c("Observed", "True (\u03bc)"))
-    track_colors <- c("Observed" = "lightgrey", "True (\u03bc)" = "#E69F00")
-    track_lines <- c("Observed" = "dashed", "True (\u03bc)" = "solid")
+    err_cols <- c("smaj", "smin", "eor", "x.err", "y.err")
+    existing_err_cols <- intersect(err_cols, names(x))
+    has_error <- FALSE
+    if (length(existing_err_cols) > 0) {
+      has_error <- any(!is.na(x[existing_err_cols]))
+    }
+
+    true_df <- data.frame(x = x$mu.x, y = x$mu.y, id = as.character(x$id), type = "True")
+
+    if (has_error) {
+      obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
+      track_df <- rbind(obs_df, true_df)
+      track_df$type <- factor(track_df$type, levels = c("Observed", "True"))
+      track_colors <- c("Observed" = "lightgrey", "True" = "#E69F00")
+      track_lines <- c("Observed" = "dashed", "True" = "solid")
+    } else {
+      track_df <- true_df
+      track_df$type <- factor(track_df$type, levels = c("True"))
+      track_colors <- c("True" = "#E69F00")
+      track_lines <- c("True" = "solid")
+    }
   } else {
+    obs_df <- data.frame(x = x$x, y = x$y, id = as.character(x$id), type = "Observed")
     track_df <- obs_df
     track_df$type <- factor(track_df$type, levels = c("Observed"))
     track_colors <- c("Observed" = "lightgrey")
@@ -317,9 +395,15 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
 #' @details Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
 #' @rdname plot.langevin
 #' @export
-plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
+plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL, barrier = NULL, maskBarrier = FALSE, ...) {
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+
+  if (maskBarrier && !is.null(barrier) && !is.null(spatialCovs)) {
+    sp_mask <- spatialCovs[[barrier]]
+    m_na <- terra::ifel(sp_mask <= 0, NA, 1)
+    x <- terra::mask(x, m_na)
+  }
 
   plot_list <- list()
   layer_names <- names(x)
@@ -548,15 +632,21 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   if (!is.null(trk_sub) && nrow(trk_sub) > 0) {
     if(length(track_colors) > 1) {
       p <- p +
-        ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, linetype = type, group = interaction(id, type)), linewidth = 0.5, alpha = 0.8) +
-        ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, shape = type), size = 1, alpha = 0.8) +
+        ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, linetype = type, group = interaction(id, type)), linewidth = 0.5, alpha = 0.8, na.rm = TRUE) +
+        ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y, color = type, shape = type), size = 1, alpha = 0.8, na.rm = TRUE) +
         ggplot2::scale_color_manual(name = "Tracks", values = track_colors) +
         ggplot2::scale_linetype_manual(name = "Tracks", values = track_lines) +
-        ggplot2::scale_shape_manual(name = "Tracks", values = c(16, 16))
+        ggplot2::scale_shape_manual(name = "Tracks", values = c(16, 16)) +
+        # FORCE LEGEND ORDER: Pin the discrete Tracks legend to the top (order = 1)
+        ggplot2::guides(
+          color = ggplot2::guide_legend(order = 1),
+          linetype = ggplot2::guide_legend(order = 1),
+          shape = ggplot2::guide_legend(order = 1)
+        )
     } else {
       p <- p +
-        ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, group = id), color = track_colors[1], linetype = track_lines[1], linewidth = 0.5, alpha = 0.8) +
-        ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y), color = track_colors[1], shape = 16, size = 1, alpha = 0.8)
+        ggplot2::geom_path(data = trk_sub, ggplot2::aes(x = x, y = y, group = id), color = track_colors[1], linetype = track_lines[1], linewidth = 0.5, alpha = 0.8, na.rm = TRUE) +
+        ggplot2::geom_point(data = trk_sub, ggplot2::aes(x = x, y = y), color = track_colors[1], shape = 16, size = 1, alpha = 0.8, na.rm = TRUE)
     }
   }
 

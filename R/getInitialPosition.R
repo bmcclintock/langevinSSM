@@ -1,12 +1,16 @@
 #' @importFrom terra ncell values xyFromCell cellFromXY
-getInitialPosition <- function(nbAnimals, initialPosition, spatialCovs, beta, replace = FALSE) {
+getInitialPosition <- function(nbAnimals, initialPosition, spatialCovs, beta, barrier = NULL, lambda = NULL, replace = FALSE) {
 
   if (missing(initialPosition)) {
     message("   Randomly drawing initial positions from UD...")
-    UD <- getUD(spatialCovs, beta = beta, log = TRUE, plot = FALSE)
+
+    # Pass barrier and lambda to getUD so the starting positions
+    # respect the restricted zones.
+    UD <- getUD(spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = TRUE, plot = FALSE)
 
     # Explicitly extract the log_UD layer
     log_ud_vals <- as.numeric(terra::values(UD[["log_UD"]][[1]]))
+
     max_log_ud <- max(log_ud_vals, na.rm = TRUE)
 
     prob_vals <- exp(log_ud_vals - max_log_ud)

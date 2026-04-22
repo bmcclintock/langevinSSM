@@ -2,7 +2,7 @@
 #'
 #' Simulate a spatial covariate using a Gaussian random field with a Matérn covariance function. The resulting covariate is on a grid of size (2*sca+1) x (2*sca+1) and has spatial range equal to \code{irange} * \code{sca}.
 #' The simulation is performed using the \code{\link[fields]{matern.image.cov}} function from the \pkg{fields} package, which uses FFT padding to efficiently simulate large spatial fields.
-#' @param sca Numeric value for the spatial scale of the covariate. The resulting covariate will be on a grid of size (2*sca+1) x (2*sca+1). Default: 100.
+#' @param sca Numeric value for the spatial scale of the covariate. The resulting covariate will be on a grid of size (2*sca) x (2*sca). Default: 100.
 #' @param irange Numeric value for the spatial range of the covariate, expressed as a proportion of \code{sca}. The resulting covariate will have spatial range equal to \code{irange} * \code{sca}. Default: 0.3.
 #' @param sigma2 Numeric value for the variance of the covariate. Default: 0.1.
 #' @param kappa Numeric value for the smoothness of the Matérn covariance function. Default: 0.5 (exponential covariance).
@@ -23,10 +23,10 @@ simCov <- function(sca = 100,
 
   # --- Parameters ---
   phi <- irange * sca
-  n_grid <- 2 * sca + 1
+  n_grid <- 2 * sca
 
-  grid_list <- list(x = seq(-sca - 0.5, sca + 0.5, length.out = n_grid),
-                    y = seq(-sca - 0.5, sca + 0.5, length.out = n_grid))
+  grid_list <- list(x = seq(-sca, sca, length.out = n_grid),
+                    y = seq(-sca, sca, length.out = n_grid))
 
   # Dynamically calculate initial baseline FFT padding
   decay_distance <- 4 * phi

@@ -8,8 +8,8 @@ test_that("simCov generates a SpatRaster with correct dimensions and extent", {
   # Check class
   expect_s4_class(r, "SpatRaster")
 
-  # Check dimensions: should be (2*sca + 1) x (2*sca + 1)
-  expected_dim <- 2 * sca_val + 1
+  # Check dimensions: should be (2*sca) x (2*sca)
+  expected_dim <- 2 * sca_val
   expect_equal(terra::nrow(r), expected_dim)
   expect_equal(terra::ncol(r), expected_dim)
   expect_equal(terra::nlyr(r), 1)
@@ -18,10 +18,10 @@ test_that("simCov generates a SpatRaster with correct dimensions and extent", {
   ext_r <- terra::ext(r)
 
   # FIX: Use as.numeric() to strip the names before checking equality
-  expect_equal(as.numeric(ext_r$xmin), -sca_val - 0.5)
-  expect_equal(as.numeric(ext_r$xmax), sca_val + 0.5)
-  expect_equal(as.numeric(ext_r$ymin), -sca_val - 0.5)
-  expect_equal(as.numeric(ext_r$ymax), sca_val + 0.5)
+  expect_equal(as.numeric(ext_r$xmin), -sca_val)
+  expect_equal(as.numeric(ext_r$xmax), sca_val)
+  expect_equal(as.numeric(ext_r$ymin), -sca_val)
+  expect_equal(as.numeric(ext_r$ymax), sca_val)
 })
 
 test_that("simCov generates sensible, finite numeric values", {
@@ -54,8 +54,8 @@ test_that("simCov successfully handles custom FFT padding (M and N)", {
 
   # The output raster should STILL be the original requested grid size (11x11),
   # as the padding is only used internally by fields::matern.image.cov
-  expect_equal(terra::nrow(r), 11)
-  expect_equal(terra::ncol(r), 11)
+  expect_equal(terra::nrow(r), 10)
+  expect_equal(terra::ncol(r), 10)
 })
 
 test_that("simCov fails gracefully on invalid inputs", {

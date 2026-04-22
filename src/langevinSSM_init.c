@@ -8,16 +8,16 @@
 /* .Call calls */
 extern SEXP _langevinSSM_measurementError_LS_rcpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP _langevinSSM_measurementError_rcpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
-extern SEXP _langevinSSM_simulate_langevin_cpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+extern SEXP _langevinSSM_simulate_langevin_cpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP _langevinSSM_simulate_regionprob_cpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 extern SEXP _langevinSSM_simulate_ud_cpp(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
 
 static const R_CallMethodDef CallEntries[] = {
-  {"_langevinSSM_measurementError_LS_rcpp", (DL_FUNC) &_langevinSSM_measurementError_LS_rcpp, 7},
-  {"_langevinSSM_measurementError_rcpp",    (DL_FUNC) &_langevinSSM_measurementError_rcpp,    6},
-  {"_langevinSSM_simulate_langevin_cpp",    (DL_FUNC) &_langevinSSM_simulate_langevin_cpp,    9},
-  {"_langevinSSM_simulate_regionprob_cpp",  (DL_FUNC) &_langevinSSM_simulate_regionprob_cpp,  8},
-  {"_langevinSSM_simulate_ud_cpp",          (DL_FUNC) &_langevinSSM_simulate_ud_cpp,          7},
+  {"_langevinSSM_measurementError_LS_rcpp", (DL_FUNC) &_langevinSSM_measurementError_LS_rcpp,  7},
+  {"_langevinSSM_measurementError_rcpp",    (DL_FUNC) &_langevinSSM_measurementError_rcpp,     6},
+  {"_langevinSSM_simulate_langevin_cpp",    (DL_FUNC) &_langevinSSM_simulate_langevin_cpp,    11},
+  {"_langevinSSM_simulate_regionprob_cpp",  (DL_FUNC) &_langevinSSM_simulate_regionprob_cpp,   8},
+  {"_langevinSSM_simulate_ud_cpp",          (DL_FUNC) &_langevinSSM_simulate_ud_cpp,           7},
   {NULL, NULL, 0}
 };
 

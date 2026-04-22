@@ -13,8 +13,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // simulate_langevin_cpp
-DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition);
-RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP) {
+DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition, NumericMatrix barrier_dist, double barrier_penalty);
+RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP, SEXP barrier_distSEXP, SEXP barrier_penaltySEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -27,7 +27,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type beta(betaSEXP);
     Rcpp::traits::input_parameter< List >::type raster_data(raster_dataSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type initialPosition(initialPositionSEXP);
-    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition));
+    Rcpp::traits::input_parameter< NumericMatrix >::type barrier_dist(barrier_distSEXP);
+    Rcpp::traits::input_parameter< double >::type barrier_penalty(barrier_penaltySEXP);
+    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, barrier_penalty));
     return rcpp_result_gen;
 END_RCPP
 }

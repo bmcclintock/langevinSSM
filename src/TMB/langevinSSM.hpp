@@ -38,6 +38,10 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_VECTOR(weights);            // Vector of 5 (diagonal) or 9 (queen's) weights that sum to 1
   DATA_SCALAR(zetaScale);          // scale factor for smooth gradient neighborhood (>1 increases, <1 decreases)
 
+  // Barrier constraint data
+  DATA_MATRIX(barrier_dist);       // Grid: Signed Distance Function (Positive = allowed, Negative = restricted)
+  DATA_SCALAR(barrier_penalty);    // Tuning parameter (lambda) for the severity of the wall
+
   // for KF observation model
   DATA_VECTOR(smin);                 //  smin is the semi-minor axis length
   DATA_VECTOR(smaj);                 //  smaj is the semi-major axis length
@@ -175,14 +179,16 @@ Type langevinSSM(objective_function<Type>* obj)
       // Force vector h = ∇log[π(x)]
       vector<Type> h(2);
       h.setZero();
-      //h(0) = beta(0);
-      //h(1) = beta(0);
       for(int c = 0; c < n_covs; c++) {
         h(0) += beta(c) * grad(0,c);
         h(1) += beta(c) * grad(1,c);
-        //h(0) += beta(c+1) * grad(0,c);
-        //h(1) += beta(c+1) * grad(1,c);
       }
+
+      // --- BARRIER PENALTY FORCE ---
+      Type h0 = h(0), h1 = h(1);
+      apply_barrier_penalty(x_prev, y_prev, barrier_dist, raster_extent, raster_resolution, barrier_penalty, h0, h1);
+      h(0) = h0; h(1) = h1;
+      // -----------------------------
 
       if(process_model == 1) {  // Underdamped
         Type exp_gdt = exp(-gamma * dt_step);
@@ -205,8 +211,6 @@ Type langevinSSM(objective_function<Type>* obj)
             s2*h(i)/gamma * (Type(1.0) - exp_gdt);
 
           // Construct variance-covariance matrix
-          // Added 1e-6 nugget to the diagonal to prevent floating-point
-          // FMA underflow crashes on Linux/GCC during nlminb exploration
           matrix<Type> Sigma(2,2);
           Sigma(0,0) = var_x + Type(1e-6);
           Sigma(1,1) = var_v + Type(1e-6);
@@ -232,7 +236,6 @@ Type langevinSSM(objective_function<Type>* obj)
       }
     }
   }
-
 
   // PRIOR PENALIZATION
 
@@ -305,7 +308,6 @@ Type langevinSSM(objective_function<Type>* obj)
     }
   }
 
-
   // OBSERVATION MODEL
   for(int i = 0; i < timeSteps; ++i) {
     if(isd(i) == 1) {
@@ -331,7 +333,6 @@ Type langevinSSM(objective_function<Type>* obj)
       }
 
       // TMB oneStepPredict Bivariate Decomposition
-      // Added 1e-6 nugget to variances to prevent floating-point underflow from passing a negative number to sqrt() on Linux/GCC architectures
       Type varX = cov_obs(0,0) + Type(1e-6);
       Type varY = cov_obs(1,1) + Type(1e-6);
       Type covXY = cov_obs(0,1);
@@ -351,9 +352,6 @@ Type langevinSSM(objective_function<Type>* obj)
 
       // 2. Conditional Likelihood of Y
       Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
-
-      // Because we added 1e-6 to varX and varY above, this term is mathematically
-      // guaranteed to be strictly positive, making the sqrt() perfectly safe.
       Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
 
       nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);

@@ -16,17 +16,18 @@
 #' @param initialPosition Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.
 #' @param measurementError A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.
 #' @param subSample List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).
+#' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.
+#' @param lambda Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.
 #'
 #' @param data The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.
 #' @param jointPrecision Logical. If \code{TRUE}, draws parameters and latent variables from the full joint precision matrix of both fixed parameters and random effects. If \code{FALSE}, fixes the movement parameters at their point estimates and draws only random effects. Default: \code{FALSE}.
 #' @param conditional Logical. If \code{TRUE}, simulates tracks conditional on the observed data (imputation), adding observation error to the drawn latent states based on the measurement error information in \code{data}. If \code{FALSE}, simulates an entirely new track forwards in time (e.g. for posterior predictive check). Default: \code{FALSE}.
 #'
-#' @return A data frame of class \code{dataLangevin} containing the simulated trajectories.
-#'
-#' @section Simulating from Scratch (Default Method):
+#' @details
+#' \strong{Simulating from Scratch (Default Method):}
 #' When \code{model} is a character string (\code{"underdamped"} or \code{"overdamped"}), the function generates a completely new dataset. This requires specifying the movement parameters (\code{par}), the number of animals, and the desired measurement error structure.
 #'
-#' @section Simulating from a Fitted Model (fitLangevin Method):
+#' \strong{Simulating from a Fitted Model (fitLangevin Method):}
 #' When \code{model} is a \code{fitLangevin} object, the function behaves as a diagnostic and simulation tool.
 #' The \code{conditional} and \code{jointPrecision} arguments define four possible ways to simulate from the fitted model:
 #' \itemize{
@@ -35,6 +36,23 @@
 #'   \item \strong{\code{conditional = FALSE, jointPrecision = TRUE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the full joint covariance matrix
 #'   \item \strong{\code{conditional = FALSE, jointPrecision = FALSE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the random effects covariance matrix with the movement parameters fixed at their point estimates.
 #' }
+#'
+#' @template barrier_details
+#'
+#' @details
+#' \strong{Barrier Penalty Auto-Scaling:}
+#' When \code{lambda = NULL} and a \code{barrier} is provided, \code{simLangevin} automatically calculates the maximum theoretical stability limit for the barrier penalty based on the SDE numerical integration limits. Because the true generative speed parameter (\eqn{\sigma}) and the maximum simulation time step (\eqn{\max(\Delta t)}) are known, the optimal spring constant can be deterministically calculated to create the "hardest" possible boundary that will not cause the numerical solver to explode.
+#'
+#' For the \strong{overdamped} model, the restoring force acts directly on the animal's position. The stability ceiling scales linearly with the inverse of the time step:
+#' \deqn{\lambda = \frac{2}{\sigma^2 \max(\Delta t)}}
+#'
+#' For the \strong{underdamped} model, the restoring force acts on the animal's velocity, creating a true harmonic oscillator. The stability ceiling scales with the inverse square of the time step, allowing for much stiffer penalties:
+#' \deqn{\lambda = \frac{1}{\sigma^2 \max(\Delta t)^2}}
+#'
+#' This auto-calculated value is applied during simulation and stored as a \code{lambda} attribute in the returned \code{dataLangevin} object.
+#'
+#' @return A data frame of class \code{dataLangevin} containing the simulated trajectories.
+#'
 #' @examples
 #' # underdamped model with measurement error
 #'
@@ -78,6 +96,32 @@
 #'                            data = exampleDat,
 #'                            spatialCovs = exampleCovs,
 #'                            conditional = TRUE)
+#'
+#' # simulating with a barrier
+#' # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
+#' coast_barrier <- exampleCovs[[1]]
+#' terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"] >=
+#'                                        mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+#' names(coast_barrier) <- "coast_barrier"
+#'
+#' # add the mask to the spatial covariates list
+#' exampleCovs_barrier <- exampleCovs
+#' exampleCovs_barrier$coast_barrier <- coast_barrier
+#'
+#' # add a beta coefficient for the barrier to the parameter list
+#' par_barrier <- par
+#' par_barrier$beta <- c(par_barrier$beta, -0.2)
+#'
+#' # simulate the data
+#' set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
+#' simDat_barrier <- simLangevin(par = par_barrier,
+#'                               spatialCovs = exampleCovs_barrier,
+#'                               barrier = "coast_barrier",
+#'                               measurementError = list(smaj.sd = 1.5,
+#'                                                       smin.sd = 0.75,
+#'                                                       eor.lim = c(0,180)))
+#'
+#' plot(simDat_barrier,beta=par_barrier$beta,spatialCovs=exampleCovs_barrier)
 #' }
 #' @references
 #' Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
@@ -105,9 +149,25 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
                                 initialPosition,
                                 measurementError = NULL,
                                 subSample = NULL,
+                                barrier = NULL,
+                                lambda = NULL,
                                 ...) {
 
   model <- match.arg(model)
+
+  .validate_barrier(barrier, spatialCovs)
+  .validate_lambda(lambda)
+
+  orig_spatialCovs <- spatialCovs
+  if (!is.null(barrier)) {
+    barrier_sdf <- .get_barrier_sdf(barrier, spatialCovs)
+    spatialCovs[[barrier]] <- barrier_sdf
+    barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE)
+  } else {
+    barrier_dist_mat <- matrix(0, 1, 1)
+  }
+
+  # spatialCovs now contains the continuous SDF instead of the flat 0/1 mask
   raster_data <- prepareRaster(spatialCovs)
 
   if(!is.finite(nbAnimals) || nbAnimals < 1) stop("nbAnimals should be at least 1.")
@@ -151,10 +211,26 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     }
   }
 
+  # --- 3. Lambda Auto-Scaling ---
+  if (!is.null(barrier) && is.null(lambda)) {
+    # Because we know the TRUE sigma and dt, we can perfectly calculate the limit
+    max_dt <- max(dt_vec, na.rm = TRUE)
+    if (model == "overdamped") {
+      lambda <- 2 / (sigma^2 * max_dt)
+    } else {
+      lambda <- 1 / (sigma^2 * max_dt^2)
+    }
+  }
+
+  barrier_pen <- if (!is.null(barrier)) lambda else 0
+
+  # --- 4. Initial Position ---
   init_pos_sim <- if (missing(initialPosition)) {
-    getInitialPosition(nbAnimals = nbAnimals, spatialCovs = spatialCovs, beta = beta)
+    getInitialPosition(nbAnimals = nbAnimals, spatialCovs = orig_spatialCovs,
+                       beta = beta, barrier = barrier, lambda = lambda)
   } else {
-    getInitialPosition(nbAnimals = nbAnimals, initialPosition = initialPosition, spatialCovs = spatialCovs, beta = beta)
+    getInitialPosition(nbAnimals = nbAnimals, initialPosition = initialPosition,
+                       spatialCovs = orig_spatialCovs, beta = beta)
   }
 
   out <- simulate_langevin_cpp(
@@ -166,7 +242,9 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     sigma = sigma,
     beta = beta,
     raster_data = raster_data,
-    initialPosition = init_pos_sim
+    initialPosition = init_pos_sim,
+    barrier_dist = barrier_dist_mat,
+    barrier_penalty = barrier_pen
   )
 
   class(out) <- c("dataLangevin", class(out))
@@ -188,9 +266,23 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   out <- class_dataLangevin(out)
   class(out) <- unique(c("simLangevin", class(out)))
 
+  if (!is.null(barrier)) {
+    attr(out, "lambda") <- lambda
+    attr(out, "barrier") <- barrier
+  }
+
   if(!is.null(subSample)){
     out <- subSampleData(out, samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
+    max_dt <- max(out$dt, na.rm = TRUE)
+    if (model == "overdamped") {
+      lambda <- 2 / (sigma^2 * max_dt)
+    } else {
+      lambda <- 1 / (sigma^2 * max_dt^2)
+    }
+    attr(out, "lambda") <- lambda
   }
+
+  if(!is.null(barrier)) message("   Auto-scaling barrier lambda based on true simulation parameters: ", signif(lambda, 4))
 
   return(out)
 }
@@ -222,7 +314,8 @@ simLangevin.fitLangevin <- function(model,
   scaleFactor <- cond$scaleFactor
 
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
-                        cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale)
+                        cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
+                        barrier_names = cond$barrier, lambda = cond$lambda)
 
   dat <- c(dat, fit$tmb_setup$priors)
 
@@ -256,7 +349,6 @@ simLangevin.fitLangevin <- function(model,
   samp_fixed <- fixed_est
   samp_random <- random_est
 
-  # --- Drawing and Messaging Logic ---
   if (jointPrecision) {
     if (conditional) {
       message("   Imputing tracks tied to data using the full joint covariance matrix...")
@@ -272,7 +364,6 @@ simLangevin.fitLangevin <- function(model,
     samp_random <- random_est + step[(length(fixed_est) + 1):length(step)]
 
   } else if (conditional) {
-    # Conditional Random Effects Draw (Fixed Parameters)
     message("   Imputing tracks tied to data using the random effects covariance matrix...")
 
     Huu <- obj2$env$spHess(random = TRUE)
@@ -282,7 +373,6 @@ simLangevin.fitLangevin <- function(model,
     samp_random <- random_est + step_random
 
   } else {
-    # Forward Simulation from Point Estimates
     message("   Simulating tracks forward using movement parameters fixed at point estimates...")
   }
 
@@ -330,7 +420,6 @@ simLangevin.fitLangevin <- function(model,
       first_idx <- which(data$id == i)[1]
       init_pos <- matrix(c(mu_mat[first_idx, 1], mu_mat[first_idx, 2]), nrow = 1, ncol = 2)
 
-      # Isolate raster data for C++
       raster_names <- c("raster_vals","raster_coords","raster_resolution","raster_extent","n_covs","all_z_values","n_zvals_cov","cov_offset")
 
       sim_full <- simulate_langevin_cpp(
@@ -342,7 +431,9 @@ simLangevin.fitLangevin <- function(model,
         sigma = nat_par$sigma / scaleFactor,
         beta = nat_par$beta,
         raster_data = dat[raster_names],
-        initialPosition = init_pos
+        initialPosition = init_pos,
+        barrier_dist = dat$barrier_dist,
+        barrier_penalty = dat$barrier_penalty
       )
 
       sim_ind <- sim_full[obs_idx, ]
@@ -380,6 +471,11 @@ simLangevin.fitLangevin <- function(model,
   attr(out,"time.unit") <- time.unit
   out <- class_dataLangevin(out)
   class(out) <- unique(c("simLangevin", class(out)))
+
+  if (!is.null(cond$barrier)) {
+    attr(out, "lambda") <- cond$lambda
+    attr(out, "barrier") <- cond$barrier
+  }
 
   return(out)
 }

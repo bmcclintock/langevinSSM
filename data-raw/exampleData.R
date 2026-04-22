@@ -49,6 +49,7 @@ res
 sim <- simLangevin(model=fit,data=exampleDat,spatialCovs=exampleCovs,jointPrecision = TRUE)
 
 estUD <- getUD(fit,spatialCovs=exampleCovs,nSims=1000)
+rasterOverlap(exp(estUD),exp(UD))
 
 plot(fit,spatialCovs=exampleCovs,data=exampleDat)
 

@@ -18,6 +18,7 @@
   data = NULL,
   time = NULL,
   compact = TRUE,
+  maskBarrier = FALSE,
   ...
 )
 
@@ -29,6 +30,7 @@
   extent = NULL,
   time = NULL,
   compact = TRUE,
+  maskBarrier = FALSE,
   ...
 )
 
@@ -38,12 +40,21 @@
 
 \method{plot}{regLangevin}(x, extent = NULL, log = FALSE, ...)
 
-plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
+plotUD(
+  x,
+  spatialCovs = NULL,
+  log = TRUE,
+  extent = NULL,
+  time = NULL,
+  barrier = NULL,
+  maskBarrier = FALSE,
+  ...
+)
 }
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
 
-\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.}
+\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{maskBarrier = TRUE}.}
 
 \item{log}{Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.}
 
@@ -55,11 +66,15 @@ plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 
 \item{compact}{Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).}
 
+\item{maskBarrier}{Logical. If \code{TRUE}, restricted areas defined by the barrier are masked out (set to \code{NA}) before plotting the UD. This prevents the barrier penalty from compressing the color scale of the UD in the unrestricted areas. Set to \code{FALSE} to visualize the raw UD including the barrier penalty. Default: \code{FALSE}}
+
 \item{...}{Additional arguments passed to internal plotting methods.}
 
 \item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.}
 
 \item{tracks}{Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).}
+
+\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. Required by \code{plotUD} if \code{maskBarrier = TRUE}.}
 }
 \value{
 A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
@@ -69,7 +84,7 @@ These methods plot objects associated with the \code{langevinSSM} package using 
 \itemize{
   \item \strong{\code{plot.fitLangevin}:} Plots the estimated Utilization Distribution (UD) and overlays the estimated true locations (mu). If the original data is provided, observed locations are also plotted.
   \item \strong{\code{plot.dataLangevin}:} Plots the spatial covariates and overlays the observed locations. If the data is a simulated \code{simLangevin} object, both true (latent) and observed locations are plotted.
-  \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting individual covariates).
+  \item \strong{\code{plot.simLangevin}:} If \code{beta} is provided, plots the theoretical UD based on those coefficients and overlays true (latent) and observed locations. If \code{beta} is omitted, defaults to \code{plot.dataLangevin} behavior (plotting tracks on spatial covariates).
   \item \strong{\code{plot.regLangevin}:} Plots the region of interest defined by the mask and the relative probability of presence within that region.
   \item \strong{\code{plot.resLangevin}:} Generates Q-Q and ACF diagnostic plots for One-Step-Ahead (OSA) residuals.
   \item \strong{\code{plotUD}:} Plots the estimated utilization distribution (UD). If the SpatRaster stack contains uncertainty metrics (SE and CV), these are also plotted. A \code{log} argument allows plotting the log of the SE.

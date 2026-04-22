@@ -47,7 +47,9 @@ DataFrame simulate_langevin_cpp(int model,
                                 double sigma,
                                 NumericVector beta,
                                 List raster_data,
-                                NumericMatrix initialPosition) {
+                                NumericMatrix initialPosition,
+                                NumericMatrix barrier_dist,
+                                double barrier_penalty) {
 
   // Extract raster extent for boundary checking
   NumericVector raster_extent = raster_data["raster_extent"];
@@ -77,9 +79,10 @@ DataFrame simulate_langevin_cpp(int model,
   // Extract raster information and time metadata
   NumericVector raster_vals = raster_data["raster_vals"];
 
-  // Cast raster_coords to an Armadillo matrix to match the header signature
+  // Cast matrices to Armadillo format to match the raster_helpers.hpp macros
   NumericMatrix raster_coords_rcpp = raster_data["raster_coords"];
   arma::mat raster_coords = Rcpp::as<arma::mat>(raster_coords_rcpp);
+  arma::mat barrier_dist_arma = Rcpp::as<arma::mat>(barrier_dist);
 
   NumericVector raster_resolution = raster_data["raster_resolution"];
   NumericVector all_z_values = raster_data["all_z_values"];
@@ -137,6 +140,12 @@ DataFrame simulate_langevin_cpp(int model,
         h[0] += beta[c] * grad(0,c);
         h[1] += beta[c] * grad(1,c);
       }
+
+      // --- BARRIER PENALTY FORCE ---
+      double h0 = h[0], h1 = h[1];
+      apply_barrier_penalty(mu_x[idx-1], mu_y[idx-1], barrier_dist_arma, raster_extent, raster_resolution, barrier_penalty, h0, h1);
+      h[0] = h0; h[1] = h1;
+      // -----------------------------
 
       if(model == 0) {  // overdamped Langevin
         // Calculate means with scaled parameters

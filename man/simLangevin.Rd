@@ -18,6 +18,8 @@ simLangevin(model, ...)
   initialPosition,
   measurementError = NULL,
   subSample = NULL,
+  barrier = NULL,
+  lambda = NULL,
   ...
 )
 
@@ -52,6 +54,10 @@ simLangevin(model, ...)
 
 \item{subSample}{List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
 
+\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.}
+
+\item{lambda}{Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.}
+
 \item{data}{The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.}
 
 \item{jointPrecision}{Logical. If \code{TRUE}, draws parameters and latent variables from the full joint precision matrix of both fixed parameters and random effects. If \code{FALSE}, fixes the movement parameters at their point estimates and draws only random effects. Default: \code{FALSE}.}
@@ -66,13 +72,11 @@ This function acts as a generic interface for simulating from the Langevin diffu
 1) Simulating an entirely new track "from scratch" by providing specific parameters (the default method).
 2) Simulating tracks from a previously fitted model (\code{fitLangevin} object) for further analysis (e.g. posterior predictive checks or imputation).
 }
-\section{Simulating from Scratch (Default Method)}{
-
+\details{
+\strong{Simulating from Scratch (Default Method):}
 When \code{model} is a character string (\code{"underdamped"} or \code{"overdamped"}), the function generates a completely new dataset. This requires specifying the movement parameters (\code{par}), the number of animals, and the desired measurement error structure.
-}
 
-\section{Simulating from a Fitted Model (fitLangevin Method)}{
-
+\strong{Simulating from a Fitted Model (fitLangevin Method):}
 When \code{model} is a \code{fitLangevin} object, the function behaves as a diagnostic and simulation tool.
 The \code{conditional} and \code{jointPrecision} arguments define four possible ways to simulate from the fitted model:
 \itemize{
@@ -81,8 +85,32 @@ The \code{conditional} and \code{jointPrecision} arguments define four possible 
   \item \strong{\code{conditional = FALSE, jointPrecision = TRUE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the full joint covariance matrix
   \item \strong{\code{conditional = FALSE, jointPrecision = FALSE}:} Starting at the initial location for each track, generates unconstrained tracks forward in time using parameters drawn from the random effects covariance matrix with the movement parameters fixed at their point estimates.
 }
-}
 
+\strong{Barrier Constraints:}
+When a \code{barrier} is specified, the model restricts animal movement using a physical penalty method for stochastic differential equations (SDEs).
+Internally, the binary mask provided in \code{spatialCovs[[barrier]]} (where 1 indicates unrestricted areas and 0 indicates restricted areas) is converted into a continuous signed distance function (SDF), denoted as \eqn{d(\boldsymbol{\mu})}. Distance is calculated as positive in the unrestricted areas (allowed space) and negative in the restricted areas.
+
+To prevent the animal from entering the restricted zone (where \eqn{d(\boldsymbol{\mu}) \le 0}), the model applies a harmonic oscillator penalty, treating the boundary like a spring. The potential energy (\eqn{U}) of this spring is a quadratic function of the distance traveled into the restricted zone:
+\deqn{U(\boldsymbol{\mu}) = \frac{1}{2} \lambda d(\boldsymbol{\mu})^2}
+
+In Langevin dynamics, the force acting on the animal is the negative spatial gradient of the potential energy (\eqn{ -\nabla U(\boldsymbol{\mu})}). Applying the chain rule to the potential energy function yields the exact force applied during simulation and model fitting:
+\deqn{\text{Force} = -\lambda d(\boldsymbol{\mu}) \nabla d(\boldsymbol{\mu})}
+
+Because \eqn{d(\boldsymbol{\mu})} is negative in the restricted zone, the equation produces a positive force that pushes the animal in the direction of the shortest path back to the unrestricted area (\eqn{\nabla d(\boldsymbol{\mu})}).
+
+The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if \code{barrier = "barrier"}). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{suggestLambda}} for a strategy to determine the optimal penalty).
+
+\strong{Barrier Penalty Auto-Scaling:}
+When \code{lambda = NULL} and a \code{barrier} is provided, \code{simLangevin} automatically calculates the maximum theoretical stability limit for the barrier penalty based on the SDE numerical integration limits. Because the true generative speed parameter (\eqn{\sigma}) and the maximum simulation time step (\eqn{\max(\Delta t)}) are known, the optimal spring constant can be deterministically calculated to create the "hardest" possible boundary that will not cause the numerical solver to explode.
+
+For the \strong{overdamped} model, the restoring force acts directly on the animal's position. The stability ceiling scales linearly with the inverse of the time step:
+\deqn{\lambda = \frac{2}{\sigma^2 \max(\Delta t)}}
+
+For the \strong{underdamped} model, the restoring force acts on the animal's velocity, creating a true harmonic oscillator. The stability ceiling scales with the inverse square of the time step, allowing for much stiffer penalties:
+\deqn{\lambda = \frac{1}{\sigma^2 \max(\Delta t)^2}}
+
+This auto-calculated value is applied during simulation and stored as a \code{lambda} attribute in the returned \code{dataLangevin} object.
+}
 \examples{
 # underdamped model with measurement error
 
@@ -126,6 +154,32 @@ simFit_cond <- simLangevin(fit,
                            data = exampleDat,
                            spatialCovs = exampleCovs,
                            conditional = TRUE)
+
+# simulating with a barrier
+# create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
+coast_barrier <- exampleCovs[[1]]
+terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"] >=
+                                       mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+names(coast_barrier) <- "coast_barrier"
+
+# add the mask to the spatial covariates list
+exampleCovs_barrier <- exampleCovs
+exampleCovs_barrier$coast_barrier <- coast_barrier
+
+# add a beta coefficient for the barrier to the parameter list
+par_barrier <- par
+par_barrier$beta <- c(par_barrier$beta, -0.2)
+
+# simulate the data
+set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
+simDat_barrier <- simLangevin(par = par_barrier,
+                              spatialCovs = exampleCovs_barrier,
+                              barrier = "coast_barrier",
+                              measurementError = list(smaj.sd = 1.5,
+                                                      smin.sd = 0.75,
+                                                      eor.lim = c(0,180)))
+
+plot(simDat_barrier,beta=par_barrier$beta,spatialCovs=exampleCovs_barrier)
 }
 }
 \references{

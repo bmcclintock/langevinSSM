@@ -8,10 +8,13 @@ getUD(
   spatialCovs,
   fit,
   beta,
+  barrier = NULL,
+  lambda = NULL,
   log = TRUE,
   nSims = 0,
   show_progress = TRUE,
-  plot = TRUE
+  plot = TRUE,
+  maskBarrier = FALSE
 )
 }
 \arguments{
@@ -21,6 +24,10 @@ getUD(
 
 \item{beta}{Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.}
 
+\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.}
+
+\item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically.}
+
 \item{log}{Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.}
 
 \item{nSims}{Integer. Number of draws from the covariance matrix to use for estimating Monte Carlo uncertainty in the UD. If \code{nSims > 0}, the returned raster stack will include additional layers for simulated SE and CV. Default: \code{0}.}
@@ -28,6 +35,8 @@ getUD(
 \item{show_progress}{Logical. If \code{TRUE}, displays a progress bar for simulations. Default: \code{TRUE}.}
 
 \item{plot}{Logical. Plot the resulting UD using \code{\link{plotUD}}? Default: \code{TRUE}.}
+
+\item{maskBarrier}{Logical. If \code{TRUE}, restricted areas defined by the barrier are masked out (set to \code{NA}) before plotting the UD. This prevents the barrier penalty from compressing the color scale of the UD in the unrestricted areas. Set to \code{FALSE} to visualize the raw UD including the barrier penalty. Default: \code{FALSE}}
 }
 \value{
 A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).

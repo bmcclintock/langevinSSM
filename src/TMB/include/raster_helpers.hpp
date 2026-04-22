@@ -182,4 +182,65 @@ MATRIX calculate_smooth_gradient(TYPE x, TYPE y, TYPE z,
   return smooth_grads;
 }
 
+TEMPLATE_HEADER
+TYPE get_bilinear_val(TYPE x, TYPE y, const MATRIX &grid, const VECTOR &ext, const VECTOR &res) {
+  // Use round() to prevent floating point inaccuracy truncation
+  int n_cols = static_cast<int>(round(AS_DOUBLE((VEC_ELT(ext, 1) - VEC_ELT(ext, 0)) / VEC_ELT(res, 0))));
+  int n_rows = static_cast<int>(round(AS_DOUBLE((VEC_ELT(ext, 3) - VEC_ELT(ext, 2)) / VEC_ELT(res, 1))));
+
+  TYPE col_raw = (x - VEC_ELT(ext, 0)) / VEC_ELT(res, 0) - TYPE(0.5);
+  TYPE row_raw = (VEC_ELT(ext, 3) - y) / VEC_ELT(res, 1) - TYPE(0.5);
+
+  int c0 = static_cast<int>(floor(AS_DOUBLE(col_raw)));
+  int r0 = static_cast<int>(floor(AS_DOUBLE(row_raw)));
+
+  if (c0 < 0) c0 = 0; if (c0 >= n_cols - 1) c0 = n_cols - 2;
+  if (r0 < 0) r0 = 0; if (r0 >= n_rows - 1) r0 = n_rows - 2;
+  int c1 = c0 + 1;
+  int r1 = r0 + 1;
+
+  TYPE dx = col_raw - TYPE(c0);
+  TYPE dy = row_raw - TYPE(r0);
+
+  if(dx < TYPE(0.0)) dx = TYPE(0.0); if(dx > TYPE(1.0)) dx = TYPE(1.0);
+  if(dy < TYPE(0.0)) dy = TYPE(0.0); if(dy > TYPE(1.0)) dy = TYPE(1.0);
+
+  TYPE val = grid(r0, c0) * (TYPE(1.0) - dx) * (TYPE(1.0) - dy) +
+    grid(r0, c1) * dx * (TYPE(1.0) - dy) +
+    grid(r1, c0) * (TYPE(1.0) - dx) * dy +
+    grid(r1, c1) * dx * dy;
+  return val;
+}
+
+TEMPLATE_HEADER
+void apply_barrier_penalty(TYPE x, TYPE y,
+                           const MATRIX &barrier_dist,
+                           const VECTOR &raster_extent,
+                           const VECTOR &raster_resolution,
+                           TYPE barrier_penalty,
+                           TYPE &h_x, TYPE &h_y) {
+
+  if (barrier_penalty > TYPE(0.0)) {
+    TYPE d_barrier = get_bilinear_val(x, y, barrier_dist, raster_extent, raster_resolution);
+
+    if (d_barrier <= TYPE(0.0)) {
+      // Central difference for gradient of SDF
+      TYPE eps_x = VEC_ELT(raster_resolution, 0) * TYPE(0.01);
+      TYPE eps_y = VEC_ELT(raster_resolution, 1) * TYPE(0.01);
+
+      TYPE d_plus_x  = get_bilinear_val(x + eps_x, y, barrier_dist, raster_extent, raster_resolution);
+      TYPE d_minus_x = get_bilinear_val(x - eps_x, y, barrier_dist, raster_extent, raster_resolution);
+      TYPE grad_sdf_x = (d_plus_x - d_minus_x) / (TYPE(2.0) * eps_x);
+
+      TYPE d_plus_y  = get_bilinear_val(x, y + eps_y, barrier_dist, raster_extent, raster_resolution);
+      TYPE d_minus_y = get_bilinear_val(x, y - eps_y, barrier_dist, raster_extent, raster_resolution);
+      TYPE grad_sdf_y = (d_plus_y - d_minus_y) / (TYPE(2.0) * eps_y);
+
+      // Apply force = -lambda * d * grad(d)
+      h_x -= barrier_penalty * d_barrier * grad_sdf_x;
+      h_y -= barrier_penalty * d_barrier * grad_sdf_y;
+    }
+  }
+}
+
 #endif // RASTER_HELPERS_HPP

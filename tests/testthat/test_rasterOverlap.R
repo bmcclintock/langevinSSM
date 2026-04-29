@@ -176,3 +176,103 @@ test_that("rasterOverlap catches mismatched layer counts for generic rasters (Us
     "Rasters must have the same number of layers"
   )
 })
+
+test_that("rasterOverlap local argument correctly restricts affinity calculation", {
+  r1 <- get_mock_raster(vals = 0.1)
+  r2 <- get_mock_raster(vals = 0.9)
+
+  # Make the rasters identical only in the center of the map
+  center_ext <- terra::ext(4, 6, 4, 6)
+  r1[center_ext] <- 1
+  r2[center_ext] <- 1
+
+  # Global affinity should be heavily penalized by the edges (< 1)
+  global_affinity <- as.numeric(rasterOverlap(r1, r2))
+  expect_true(global_affinity < 1)
+
+  # Local affinity (cropped to the identical center) should be exactly 1
+  local_affinity <- as.numeric(rasterOverlap(r1, r2, local = center_ext))
+  expect_equal(local_affinity, 1, tolerance = 1e-6)
+})
+
+test_that("rasterOverlap local argument accepts SpatVector objects", {
+  r1 <- get_mock_raster(vals = 0.1)
+  r2 <- get_mock_raster(vals = 0.9)
+  center_ext <- terra::ext(4, 6, 4, 6)
+  r1[center_ext] <- 1
+  r2[center_ext] <- 1
+
+  # Convert the extent to a SpatVector polygon
+  center_vec <- terra::as.polygons(center_ext)
+
+  local_affinity <- as.numeric(rasterOverlap(r1, r2, local = center_vec))
+  expect_equal(local_affinity, 1, tolerance = 1e-6)
+})
+
+test_that("rasterOverlap local argument accepts data frames and uses 'coord' correctly", {
+  r1 <- get_mock_raster(vals = 0.1)
+  r2 <- get_mock_raster(vals = 0.9)
+  center_ext <- terra::ext(4, 6, 4, 6)
+  r1[center_ext] <- 1
+  r2[center_ext] <- 1
+
+  # 1. Standard data frame with default coord = c("x", "y")
+  df_standard <- data.frame(x = c(4, 6), y = c(4, 6))
+  affinity_df <- as.numeric(rasterOverlap(r1, r2, local = df_standard))
+  expect_equal(affinity_df, 1, tolerance = 1e-6)
+
+  # 2. Simulated data frame with custom coord = c("mu.x", "mu.y")
+  df_custom <- data.frame(mu.x = c(4, 6), mu.y = c(4, 6))
+  affinity_custom <- as.numeric(rasterOverlap(r1, r2, local = df_custom, coord = c("mu.x", "mu.y")))
+  expect_equal(affinity_custom, 1, tolerance = 1e-6)
+})
+
+test_that("rasterOverlap local argument automatically extracts estimated tracks from fitLangevin objects", {
+  r1 <- get_mock_raster(vals = 0.1)
+  r2 <- get_mock_raster(vals = 0.9)
+  center_ext <- terra::ext(4, 6, 4, 6)
+  r1[center_ext] <- 1
+  r2[center_ext] <- 1
+
+  # Construct a lightweight mock fitLangevin object
+  mock_fit <- list(
+    estimates = list(
+      random = list(
+        mu = list(
+          est = data.frame(mu.x = c(4, 6), mu.y = c(4, 6))
+        )
+      )
+    )
+  )
+  class(mock_fit) <- "fitLangevin"
+
+  # It should bypass the coord argument and natively extract mu.x/mu.y
+  affinity_fit <- as.numeric(rasterOverlap(r1, r2, local = mock_fit))
+  expect_equal(affinity_fit, 1, tolerance = 1e-6)
+})
+
+test_that("rasterOverlap local argument throws informative errors for malformed inputs", {
+  r1 <- get_mock_raster()
+  r2 <- get_mock_raster()
+
+  # 1. Data frame missing specified coord columns
+  bad_df <- data.frame(lon = c(4, 6), lat = c(4, 6))
+  expect_error(
+    rasterOverlap(r1, r2, local = bad_df),
+    "If 'local' is a data frame, it must contain the columns specified in 'coord' \\(currently: 'x' and 'y'\\)."
+  )
+
+  # 2. fitLangevin object lacking estimated random effects (mu)
+  bad_fit <- list(estimates = list(natural = data.frame()))
+  class(bad_fit) <- "fitLangevin"
+  expect_error(
+    rasterOverlap(r1, r2, local = bad_fit),
+    "The provided 'fitLangevin' object does not contain estimated locations \\(mu\\)."
+  )
+
+  # 3. Completely unsupported object class
+  expect_error(
+    rasterOverlap(r1, r2, local = "just a string"),
+    "'local' must be a SpatExtent, SpatVector, fitLangevin object, or a coordinate data frame."
+  )
+})

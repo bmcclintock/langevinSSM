@@ -780,7 +780,8 @@ test_that("Sparse random effect priors map correctly during track subsetting in 
 test_that("fitLangevin pushes latent locations out of restricted barrier zones", {
 
   # create a binary raster: left half restricted (0), right half allowed (1)
-  r <- terra::rast(nrows = 10, ncols = 10, ext = c(0, 100, 0, 100))
+  # Expanded extent to safely contain the 3-sigma (60 unit) error buffers
+  r <- terra::rast(nrows = 20, ncols = 20, ext = c(-100, 200, -100, 200))
   terra::values(r) <- ifelse(terra::crds(r)[, "x"] >= 50, 1, 0)
   names(r) <- "coast_barrier"
   spatialCovs <- list(coast_barrier = r)

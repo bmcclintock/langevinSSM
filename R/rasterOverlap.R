@@ -8,15 +8,17 @@
 #'
 #' @param r1 A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r1} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).
 #' @param r2 A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r2} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).
+#' @param local Optional. A \code{\link[terra]{SpatExtent}}, \code{\link[terra]{SpatVector}}, a \code{fitLangevin} object, or a data frame (e.g., \code{dataLangevin} or \code{simLangevin}) used to limit the overlap calculation to a specific local region. If a data frame is provided, the rasters will be cropped to the bounding box of the coordinates specified by \code{coord}. Default: \code{NULL} (global overlap).
+#' @param coord Character vector of length 2 specifying the column names for the coordinates when \code{local} is a data frame. Default: \code{c("x", "y")}.
 #' @return A numeric vector containing the Bhattacharyya's affinity for each layer, with values between 0 (no overlap) and 1 (identical distributions).
 #' @examples
 #' r1 <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1), log = FALSE, plot = FALSE)
 #' r2 <- getUD(exampleCovs, beta = c(-3, 5, 4, -0.1), log = FALSE, plot = FALSE)
 #'
 #' rasterOverlap(r1, r2)
-#' @importFrom terra compareGeom global nlyr
+#' @importFrom terra compareGeom global nlyr ext crop
 #' @export
-rasterOverlap <- function(r1, r2) {
+rasterOverlap <- function(r1, r2, local = NULL, coord = c("x", "y")) {
 
   if (!inherits(r1, "SpatRaster") || !inherits(r2, "SpatRaster")) {
     stop("Both inputs must be terra::SpatRaster objects.")
@@ -43,6 +45,37 @@ rasterOverlap <- function(r1, r2) {
   # verify identical number of layers
   if (terra::nlyr(r1) != terra::nlyr(r2)) {
     stop(sprintf("Rasters must have the same number of layers. r1 has %d layer(s) and r2 has %d layer(s).", terra::nlyr(r1), terra::nlyr(r2)))
+  }
+
+  # Apply local spatial masking/cropping if requested
+  if (!is.null(local)) {
+    if (inherits(local, "SpatExtent")) {
+      crop_ext <- local
+    } else if (inherits(local, "SpatVector")) {
+      crop_ext <- terra::ext(local)
+    } else if (inherits(local, "fitLangevin")) {
+      if (!is.null(local$estimates$random$mu)) {
+        x_vals <- local$estimates$random$mu$est$mu.x
+        y_vals <- local$estimates$random$mu$est$mu.y
+        crop_ext <- terra::ext(min(x_vals, na.rm=TRUE), max(x_vals, na.rm=TRUE),
+                               min(y_vals, na.rm=TRUE), max(y_vals, na.rm=TRUE))
+      } else {
+        stop("The provided 'fitLangevin' object does not contain estimated locations (mu). Please pass the original tracking data instead.")
+      }
+    } else if (is.data.frame(local) || is.matrix(local)) {
+      local_df <- as.data.frame(local)
+      if (all(coord %in% colnames(local_df))) {
+        crop_ext <- terra::ext(min(local_df[[coord[1]]], na.rm=TRUE), max(local_df[[coord[1]]], na.rm=TRUE),
+                               min(local_df[[coord[2]]], na.rm=TRUE), max(local_df[[coord[2]]], na.rm=TRUE))
+      } else {
+        stop(sprintf("If 'local' is a data frame, it must contain the columns specified in 'coord' (currently: '%s' and '%s').", coord[1], coord[2]))
+      }
+    } else {
+      stop("'local' must be a SpatExtent, SpatVector, fitLangevin object, or a coordinate data frame.")
+    }
+
+    r1 <- terra::crop(r1, crop_ext)
+    r2 <- terra::crop(r2, crop_ext)
   }
 
   # Extract minimums as a vector across all layers

@@ -216,6 +216,6 @@ test_that("Spatial overlap buffer warning catches data close to the edge", {
     smaj = NA
   )
 
-  expect_warning(prepareRaster(spatialCovs = covs, data = warn_data, coord = c("x", "y")),
+  expect_error(prepareRaster(spatialCovs = covs, data = warn_data, coord = c("x", "y")),
                  "close to the edge of 'spatialCovs' relative to their measurement error")
 })

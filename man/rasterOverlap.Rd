@@ -4,12 +4,16 @@
 \alias{rasterOverlap}
 \title{Calculate Bhattacharyya's Affinity between two \code{\link[terra]{SpatRaster-class}} objects}
 \usage{
-rasterOverlap(r1, r2)
+rasterOverlap(r1, r2, local = NULL, coord = c("x", "y"))
 }
 \arguments{
 \item{r1}{A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r1} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).}
 
 \item{r2}{A \code{\link[terra]{SpatRaster-class}} object. If any values are negative, \code{rasterOverlap} assumes \code{r2} is on the log scale, and the raster will be exponentiated before calculating the affinity (and a warning will be triggered).}
+
+\item{local}{Optional. A \code{\link[terra]{SpatExtent}}, \code{\link[terra]{SpatVector}}, a \code{fitLangevin} object, or a data frame (e.g., \code{dataLangevin} or \code{simLangevin}) used to limit the overlap calculation to a specific local region. If a data frame is provided, the rasters will be cropped to the bounding box of the coordinates specified by \code{coord}. Default: \code{NULL} (global overlap).}
+
+\item{coord}{Character vector of length 2 specifying the column names for the coordinates when \code{local} is a data frame. Default: \code{c("x", "y")}.}
 }
 \value{
 A numeric vector containing the Bhattacharyya's affinity for each layer, with values between 0 (no overlap) and 1 (identical distributions).

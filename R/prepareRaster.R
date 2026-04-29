@@ -80,6 +80,7 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
 
   if (!is.null(data) && all(coord %in% names(data))) {
     cov_ext <- as.vector(terra::ext(rasterStack))
+
     data_xmin <- min(data[[coord[1]]], na.rm = TRUE)
     data_xmax <- max(data[[coord[1]]], na.rm = TRUE)
     data_ymin <- min(data[[coord[2]]], na.rm = TRUE)
@@ -95,21 +96,41 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
       stop("Some tracking locations fall outside the boundaries of 'spatialCovs'. Expand the extent of the rasters.")
     }
 
-    err_x_vals <- c(data$x.err, data$smaj)
-    err_y_vals <- c(data$y.err, data$smaj)
+    # 2. point-specific 3-sigma (99.7%) probabilistic bounding box (for edge warnings)
+    err_x <- rep(0, nrow(data))
+    err_y <- rep(0, nrow(data))
 
-    max_err_x <- if (all(is.na(err_x_vals))) 0 else max(err_x_vals, na.rm = TRUE)
-    max_err_y <- if (all(is.na(err_y_vals))) 0 else max(err_y_vals, na.rm = TRUE)
+    # calculate exact marginal standard deviations from the observation error covariance matrix
+    # (assuming neutral scaling parameters psi=1, tau=c(1,1) prior to model fitting)
+    if (all(c("smaj", "smin", "eor") %in% names(data))) {
+      kf_idx <- which(!is.na(data$smaj) & !is.na(data$smin) & !is.na(data$eor))
+      if (length(kf_idx) > 0) {
+        M2 <- (data$smaj[kf_idx]^2) / 2
+        m2 <- (data$smin[kf_idx]^2) / 2
+        s2c <- sin(data$eor[kf_idx])^2
+        c2c <- cos(data$eor[kf_idx])^2
 
-    # Use a 3-sigma (approx 99% CI) buffer
-    buffer_x <- 3 * max_err_x
-    buffer_y <- 3 * max_err_y
-
-    if (max_err_x > 0 || max_err_y > 0) {
-      if ((data_xmin - buffer_x) < cov_ext["xmin"] || (data_xmax + buffer_x) > cov_ext["xmax"] ||
-          (data_ymin - buffer_y) < cov_ext["ymin"] || (data_ymax + buffer_y) > cov_ext["ymax"]) {
-        warning("Some tracking locations are close to the edge of 'spatialCovs' relative to their measurement error. Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates, the model may attempt to push locations outside the raster extent during fitting. Consider expanding the spatial extent of your rasters.",call. = FALSE, immediate. = TRUE)
+        err_x[kf_idx] <- sqrt(M2 * s2c + m2 * c2c)
+        err_y[kf_idx] <- sqrt(M2 * c2c + m2 * s2c)
       }
+    }
+
+    if (all(c("x.err", "y.err") %in% names(data))) {
+      ls_idx <- which(!is.na(data$x.err) & !is.na(data$y.err))
+      if (length(ls_idx) > 0) {
+        err_x[ls_idx] <- data$x.err[ls_idx]
+        err_y[ls_idx] <- data$y.err[ls_idx]
+      }
+    }
+
+    prob_xmin <- min(data[[coord[1]]] - 3 * err_x, na.rm = TRUE)
+    prob_xmax <- max(data[[coord[1]]] + 3 * err_x, na.rm = TRUE)
+    prob_ymin <- min(data[[coord[2]]] - 3 * err_y, na.rm = TRUE)
+    prob_ymax <- max(data[[coord[2]]] + 3 * err_y, na.rm = TRUE)
+
+    if (prob_xmin < cov_ext["xmin"] || prob_xmax > cov_ext["xmax"] ||
+        prob_ymin < cov_ext["ymin"] || prob_ymax > cov_ext["ymax"]) {
+      stop("Some tracking locations are dangerously close to the edge of 'spatialCovs' relative to their measurement error. Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates, the optimizer will likely push these locations outside the raster extent during model fitting. The spatial extent of the rasters must be extended before proceeding.")
     }
   }
 

@@ -196,7 +196,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
 #' @param coord Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.
 #' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.
-#' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{suggestLambda}} for a strategy to determine the optimal penalty.
+#' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{checkBarrier}} for a strategy to determine the optimal penalty.
 #' @param scaleFactor Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.
 #' @param smoothGradient Logical indicating whether or not to smooth the gradients. See Details. Default: \code{FALSE}.
 #' @param npoints Number of smoothing points around current cell (4 = diagonal, 8 = queen neighborhood). Ignored unless \code{smoothGradient=TRUE}.
@@ -342,7 +342,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
         message("   Auto-detected barrier penalty (lambda) from simLangevin data: ", signif(lambda, 4))
       } else {
         stop("A numeric value for 'lambda' must be supplied when using a barrier constraint.\n",
-             "  If you do not know what value to use, see ?suggestLambda.")
+             "  If you do not know what value to use, see ?checkBarrier.")
       }
     }
     .validate_lambda(lambda)

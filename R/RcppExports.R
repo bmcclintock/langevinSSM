@@ -13,6 +13,10 @@ measurementError_LS_rcpp <- function(data, x_sd, y_sd, tau_x, tau_y, rho_o, know
     .Call(`_langevinSSM_measurementError_LS_rcpp`, data, x_sd, y_sd, tau_x, tau_y, rho_o, knownError)
 }
 
+extract_sdf_rcpp <- function(pts, barrier_dist, raster_extent, raster_resolution) {
+    .Call(`_langevinSSM_extract_sdf_rcpp`, pts, barrier_dist, raster_extent, raster_resolution)
+}
+
 simulate_regionprob_cpp <- function(nSims, n_cells, n_layers, n_covs, beta_draws, cov_mats_list, mask_mat, show_progress) {
     .Call(`_langevinSSM_simulate_regionprob_cpp`, nSims, n_cells, n_layers, n_covs, beta_draws, cov_mats_list, mask_mat, show_progress)
 }

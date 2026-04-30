@@ -11,7 +11,7 @@
 #' }
 #'
 #' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.
-#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{maskBarrier = TRUE}.
+#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{barrier} is provided.
 #' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. Required by \code{plotUD} if \code{maskBarrier = TRUE}.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
 #' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
@@ -398,6 +398,8 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
 plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL, barrier = NULL, maskBarrier = FALSE, ...) {
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+
+  if(!is.null(barrier) && is.null(spatialCovs)) stop("If 'barrier' is provided, 'spatialCovs' must also be provided.")
 
   if (maskBarrier && !is.null(barrier) && !is.null(spatialCovs)) {
     sp_mask <- spatialCovs[[barrier]]

@@ -184,9 +184,14 @@ MATRIX calculate_smooth_gradient(TYPE x, TYPE y, TYPE z,
 
 TEMPLATE_HEADER
 TYPE get_bilinear_val(TYPE x, TYPE y, const MATRIX &grid, const VECTOR &ext, const VECTOR &res) {
-  // Use round() to prevent floating point inaccuracy truncation
-  int n_cols = static_cast<int>(round(AS_DOUBLE((VEC_ELT(ext, 1) - VEC_ELT(ext, 0)) / VEC_ELT(res, 0))));
-  int n_rows = static_cast<int>(round(AS_DOUBLE((VEC_ELT(ext, 3) - VEC_ELT(ext, 2)) / VEC_ELT(res, 1))));
+
+#ifdef IS_RCPP_BUILD
+  int n_cols = grid.n_cols;
+  int n_rows = grid.n_rows;
+#else
+  int n_cols = grid.cols();
+  int n_rows = grid.rows();
+#endif
 
   TYPE col_raw = (x - VEC_ELT(ext, 0)) / VEC_ELT(res, 0) - TYPE(0.5);
   TYPE row_raw = (VEC_ELT(ext, 3) - y) / VEC_ELT(res, 1) - TYPE(0.5);

@@ -181,7 +181,7 @@ test_that("mapDuplicatedTimes correctly maps duplicate states and preserves user
   )
 
   # run the mapping function
-  new_map <- langevinSSM:::mapDuplicatedTimes(dat, map = user_map, par = par, re = re)
+  new_map <- mapDuplicatedTimes(dat, map = user_map, par = par, re = re)
 
   # --- Assertions ---
   mu_map_chr <- as.character(new_map$mu)
@@ -225,7 +225,7 @@ test_that("mapDuplicatedTimes generates strict sequential TMB factors (lexicogra
     mu = factor(c(NA, NA, NA, NA, 5:24)) # Locations 1 and 2 are fixed
   )
 
-  new_map <- langevinSSM:::mapDuplicatedTimes(dat, map = user_map, par = par, re = re)
+  new_map <- mapDuplicatedTimes(dat, map = user_map, par = par, re = re)
 
   # TMB evaluates maps based on their internal integer representation
   mu_int <- as.integer(new_map$mu)

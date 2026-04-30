@@ -213,13 +213,16 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
 
   # --- 3. Lambda Auto-Scaling ---
   if (!is.null(barrier) && is.null(lambda)) {
-    # Because we know the TRUE sigma and dt, we can perfectly calculate the limit
     max_dt <- max(dt_vec, na.rm = TRUE)
     if (model == "overdamped") {
       lambda <- 2 / (sigma^2 * max_dt)
     } else {
-      lambda <- 1 / (sigma^2 * max_dt^2)
+      # Underdamped exact analytical stability limit
+      num <- (gamma^2) * (1 - exp(-gamma * max_dt))
+      den <- (sigma^2) * (1 - exp(-gamma * max_dt) - (gamma * max_dt * exp(-gamma * max_dt)))
+      lambda <- num / den
     }
+    message("   Auto-scaling barrier lambda based on true simulation parameters: ", signif(lambda, 4))
   }
 
   barrier_pen <- if (!is.null(barrier)) lambda else 0
@@ -272,17 +275,40 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   }
 
   if(!is.null(subSample)){
-    out <- subSampleData(out, samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
-    max_dt <- max(out$dt, na.rm = TRUE)
-    if (model == "overdamped") {
-      lambda <- 2 / (sigma^2 * max_dt)
-    } else {
-      lambda <- 1 / (sigma^2 * max_dt^2)
-    }
-    attr(out, "lambda") <- lambda
-  }
+    # Capture the original maximum time step before degrading the data
+    orig_mean_dt <- mean(out$dt, na.rm = TRUE)
 
-  if(!is.null(barrier)) message("   Auto-scaling barrier lambda based on true simulation parameters: ", signif(lambda, 4))
+    out <- subSampleData(out, samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
+
+    # Capture the new maximum time step
+    new_mean_dt <- mean(out$dt, na.rm = TRUE)
+
+    # Calculate exact stability ceilings for both time steps to find the exact scaling ratio
+    if (model == "overdamped") {
+      L_orig <- 2 / (sigma^2 * orig_mean_dt)
+      L_new <- 2 / (sigma^2 * new_mean_dt)
+    } else {
+      # Underdamped exact analytical stability limits
+      num_orig <- (gamma^2) * (1 - exp(-gamma * orig_mean_dt))
+      den_orig <- (sigma^2) * (1 - exp(-gamma * orig_mean_dt) - (gamma * orig_mean_dt * exp(-gamma * orig_mean_dt)))
+      L_orig <- num_orig / den_orig
+
+      num_new <- (gamma^2) * (1 - exp(-gamma * new_mean_dt))
+      den_new <- (sigma^2) * (1 - exp(-gamma * new_mean_dt) - (gamma * new_mean_dt * exp(-gamma * new_mean_dt)))
+      L_new <- num_new / den_new
+    }
+
+    effective_ratio <- L_new / L_orig
+
+    # Scale the true penalty to find the exact equivalent effective penalty
+    effective_lambda <- lambda * effective_ratio
+
+    attr(out, "lambda") <- effective_lambda
+
+    if(!is.null(barrier) & isTRUE(subSample$samplingRate>1)) {
+      message(sprintf("   Subsampling degraded temporal resolution. Effective lambda: %.4f", effective_lambda))
+    }
+  }
 
   return(out)
 }
@@ -301,8 +327,20 @@ simLangevin.fitLangevin <- function(model,
   if (is.null(data) || !inherits(data,"dataLangevin")) stop("data must be a dataLangevin object.")
   if (nrow(data) == 0) stop("data contains no observations.")
 
+  time.unit <- attr(data, "time.unit")
+
+  if (is.character(timeStep)) {
+    if (!inherits(data$date, c("POSIXt", "Date"))) {
+      stop("'timeStep' can only be a character string (e.g., '1 hour') if the 'date' column is POSIXt or Date.")
+    }
+    if (is.null(time.unit)) time.unit <- "secs" # Fallback if missing
+
+    # Safely convert the string into a numeric value scaled to the model's time.unit
+    timeStep <- as.numeric(as.difftime(timeStep), units = time.unit)
+  }
+
   if (!conditional && (!is.finite(timeStep) || timeStep <= 0)) {
-    stop("timeStep should be greater than zero.")
+    stop("timeStep should be a valid string (e.g., '1 hour') or numeric value greater than zero.")
   }
 
   fit <- model

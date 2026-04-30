@@ -373,3 +373,17 @@ List measurementError_LS_rcpp(DataFrame data,
                         Named("x.err") = x_err_vec, Named("y.err") = y_err_vec);
   }
 }
+
+// [[Rcpp::export]]
+NumericVector extract_sdf_rcpp(NumericMatrix pts,
+                               NumericMatrix barrier_dist,
+                               NumericVector raster_extent,
+                               NumericVector raster_resolution) {
+  int n = pts.nrow();
+  NumericVector out(n);
+  arma::mat grid = Rcpp::as<arma::mat>(barrier_dist);
+  for(int i=0; i<n; i++) {
+    out[i] = get_bilinear_val(pts(i,0), pts(i,1), grid, raster_extent, raster_resolution);
+  }
+  return out;
+}

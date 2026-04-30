@@ -113,7 +113,7 @@ test_that("residuals handles individual track failures gracefully without crashi
 
   # need to update the fit object's signature so it allows this
   bad_fit <- fit_base
-  bad_fit$signatures$data <- langevinSSM:::get_data_signature(bad_dat)
+  bad_fit$signatures$data <- get_data_signature(bad_dat)
 
   # Expect a warning that Track 2 didn't have enough observations
   expect_warning(

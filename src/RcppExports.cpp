@@ -66,6 +66,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// extract_sdf_rcpp
+NumericVector extract_sdf_rcpp(NumericMatrix pts, NumericMatrix barrier_dist, NumericVector raster_extent, NumericVector raster_resolution);
+RcppExport SEXP _langevinSSM_extract_sdf_rcpp(SEXP ptsSEXP, SEXP barrier_distSEXP, SEXP raster_extentSEXP, SEXP raster_resolutionSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type pts(ptsSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type barrier_dist(barrier_distSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type raster_extent(raster_extentSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type raster_resolution(raster_resolutionSEXP);
+    rcpp_result_gen = Rcpp::wrap(extract_sdf_rcpp(pts, barrier_dist, raster_extent, raster_resolution));
+    return rcpp_result_gen;
+END_RCPP
+}
 // simulate_regionprob_cpp
 arma::mat simulate_regionprob_cpp(int nSims, int n_cells, int n_layers, int n_covs, const arma::mat& beta_draws, const Rcpp::List& cov_mats_list, const arma::mat& mask_mat, bool show_progress);
 RcppExport SEXP _langevinSSM_simulate_regionprob_cpp(SEXP nSimsSEXP, SEXP n_cellsSEXP, SEXP n_layersSEXP, SEXP n_covsSEXP, SEXP beta_drawsSEXP, SEXP cov_mats_listSEXP, SEXP mask_matSEXP, SEXP show_progressSEXP) {

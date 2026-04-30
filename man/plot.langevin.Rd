@@ -54,7 +54,7 @@ plotUD(
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
 
-\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{maskBarrier = TRUE}.}
+\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{barrier} is provided.}
 
 \item{log}{Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.}
 

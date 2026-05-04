@@ -5,7 +5,6 @@
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
 #' @param fit A \code{fitLangevin} object return by \code{\link{fitLangevin}}.
 #' @param beta Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.
-#' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.
 #' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically.
 #' @param log Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.
 #' @param nSims Integer. Number of draws from the covariance matrix to use for estimating Monte Carlo uncertainty in the UD. If \code{nSims > 0}, the returned raster stack will include additional layers for simulated SE and CV. Default: \code{0}.
@@ -21,13 +20,15 @@
 #' @importFrom stats setNames
 #' @importFrom utils setTxtProgressBar txtProgressBar
 #' @export
-getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, log = TRUE, nSims = 0, show_progress = TRUE, plot = TRUE, maskBarrier = FALSE) {
+getUD <- function(spatialCovs, fit, beta, lambda = NULL, log = TRUE, nSims = 0, show_progress = TRUE, plot = TRUE, maskBarrier = FALSE) {
   if((missing(fit) & missing(beta)) | (!missing(fit) & !missing(beta))) stop("Either 'fit' or 'beta' must be provided, but not both.")
   if(!missing(fit)) verify_signatures(fit, spatialCovs = spatialCovs)
 
   if(!missing(fit)) {
     barrier <- fit$conditions$barrier
     lambda <- fit$conditions$lambda
+  } else {
+    barrier <- .find_barrier(spatialCovs)
   }
 
   if(missing(beta)) {
@@ -43,12 +44,10 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, log = T
   }
 
   if (!is.null(barrier)) {
-    if (!is.character(barrier) || length(barrier) != 1) stop("'barrier' must be a single character string. If you have multiple masks, combine them into a single SpatRaster before fitting.")
     if (!(barrier %in% names(spatialCovs))) stop("The 'barrier' name must exist in 'spatialCovs'.")
 
     if (is.null(lambda)) {
-      stop("To plot a barrier without a fitted model ('fit'), you must manually specify 'lambda'.\n",
-           "    To investigate SDE stability limits, set lambda = 2 / (sigma^2 * max_dt).")
+      stop("To plot a barrier without a fitted model ('fit'), you must manually specify 'lambda'.")
     }
 
     if (!is.numeric(lambda) || length(lambda) != 1) stop("'lambda' must be a single numeric value.")
@@ -63,15 +62,13 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, log = T
     else stop("The provided model ('fit') does not contain a covariance matrix.")
   }
 
-  .validate_barrier(barrier, spatialCovs)
   if (!is.null(barrier)) {
-    if (is.null(lambda)) stop("To plot a barrier without a fitted model ('fit'), you must manually specify 'lambda'.\n    To investigate SDE stability limits, set lambda = 2 / (sigma^2 * max_dt).")
+    if (is.null(lambda)) stop("To plot a barrier without a fitted model ('fit'), you must manually specify 'lambda'.")
     .validate_lambda(lambda)
   }
 
   if (!is.null(barrier)) {
-    barrier_sdf <- .get_barrier_sdf(barrier, spatialCovs)
-    spatialCovs[[barrier]] <- barrier_sdf
+    barrier_sdf <- spatialCovs[[barrier]]
   }
 
   mod_spatialCovs <- spatialCovs
@@ -116,7 +113,7 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, log = T
   }
 
   names(ud_base) <- rep(base_name, terra::nlyr(ud_base))
-  if (plot) print(plotUD(ud_base, log = log, maskBarrier = maskBarrier, spatialCovs = spatialCovs, barrier = barrier))
+  if (plot) print(plotUD(ud_base, log = log, maskBarrier = maskBarrier, spatialCovs = spatialCovs))
 
   if (!can_calc_se && nSims == 0) return(ud_base)
 

@@ -65,7 +65,7 @@ for(isim in 1:nSims){
     d2c <- terra::setValues(cov1, dist2)
     names(d2c) <- "d2c"
 
-    covs <- list(cov1 = cov1, cov2 = cov2, d2c = d2c, coast_barrier = water_mask)
+    covs <- list(cov1 = cov1, cov2 = cov2, d2c = d2c, coast_barrier = prepBarrier(water_mask))
 
     sim_data <- tryCatch({
       out_data <- simLangevin(
@@ -75,14 +75,12 @@ for(isim in 1:nSims){
         nbAnimals = nbAnimals,
         obsPerAnimal = obsPerAnimal,
         timeStep = timeStep,
-        barrier = "coast_barrier",
         measurementError = measurementError,
         subSample = list(samplingRate=samplingRate, propMissing=propMissing)
       )
 
-      sdf_rast <- .get_barrier_sdf("coast_barrier", covs)
       pts <- cbind(out_data$x, out_data$y)
-      dist_vals <- terra::extract(sdf_rast, pts)[, 1]
+      dist_vals <- terra::extract(covs$coast_barrier, pts)[, 1]
       land_idx <- which(dist_vals <= 0)
 
       if (length(land_idx) == 0) stop("No observed locations on land. Resimulating...")
@@ -92,15 +90,14 @@ for(isim in 1:nSims){
 
   }
 
-  trueUD <- getUD(covs, beta=sim_pars$beta, barrier="coast_barrier", lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
+  trueUD <- getUD(covs, beta=sim_pars$beta, lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
-  fit <- tryCatch(fitLangevin_barrier(sim_data,spatialCovs=covs, barrier="coast_barrier", lambda_max = lambda_max, n_sims = 10, silent=TRUE),error=function(e) e)
+  fit <- tryCatch(fitLangevin_barrier(sim_data,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, silent=TRUE),error=function(e) e)
 
   fit_true <- tryCatch(fitLangevin(
     data = sim_data,
     model = "underdamped",
     spatialCovs = covs,
-    barrier = "coast_barrier",
     silent = TRUE
   ),error=function(e) e)
 

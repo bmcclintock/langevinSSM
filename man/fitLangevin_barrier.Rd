@@ -7,7 +7,6 @@
 fitLangevin_barrier(
   data,
   spatialCovs,
-  barrier,
   lambda_max = NULL,
   n_coarse = 3,
   n_fine = 4,
@@ -20,8 +19,6 @@ fitLangevin_barrier(
 \item{data}{A \code{dataLangevin} object containing the tracking data.}
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.}
-
-\item{barrier}{Character string specifying the name of the barrier mask within \code{spatialCovs}.}
 
 \item{lambda_max}{Numeric. The maximum barrier penalty to start the top-down search. If \code{NULL}, it is estimated from the empirical step variance.}
 
@@ -57,7 +54,7 @@ In Langevin dynamics, the force acting on the animal is the negative spatial gra
 
 Because \eqn{d(\boldsymbol{\mu})} is negative in the restricted zone, the equation produces a positive force that pushes the animal in the direction of the shortest path back to the unrestricted area (\eqn{\nabla d(\boldsymbol{\mu})}).
 
-The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if \code{barrier = "barrier"}). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{fitLangevin_barrier}} for a strategy to determine the optimal penalty).
+The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if barrier name in \code{spatialCovs} is "barrier"). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{fitLangevin_barrier}} for a strategy to determine the optimal penalty).
 
 \strong{Why a Grid Search?}
 The barrier penalty (\code{lambda}) cannot be estimated at the same time as the other movement parameters. To find the most appropriate penalty, this function uses a two-phase search to try and balance boundary enforcement with numerical stability.

@@ -9,7 +9,7 @@ r_ext <- ext(0, 10, 0, 10)
 mock_rast <- rast(nrows = 10, ncols = 10, ext = r_ext)
 terra::values(mock_rast) <- rep(c(0, 1), each = 50) # Bottom half water (0), Top half land (1)
 names(mock_rast) <- "coast_mask"
-mock_covs <- list(coast_mask = mock_rast)
+mock_covs <- list(coast_mask = suppressMessages(prepBarrier(mock_rast)))
 
 # Create a valid (but tiny) mock dataLangevin object
 mock_df <- data.frame(
@@ -31,15 +31,8 @@ test_that("fitLangevin_barrier fails fast on invalid data classes", {
   class(bad_df) <- "data.frame"
 
   expect_error(
-    fitLangevin_barrier(bad_df, mock_covs, barrier = "coast_mask"),
+    fitLangevin_barrier(bad_df, mock_covs),
     "'data' must be a dataLangevin object"
-  )
-})
-
-test_that("fitLangevin_barrier fails fast if barrier name is missing from spatialCovs", {
-  expect_error(
-    fitLangevin_barrier(mock_df, mock_covs, barrier = "non_existent_mask"),
-    regexp = "must exist"
   )
 })
 
@@ -48,7 +41,7 @@ test_that("fitLangevin_barrier fails fast on insufficient data for empirical cal
   class(tiny_df) <- c("dataLangevin", "data.frame")
 
   expect_error(
-    suppressMessages(fitLangevin_barrier(tiny_df, mock_covs, barrier = "coast_mask", lambda_max = NULL)),
+    suppressMessages(fitLangevin_barrier(tiny_df, mock_covs, lambda_max = NULL)),
     "Insufficient valid steps"
   )
 })
@@ -59,8 +52,8 @@ test_that("fitLangevin_barrier handles spatial overlap failure gracefully", {
   class(oob_df) <- c("dataLangevin", "data.frame")
 
   expect_error(
-    suppressMessages(fitLangevin_barrier(oob_df, mock_covs, barrier = "coast_mask", lambda_max = NULL)),
-    "All models in the coarse grid failed"
+    suppressMessages(fitLangevin_barrier(oob_df, mock_covs, lambda_max = NULL)),
+    "No valid spatial observations"
   )
 })
 
@@ -75,7 +68,7 @@ test_that("fitLangevin_barrier strictly enforces minimum data size even if lambd
   # Because empirical_sigma is required for lambda_min, the function
   # must fail fast regardless of whether lambda_max is supplied.
   expect_error(
-    suppressMessages(fitLangevin_barrier(tiny_df, mock_covs, barrier = "coast_mask", lambda_max = 50, n_coarse = 2, n_sims = 1)),
+    suppressMessages(fitLangevin_barrier(tiny_df, mock_covs, lambda_max = 50, n_coarse = 2, n_sims = 1)),
     regexp = "Insufficient valid steps"
   )
 })
@@ -83,7 +76,7 @@ test_that("fitLangevin_barrier strictly enforces minimum data size even if lambd
 test_that("fitLangevin_barrier handles total optimization failure gracefully", {
   # Use the valid mock_covs, but set lambda_max absurdly high to break numerical integration
   expect_error(
-    suppressMessages(fitLangevin_barrier(mock_df, mock_covs, barrier = "coast_mask",
+    suppressMessages(fitLangevin_barrier(mock_df, mock_covs,
                                          lambda_max = 1e6, n_coarse = 2, n_fine = 1, n_sims = 1)),
     "All models in the coarse grid failed"
   )
@@ -92,10 +85,32 @@ test_that("fitLangevin_barrier handles total optimization failure gracefully", {
 test_that("Initialization grids calculate safely without throwing internal NA/NaN warnings", {
   expect_warning(
     tryCatch(
-      suppressMessages(fitLangevin_barrier(mock_df, mock_covs, barrier = "coast_mask",
+      suppressMessages(fitLangevin_barrier(mock_df, mock_covs,
                                            n_coarse = 2, n_fine = 1, n_sims = 1)),
       error = function(e) NA
     ),
     regexp = NA
+  )
+})
+
+test_that("fitLangevin_barrier fails fast if no barrier attribute is found", {
+  # Strip the 'barLangevin' attribute from the mock covariates
+  untagged_covs <- mock_covs
+  attr(untagged_covs$coast_mask, "barLangevin") <- NULL
+
+  expect_error(
+    fitLangevin_barrier(mock_df, untagged_covs),
+    "No barrier found in 'spatialCovs'. Did you run prepBarrier"
+  )
+})
+
+test_that("fitLangevin_barrier fails fast if multiple barriers are tagged", {
+  # Duplicate the tagged barrier raster
+  multi_covs <- mock_covs
+  multi_covs$second_mask <- mock_covs$coast_mask
+
+  expect_error(
+    fitLangevin_barrier(mock_df, multi_covs),
+    "Multiple rasters in 'spatialCovs' are tagged as barriers"
   )
 })

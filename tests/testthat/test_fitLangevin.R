@@ -784,7 +784,7 @@ test_that("fitLangevin pushes latent locations out of restricted barrier zones",
   r <- terra::rast(nrows = 20, ncols = 20, ext = c(-100, 200, -100, 200))
   terra::values(r) <- ifelse(terra::crds(r)[, "x"] >= 50, 1, 0)
   names(r) <- "coast_barrier"
-  spatialCovs <- list(coast_barrier = r)
+  spatialCovs <- list(coast_barrier = suppressMessages(prepBarrier(r)))
 
   # create track data
   # Obs 3 is deliberately placed deep in the restricted zone (x = 30)
@@ -816,7 +816,6 @@ test_that("fitLangevin pushes latent locations out of restricted barrier zones",
       spatialCovs = spatialCovs,
       par = init_par,
       map = m,
-      barrier = "coast_barrier",
       lambda = 100, # Strong boundary penalty
       silent = TRUE
     )

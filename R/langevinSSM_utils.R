@@ -684,29 +684,6 @@ boundsWarning <- function(fit, as_warning = TRUE) {
 
 # --- Internal Validation & Processing Helpers ---
 
-.validate_barrier <- function(barrier, spatialCovs) {
-  if (is.null(barrier)) return(invisible(NULL))
-
-  if (!is.character(barrier) || length(barrier) != 1) {
-    stop("'barrier' must be a single character string. If you have multiple masks, combine them into a single SpatRaster before fitting.")
-  }
-  if (!(barrier %in% names(spatialCovs))) {
-    stop("The 'barrier' name must exist in 'spatialCovs'.")
-  }
-
-  mask_rast <- spatialCovs[[barrier]]
-
-  if (terra::nlyr(mask_rast) > 1) {
-    stop("Barrier rasters must be static (single layer).")
-  }
-
-  unq_vals <- stats::na.omit(terra::unique(mask_rast)[[1]])
-  if (!all(unq_vals %in% c(0, 1))) {
-    stop("Barrier raster(s) must only contain binary values (0 and 1).")
-  }
-  return(invisible(TRUE))
-}
-
 .validate_lambda <- function(lambda) {
   if (is.null(lambda)) return(invisible(NULL))
 
@@ -719,10 +696,19 @@ boundsWarning <- function(fit, as_warning = TRUE) {
   return(invisible(TRUE))
 }
 
-.get_barrier_sdf <- function(barrier, spatialCovs) {
-  if (is.null(barrier)) return(NULL)
-  # Positive allowed, negative prohibited
-  mask_rast <- spatialCovs[[barrier]]
-  terra::distance(mask_rast, target = 1) - terra::distance(mask_rast, target = 0)
+# Internal Helper: Scan spatialCovs for the barrier tag
+.find_barrier <- function(spatialCovs) {
+  barrier_name <- NULL
+
+  for (nm in names(spatialCovs)) {
+    if (isTRUE(attr(spatialCovs[[nm]], "barLangevin"))) {
+      if (!is.null(barrier_name)) {
+        stop("Multiple rasters in 'spatialCovs' are tagged as barriers. Only one barrier is supported.")
+      }
+      barrier_name <- nm
+    }
+  }
+
+  return(barrier_name) # returns NULL if no barrier is found
 }
 

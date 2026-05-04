@@ -8,7 +8,6 @@ getUD(
   spatialCovs,
   fit,
   beta,
-  barrier = NULL,
   lambda = NULL,
   log = TRUE,
   nSims = 0,
@@ -23,8 +22,6 @@ getUD(
 \item{fit}{A \code{fitLangevin} object return by \code{\link{fitLangevin}}.}
 
 \item{beta}{Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.}
-
-\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.}
 
 \item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically.}
 

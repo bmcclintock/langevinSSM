@@ -46,7 +46,6 @@ plotUD(
   log = TRUE,
   extent = NULL,
   time = NULL,
-  barrier = NULL,
   maskBarrier = FALSE,
   ...
 )
@@ -54,7 +53,7 @@ plotUD(
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
 
-\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{barrier} is provided.}
+\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.}
 
 \item{log}{Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.}
 
@@ -73,8 +72,6 @@ plotUD(
 \item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.}
 
 \item{tracks}{Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).}
-
-\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. Required by \code{plotUD} if \code{maskBarrier = TRUE}.}
 }
 \value{
 A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.

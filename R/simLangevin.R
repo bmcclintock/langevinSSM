@@ -16,7 +16,6 @@
 #' @param initialPosition Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.
 #' @param measurementError A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.
 #' @param subSample List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).
-#' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.
 #' @param lambda Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.
 #'
 #' @param data The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.
@@ -104,9 +103,9 @@
 #'                                        mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 #' names(coast_barrier) <- "coast_barrier"
 #'
-#' # add the mask to the spatial covariates list
+#' # convert mask to SDF and add to the spatial covariates list
 #' exampleCovs_barrier <- exampleCovs
-#' exampleCovs_barrier$coast_barrier <- coast_barrier
+#' exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
 #'
 #' # add a beta coefficient for the barrier to the parameter list
 #' par_barrier <- par
@@ -116,7 +115,6 @@
 #' set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
 #' simDat_barrier <- simLangevin(par = par_barrier,
 #'                               spatialCovs = exampleCovs_barrier,
-#'                               barrier = "coast_barrier",
 #'                               measurementError = list(smaj.sd = 1.5,
 #'                                                       smin.sd = 0.75,
 #'                                                       eor.lim = c(0,180)))
@@ -149,20 +147,16 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
                                 initialPosition,
                                 measurementError = NULL,
                                 subSample = NULL,
-                                barrier = NULL,
                                 lambda = NULL,
                                 ...) {
 
   model <- match.arg(model)
 
-  .validate_barrier(barrier, spatialCovs)
   .validate_lambda(lambda)
 
-  orig_spatialCovs <- spatialCovs
+  barrier <- .find_barrier(spatialCovs)
   if (!is.null(barrier)) {
-    barrier_sdf <- .get_barrier_sdf(barrier, spatialCovs)
-    spatialCovs[[barrier]] <- barrier_sdf
-    barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE)
+    barrier_dist_mat <- terra::as.matrix(spatialCovs[[barrier]], wide = TRUE)
   } else {
     barrier_dist_mat <- matrix(0, 1, 1)
   }
@@ -229,11 +223,11 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
 
   # --- 4. Initial Position ---
   init_pos_sim <- if (missing(initialPosition)) {
-    getInitialPosition(nbAnimals = nbAnimals, spatialCovs = orig_spatialCovs,
-                       beta = beta, barrier = barrier, lambda = lambda)
+    getInitialPosition(nbAnimals = nbAnimals, spatialCovs = spatialCovs,
+                       beta = beta, lambda = lambda)
   } else {
     getInitialPosition(nbAnimals = nbAnimals, initialPosition = initialPosition,
-                       spatialCovs = orig_spatialCovs, beta = beta)
+                       spatialCovs = spatialCovs, beta = beta, lambda = lambda)
   }
 
   out <- simulate_langevin_cpp(

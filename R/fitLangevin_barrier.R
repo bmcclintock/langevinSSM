@@ -7,7 +7,6 @@
 #'
 #' @param data A \code{dataLangevin} object containing the tracking data.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
-#' @param barrier Character string specifying the name of the barrier mask within \code{spatialCovs}.
 #' @param lambda_max Numeric. The maximum barrier penalty to start the top-down search. If \code{NULL}, it is estimated from the empirical step variance.
 #' @param n_coarse Integer. The number of linearly spaced penalties to evaluate in the coarse grid. Default: \code{3}.
 #' @param n_fine Integer. The number of linearly spaced penalties to evaluate in the fine grid around the coarse winner. Default: \code{4}.
@@ -48,10 +47,12 @@
 #'
 #' @return A \code{fitLangevin} object that includes the most optimal penalty from the grid search.
 #' @export
-fitLangevin_barrier <- function(data, spatialCovs, barrier, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ...) {
+fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ...) {
 
   if (!inherits(data, "dataLangevin")) stop("'data' must be a dataLangevin object.")
-  .validate_barrier(barrier, spatialCovs)
+  barrier <- .find_barrier(spatialCovs)
+  if (is.null(barrier)) stop("No barrier found in 'spatialCovs'. Did you run prepBarrier()?")
+  sdf_rast <- spatialCovs[[barrier]]
 
   args <- list(...)
   model_type <- if (!is.null(args$model)) match.arg(args$model, c("underdamped", "overdamped")) else "underdamped"
@@ -60,8 +61,6 @@ fitLangevin_barrier <- function(data, spatialCovs, barrier, lambda_max = NULL, n
   checkErrorData(data, coord)
   max_dt <- max(data$dt, na.rm = TRUE)
   if (max_dt <= 0) max_dt <- 1
-
-  sdf_rast <- .get_barrier_sdf(barrier, spatialCovs)
 
   # --- Pre-calculate Observed Distances for PPC Scoring ---
   obs_pts <- cbind(data[[coord[1]]], data[[coord[2]]])
@@ -152,7 +151,6 @@ fitLangevin_barrier <- function(data, spatialCovs, barrier, lambda_max = NULL, n
     fit_args <- args
     fit_args$data <- data
     fit_args$spatialCovs <- spatialCovs
-    fit_args$barrier <- barrier
     fit_args$lambda <- lam
     fit_args$silent <- TRUE
 

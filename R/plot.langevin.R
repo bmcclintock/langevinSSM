@@ -11,8 +11,7 @@
 #' }
 #'
 #' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.
-#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background. Required by \code{plotUD} if \code{barrier} is provided.
-#' @param barrier Optional character string specifying the name of the barrier mask within \code{spatialCovs}. Required by \code{plotUD} if \code{maskBarrier = TRUE}.
+#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
 #' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
@@ -87,10 +86,10 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   # --- Prepare UD Raster ---
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
-  barrier <- x$conditions$barrier
+  barrier <- .find_barrier(spatialCovs)
   lambda <- x$conditions$lambda
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier = barrier, lambda = lambda, log = log, plot = FALSE)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, lambda = lambda, log = log, plot = FALSE)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
@@ -174,7 +173,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     track_lines <- c("True" = "solid")
   }
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = log, plot = FALSE)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, lambda = lambda, log = log, plot = FALSE)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
@@ -395,11 +394,12 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
 #' @details Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
 #' @rdname plot.langevin
 #' @export
-plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL, barrier = NULL, maskBarrier = FALSE, ...) {
+plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL, maskBarrier = FALSE, ...) {
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
 
-  if(!is.null(barrier) && is.null(spatialCovs)) stop("If 'barrier' is provided, 'spatialCovs' must also be provided.")
+  if(!is.null(spatialCovs)) barrier <- .find_barrier(spatialCovs)
+  else barrier <- NULL
 
   if (maskBarrier && !is.null(barrier) && !is.null(spatialCovs)) {
     sp_mask <- spatialCovs[[barrier]]

@@ -18,7 +18,6 @@ simLangevin(model, ...)
   initialPosition,
   measurementError = NULL,
   subSample = NULL,
-  barrier = NULL,
   lambda = NULL,
   ...
 )
@@ -54,8 +53,6 @@ simLangevin(model, ...)
 
 \item{subSample}{List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
 
-\item{barrier}{Optional character string specifying the name of the barrier mask within \code{spatialCovs}. This must be a binary raster where 1 indicates allowed movement areas and 0 indicates restricted areas. See Details.}
-
 \item{lambda}{Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.}
 
 \item{data}{The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.}
@@ -88,7 +85,7 @@ The \code{conditional} and \code{jointPrecision} arguments define four possible 
 
 \strong{Barrier Constraints:}
 When a \code{barrier} is specified, the model restricts animal movement using a physical penalty method for stochastic differential equations (SDEs).
-Internally, the binary mask provided in \code{spatialCovs[[barrier]]} (where 1 indicates unrestricted areas and 0 indicates restricted areas) is converted into a continuous signed distance function (SDF), denoted as \eqn{d(\boldsymbol{\mu})}. Distance is calculated as positive in the unrestricted areas (allowed space) and negative in the restricted areas.
+The continuous signed distance function (SDF) created by \code{\link{prepBarrier}}, denoted as \eqn{d(\boldsymbol{\mu})}, is calculated as positive in the unrestricted areas (allowed space) and negative in the restricted areas.
 
 To prevent the animal from entering the restricted zone (where \eqn{d(\boldsymbol{\mu}) \le 0}), the model applies a harmonic oscillator penalty, treating the boundary like a spring. The potential energy (\eqn{U}) of this spring is a quadratic function of the distance traveled into the restricted zone:
 \deqn{U(\boldsymbol{\mu}) = \frac{1}{2} \lambda d(\boldsymbol{\mu})^2}
@@ -98,7 +95,7 @@ In Langevin dynamics, the force acting on the animal is the negative spatial gra
 
 Because \eqn{d(\boldsymbol{\mu})} is negative in the restricted zone, the equation produces a positive force that pushes the animal in the direction of the shortest path back to the unrestricted area (\eqn{\nabla d(\boldsymbol{\mu})}).
 
-The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if \code{barrier = "barrier"}). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{fitLangevin_barrier}} for a strategy to determine the optimal penalty).
+The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if barrier name in \code{spatialCovs} is "barrier"). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{fitLangevin_barrier}} for a strategy to determine the optimal penalty).
 
 \strong{Barrier Penalty Auto-Scaling:}
 When \code{lambda = NULL} and a \code{barrier} is provided, \code{simLangevin} automatically calculates the maximum theoretical stability limit for the barrier penalty based on the SDE numerical integration limits. Because the true generative speed parameter (\eqn{\sigma}) and the maximum simulation time step (\eqn{\max(\Delta t)}) are known, the optimal spring constant can be deterministically calculated to create the "hardest" possible boundary that will not cause the numerical solver to explode.
@@ -162,9 +159,9 @@ terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"] >=
                                        mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 names(coast_barrier) <- "coast_barrier"
 
-# add the mask to the spatial covariates list
+# convert mask to SDF and add to the spatial covariates list
 exampleCovs_barrier <- exampleCovs
-exampleCovs_barrier$coast_barrier <- coast_barrier
+exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
 
 # add a beta coefficient for the barrier to the parameter list
 par_barrier <- par
@@ -174,7 +171,6 @@ par_barrier$beta <- c(par_barrier$beta, -0.2)
 set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               spatialCovs = exampleCovs_barrier,
-                              barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 1.5,
                                                       smin.sd = 0.75,
                                                       eor.lim = c(0,180)))

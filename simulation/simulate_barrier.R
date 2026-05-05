@@ -10,7 +10,7 @@ propMissing <- 0
 nbAnimals <- 5
 obsPerAnimal <- 5000
 covRange <- c(0.1, 0.5)
-lambda_max <- 4.5
+lambda_max <- NULL
 
 measurementError = list(smaj.sd = 1.5, smin.sd = 0.75)
 
@@ -38,6 +38,7 @@ for(isim in 1:nSims){
     cov2 <- simCov(sca = sca, irange = runif(1, covRange[1], covRange[2]), sigma2 = 0.1, kappa = 0.5)
     coords <- terra::crds(cov1)
 
+    # simulate complex coastline and islands
     r <- terra::rast(nrows = 1200, ncols = 1200, ext = ext(cov1))
     terra::values(r) <- runif(terra::ncell(r))
     w_size <- sample(seq(11, 21, by = 2), 1)
@@ -92,7 +93,7 @@ for(isim in 1:nSims){
 
   trueUD <- getUD(covs, beta=sim_pars$beta, lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
-  fit <- tryCatch(fitLangevin_barrier(sim_data,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, silent=TRUE),error=function(e) e)
+  fit <- tryCatch(fitLangevin_barrier(sim_data,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, n_coarse=5, n_fine=5, ncores = 5, silent=TRUE),error=function(e) e)
 
   fit_true <- tryCatch(fitLangevin(
     data = sim_data,

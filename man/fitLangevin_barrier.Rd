@@ -12,6 +12,7 @@ fitLangevin_barrier(
   n_fine = 4,
   n_sims = 5,
   timeStep = 0.01,
+  ncores = 1,
   ...
 )
 }
@@ -30,6 +31,8 @@ fitLangevin_barrier(
 
 \item{timeStep}{Time step to use for the simulation(s). Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Default: 0.01.}
 
+\item{ncores}{Integer. Number of cores to use for parallel processing of the search grids. Default: \code{1} (sequential).}
+
 \item{...}{Additional arguments passed to \code{\link{fitLangevin}}.}
 }
 \value{
@@ -44,7 +47,7 @@ search grid to identify the most optimal penalty (\code{lambda}), followed by a 
 \details{
 \strong{Barrier Constraints:}
 When a \code{barrier} is specified, the model restricts animal movement using a physical penalty method for stochastic differential equations (SDEs).
-Internally, the binary mask provided in \code{spatialCovs[[barrier]]} (where 1 indicates unrestricted areas and 0 indicates restricted areas) is converted into a continuous signed distance function (SDF), denoted as \eqn{d(\boldsymbol{\mu})}. Distance is calculated as positive in the unrestricted areas (allowed space) and negative in the restricted areas.
+The continuous signed distance function (SDF) created by \code{\link{prepBarrier}}, denoted as \eqn{d(\boldsymbol{\mu})}, is calculated as positive in the unrestricted areas (allowed space) and negative in the restricted areas.
 
 To prevent the animal from entering the restricted zone (where \eqn{d(\boldsymbol{\mu}) \le 0}), the model applies a harmonic oscillator penalty, treating the boundary like a spring. The potential energy (\eqn{U}) of this spring is a quadratic function of the distance traveled into the restricted zone:
 \deqn{U(\boldsymbol{\mu}) = \frac{1}{2} \lambda d(\boldsymbol{\mu})^2}

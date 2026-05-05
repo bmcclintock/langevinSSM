@@ -25,6 +25,7 @@ LinkingTo:
     RcppEigen
 Suggests:
     doFuture,
+    doRNG,
     fields,
     foreach,
     future,

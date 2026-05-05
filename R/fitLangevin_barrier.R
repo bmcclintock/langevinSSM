@@ -12,6 +12,7 @@
 #' @param n_fine Integer. The number of linearly spaced penalties to evaluate in the fine grid around the coarse winner. Default: \code{4}.
 #' @param n_sims Integer. The number of repeated simulations to run per penalty to calculate the overall (median) KS score. Default: \code{5}.
 #' @param timeStep Time step to use for the simulation(s). Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Default: 0.01.
+#' @param ncores Integer. Number of cores to use for parallel processing of the search grids. Default: \code{1} (sequential).
 #' @param ... Additional arguments passed to \code{\link{fitLangevin}}.
 #'
 #' @template barrier_details
@@ -46,8 +47,9 @@
 #' The similarity between the simulated and real distances is measured using the two-sample Kolmogorov-Smirnov (KS) test. The KS test provides a score between 0 and 1, where lower scores indicate a closer match to the real data. Because simulations involve randomness, the algorithm runs \code{n_sims} simulations per penalty and uses the \strong{median KS score}.
 #'
 #' @return A \code{fitLangevin} object that includes the most optimal penalty from the grid search.
+#' @importFrom terra wrap unwrap
 #' @export
-fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ...) {
+fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ncores = 1, ...) {
 
   if (!inherits(data, "dataLangevin")) stop("'data' must be a dataLangevin object.")
   barrier <- .find_barrier(spatialCovs)
@@ -62,15 +64,25 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
   max_dt <- max(data$dt, na.rm = TRUE)
   if (max_dt <= 0) max_dt <- 1
 
+  # --- Setup Parallel Processing ---
+  if (ncores > 1) {
+    if (!requireNamespace("foreach", quietly = TRUE) || !requireNamespace("doFuture", quietly = TRUE) || !requireNamespace("future", quietly = TRUE)  || !requireNamespace("doRNG", quietly = TRUE)) {
+      stop("Packages 'foreach', 'future', 'doFuture', and 'doRNG' are required for multicore processing. Please install them.")
+    } else {
+      oldDoPar <- doFuture::registerDoFuture()
+      on.exit(with(oldDoPar, foreach::setDoPar(fun=fun, data=data, info=info)), add = TRUE)
+      future::plan(future::multisession, workers = ncores)
+      `%loop%` <- doRNG::`%dorng%`
+    }
+  } else {
+    if (!requireNamespace("foreach", quietly = TRUE)) stop("Package 'foreach' is required. Please install it.")
+    `%loop%` <- foreach::`%do%`
+  }
+
   # --- Pre-calculate Observed Distances for PPC Scoring ---
   obs_pts <- cbind(data[[coord[1]]], data[[coord[2]]])
 
-  # Extract raster metadata once for the fast Rcpp extractor
-  r_ext <- as.numeric(as.vector(terra::ext(sdf_rast)))
-  r_res <- as.numeric(as.vector(terra::res(sdf_rast)))
-  b_mat <- terra::as.matrix(sdf_rast, wide = TRUE)
-
-  obs_dist <- extract_sdf_rcpp(obs_pts, b_mat, r_ext, r_res)
+  obs_dist <- terra::extract(sdf_rast, obs_pts)[, barrier]
   obs_dist <- obs_dist[!is.na(obs_dist)]
 
   if (length(obs_dist) == 0) stop("No valid spatial observations to calculate distance.")
@@ -126,7 +138,6 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
       lambda_max <- num / den
     }
 
-    #lambda_max <- lambda_max * 0.99
     message("     'lambda_max' was not provided. Using data-driven empirical stability limit: ",round(lambda_max,4),".\n     Note that measurement error can break autocorrelation and cause the empirical limit to be inflated.\n")
   }
 
@@ -144,13 +155,21 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
   message(sprintf("    Lower boundary: %.6f", lambda_min))
   message(sprintf("    Linear coarse grid: [%.4f down to %.6f] with %d steps\n", lambda_max, lambda_min, n_coarse))
 
+  # --- Safely serialize SpatRasters for parallel export ---
+  spatialCovs_wrapped <- lapply(spatialCovs, terra::wrap)
+
   # --- Helper: Model Fitting & Scoring Function ---
   score_lambda <- function(lam) {
     message(sprintf("  -> Testing lambda = %.4f...", lam))
 
+    # Unwrap the rasters inside the worker node so they are valid C++ pointers again
+    spatialCovs_worker <- lapply(spatialCovs_wrapped, terra::unwrap)
+
+    attr(spatialCovs_worker[[barrier]], "barLangevin") <- TRUE # restore barLangevin attribute
+
     fit_args <- args
     fit_args$data <- data
-    fit_args$spatialCovs <- spatialCovs
+    fit_args$spatialCovs <- spatialCovs_worker
     fit_args$lambda <- lam
     fit_args$silent <- TRUE
 
@@ -162,7 +181,8 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
       return(list(score = Inf, fit = NULL))
     }
 
-    sim_args <- list(model = fit, data = data, spatialCovs = spatialCovs, timeStep = timeStep, conditional = FALSE)
+    # Pass the unwrapped covariates to the simulator
+    sim_args <- list(model = fit, data = data, spatialCovs = spatialCovs_worker, timeStep = timeStep, conditional = FALSE)
 
     ks_scores <- c()
     err_msgs <- c()
@@ -177,7 +197,9 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
       }
 
       sim_pts <- cbind(sim_data[[coord[1]]], sim_data[[coord[2]]])
-      sim_dist <- suppressWarnings(terra::extract(sdf_rast, sim_pts, method = "bilinear"))[, 1]
+
+      # Extract directly using the safely unwrapped raster
+      sim_dist <- terra::extract(spatialCovs_worker[[barrier]], sim_pts)[, barrier]
       sim_dist <- sim_dist[!is.na(sim_dist)]
 
       if(length(sim_dist) == 0) {
@@ -204,9 +226,8 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
   message(" PHASE I: Top-Down Coarse Linear Search")
   message("==================================================")
 
-  coarse_results <- list()
-  for (i in seq_along(coarse_grid)) {
-    coarse_results[[i]] <- score_lambda(coarse_grid[i])
+  coarse_results <- foreach::foreach(i = seq_along(coarse_grid), .packages = c("terra", "stats", "langevinSSM")) %loop% {
+    score_lambda(coarse_grid[i])
   }
 
   coarse_scores <- sapply(coarse_results, function(x) x$score)
@@ -238,9 +259,12 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
   # Exclude the coarse winner to prevent redundant fitting and simulation noise
   fine_grid <- fine_grid[abs(fine_grid - best_coarse_lam) > 1e-8]
 
-  fine_results <- list()
-  for (i in seq_along(fine_grid)) {
-    fine_results[[i]] <- score_lambda(fine_grid[i])
+  if (length(fine_grid) > 0) {
+    fine_results <- foreach::foreach(i = seq_along(fine_grid), .packages = c("terra", "stats", "langevinSSM")) %loop% {
+      score_lambda(fine_grid[i])
+    }
+  } else {
+    fine_results <- list()
   }
 
   fine_scores <- sapply(fine_results, function(x) x$score)
@@ -267,5 +291,4 @@ fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse =
   message(sprintf("=================================================="))
 
   return(best_final_fit)
-
 }

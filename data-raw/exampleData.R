@@ -63,6 +63,48 @@ reg_prob <- regionProb(fit,
                        nSims = 1000)
 reg_prob
 
+# convert mask to SDF and add to the spatial covariates list
+coast_barrier <- exampleCovs[[1]]
+terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
+                                       >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+names(coast_barrier) <- "coast_barrier"
+exampleCovs_barrier <- exampleCovs
+exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+
+# add a beta coefficient for the barrier to the parameter list
+par_barrier <- examplePar
+par_barrier$beta <- c(par_barrier$beta, -0.2)
+
+# simulate the data
+set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
+simDat_barrier <- simLangevin(par = par_barrier,
+                              nbAnimals = 3,
+                              spatialCovs = exampleCovs_barrier,
+                              measurementError = list(smaj.sd = 1.5,
+                                                      smin.sd = 0.75,
+                                                      eor.lim = c(0,180)))
+
+# Because simDat_barrier is a simLangevin object, fitLangevin will automatically
+# detect and use the exact barrier penalty (lambda) that generated the data
+fit_barrier <- fitLangevin(data = simDat_barrier,
+                           spatialCovs = exampleCovs_barrier,
+                           silent = TRUE)
+fit_barrier
+
+plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskBarrier=TRUE)
+
+
+res_barrier <- residuals(fit_barrier,simDat_barrier, exampleCovs_barrier, run_tests = TRUE, ncores=nbAnimals)
+
+
+
+fit_barrier_ks <- tuneBarrier(data = simDat_barrier,
+                              spatialCovs = exampleCovs_barrier,
+                              silent = TRUE)
+
+plot(fit_barrier_ks,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskBarrier=TRUE)
+
+
 start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")
 exampleDat$date <- start_time + (exampleDat$date * 3600)
 exampleDat$lc <- NA_character_

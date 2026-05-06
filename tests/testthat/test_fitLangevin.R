@@ -832,3 +832,44 @@ test_that("fitLangevin pushes latent locations out of restricted barrier zones",
   # verify the valid observations were not drastically moved
   expect_true(all(mu_est$mu.x[c(1, 2, 4, 5)] > 55))
 })
+
+test_that("fitLangevin prevents C++ crashes on degenerate data", {
+
+  # 1. Setup deterministic track (a perfectly straight, perfectly spaced line)
+  r <- list(habitat = get_valid_raster())
+
+  df <- data.frame(
+    id = as.factor(rep("A", 6)),
+    date = as.POSIXct("2024-01-01 12:00:00", tz = "UTC") + (0:5) * 3600,
+    dt = c(0, 1, 1, 1, 1, 1),
+    x = c(10, 20, 30, 40, 50, 60),
+    y = c(10, 20, 30, 40, 50, 60),
+    x.err = rep(0.1, 6),
+    y.err = rep(0.1, 6),
+    smaj = NA, smin = NA, eor = NA, lc = as.factor("G")
+  )
+  attr(df, "time.unit") <- "hours"
+  class(df) <- c("dataLangevin", "data.frame")
+
+  init_par <- list(beta = 0, sigma = 5, gamma = 1)
+
+  # 2. Fit the model.
+  # We suppress all warnings because a deterministic track will inevitably trigger
+  # 'NA/NaN function evaluation', 'false convergence', and 'out_of_bounds' warnings.
+  # We only care that the C++ matrix solver doesn't crash the R session.
+  suppressWarnings(suppressMessages({
+    fit <- fitLangevin(
+      data = df,
+      model = "underdamped",
+      spatialCovs = r,
+      par = init_par,
+      silent = TRUE
+    )
+  }))
+
+  # 3. Verify the C++ code completed and returned the object
+  expect_s3_class(fit, "fitLangevin")
+
+  # 4. Verify nlminb aborted the flat likelihood surface (Code 1 = false convergence)
+  expect_equal(fit$convergence, 1)
+})

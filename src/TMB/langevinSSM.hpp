@@ -212,8 +212,8 @@ Type langevinSSM(objective_function<Type>* obj)
 
           // Construct variance-covariance matrix
           matrix<Type> Sigma(2,2);
-          Sigma(0,0) = var_x + Type(1e-6);
-          Sigma(1,1) = var_v + Type(1e-6);
+          Sigma(0,0) = var_x;
+          Sigma(1,1) = var_v;
           Sigma(0,1) = cov_xv;
           Sigma(1,0) = cov_xv;
 
@@ -333,8 +333,8 @@ Type langevinSSM(objective_function<Type>* obj)
       }
 
       // TMB oneStepPredict Bivariate Decomposition
-      Type varX = cov_obs(0,0) + Type(1e-6);
-      Type varY = cov_obs(1,1) + Type(1e-6);
+      Type varX = cov_obs(0,0);
+      Type varY = cov_obs(1,1);
       Type covXY = cov_obs(0,1);
 
       Type sdX = sqrt(varX);

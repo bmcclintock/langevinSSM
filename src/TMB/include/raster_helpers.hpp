@@ -43,32 +43,36 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
                              const VECTOR &raster_extent,
                              int n_covs) {
 
-  // Use round() to prevent floating point inaccuracy truncation
-  int n_cols = static_cast<int>(round(AS_DOUBLE((VEC_ELT(raster_extent, 1) - VEC_ELT(raster_extent, 0)) / VEC_ELT(raster_resolution, 0))));
-  int n_rows = static_cast<int>(round(AS_DOUBLE((VEC_ELT(raster_extent, 3) - VEC_ELT(raster_extent, 2)) / VEC_ELT(raster_resolution, 1))));
+  TYPE res_x = VEC_ELT(raster_resolution, 0);
+  TYPE res_y = VEC_ELT(raster_resolution, 1);
 
-  TYPE x_prop = (x - (VEC_ELT(raster_extent, 0) + VEC_ELT(raster_resolution, 0)/TYPE(2.0))) / VEC_ELT(raster_resolution, 0);
-  TYPE y_prop = (y - (VEC_ELT(raster_extent, 2) + VEC_ELT(raster_resolution, 1)/TYPE(2.0))) / VEC_ELT(raster_resolution, 1);
+  TYPE col_raw = (x - VEC_ELT(raster_extent, 0)) / res_x - TYPE(0.5);
+  TYPE row_raw = (VEC_ELT(raster_extent, 3) - y) / res_y - TYPE(0.5);
 
-  int col = static_cast<int>(floor(AS_DOUBLE(x_prop)));
-  int row = static_cast<int>(floor(AS_DOUBLE(y_prop)));
+#ifdef IS_RCPP_BUILD
+  int n_cols = static_cast<int>(round(AS_DOUBLE((VEC_ELT(raster_extent, 1) - VEC_ELT(raster_extent, 0)) / res_x)));
+  int n_rows = static_cast<int>(round(AS_DOUBLE((VEC_ELT(raster_extent, 3) - VEC_ELT(raster_extent, 2)) / res_y)));
+#else
+  // TMB uses integer dimensions provided via raster_coords if needed, or derived
+  int n_cols = static_cast<int>(round(AS_DOUBLE((VEC_ELT(raster_extent, 1) - VEC_ELT(raster_extent, 0)) / res_x)));
+  int n_rows = static_cast<int>(round(AS_DOUBLE((VEC_ELT(raster_extent, 3) - VEC_ELT(raster_extent, 2)) / res_y)));
+#endif
+
+  int c0 = static_cast<int>(floor(AS_DOUBLE(col_raw)));
+  int r0 = static_cast<int>(floor(AS_DOUBLE(row_raw)));
 
   MATRIX grad_values(2, n_covs);
   SET_ZERO(grad_values);
 
-  if(col < 0 || col >= (n_cols-1) || row < 0 || row >= (n_rows-1)) return grad_values;
+  if(c0 < 0 || c0 >= (n_cols-1) || r0 < 0 || r0 >= (n_rows-1)) return grad_values;
 
-  TYPE x1 = VEC_ELT(raster_extent, 0) + (TYPE(col) + TYPE(0.5)) * VEC_ELT(raster_resolution, 0);
-  TYPE x2 = x1 + VEC_ELT(raster_resolution, 0);
-  TYPE y1 = VEC_ELT(raster_extent, 2) + (TYPE(row) + TYPE(0.5)) * VEC_ELT(raster_resolution, 1);
-  TYPE y2 = y1 + VEC_ELT(raster_resolution, 1);
-
-  int rev_row = n_rows - 1 - row;
+  TYPE dx = col_raw - TYPE(c0);
+  TYPE dy = row_raw - TYPE(r0);
+  int rev_row = n_rows - 1 - r0;
 
   for(int i = 0; i < n_covs; i++) {
     int layers = VEC_ELT(n_zvals_cov, i);
     int offset = VEC_ELT(cov_offset, i);
-
     int z_idx1 = 0, z_idx2 = 0;
     TYPE z_weight = 0.0;
 
@@ -82,8 +86,7 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
           TYPE t1 = VEC_ELT(all_z_values, offset + k);
           TYPE t2 = VEC_ELT(all_z_values, offset + k + 1);
           if (z >= t1 && z <= t2) {
-            z_idx1 = k;
-            z_idx2 = k + 1;
+            z_idx1 = k; z_idx2 = k + 1;
             z_weight = (z - t1) / (t2 - t1);
             break;
           }
@@ -91,28 +94,25 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
       }
     }
 
-    int layer_idx1 = offset + z_idx1;
-    int idx1 = layer_idx1 * (n_rows * n_cols) + rev_row * n_cols + col;
-
+    int idx1 = (offset + z_idx1) * (n_rows * n_cols) + rev_row * n_cols + c0;
     TYPE f1_00 = GET_VAL(raster_vals, idx1);
     TYPE f1_10 = GET_VAL(raster_vals, idx1 + 1);
     TYPE f1_01 = GET_VAL(raster_vals, idx1 - n_cols);
     TYPE f1_11 = GET_VAL(raster_vals, idx1 - n_cols + 1);
 
-    TYPE grad_x_1 = ((y2 - y) * (f1_10 - f1_00) + (y - y1) * (f1_11 - f1_01)) / ((y2 - y1) * (x2 - x1));
-    TYPE grad_y_1 = ((x2 - x) * (f1_01 - f1_00) + (x - x1) * (f1_11 - f1_10)) / ((y2 - y1) * (x2 - x1));
+    // Optimized Analytical Gradient using normalized step lengths
+    TYPE grad_x_1 = ((f1_10 - f1_00) * (TYPE(1.0) - dy) + (f1_11 - f1_01) * dy) / res_x;
+    TYPE grad_y_1 = ((f1_00 - f1_01) * (TYPE(1.0) - dx) + (f1_10 - f1_11) * dx) / res_y;
 
     if (layers > 1 && z_idx1 != z_idx2) {
-      int layer_idx2 = offset + z_idx2;
-      int idx2 = layer_idx2 * (n_rows * n_cols) + rev_row * n_cols + col;
-
+      int idx2 = (offset + z_idx2) * (n_rows * n_cols) + rev_row * n_cols + c0;
       TYPE f2_00 = GET_VAL(raster_vals, idx2);
       TYPE f2_10 = GET_VAL(raster_vals, idx2 + 1);
       TYPE f2_01 = GET_VAL(raster_vals, idx2 - n_cols);
       TYPE f2_11 = GET_VAL(raster_vals, idx2 - n_cols + 1);
 
-      TYPE grad_x_2 = ((y2 - y) * (f2_10 - f2_00) + (y - y1) * (f2_11 - f2_01)) / ((y2 - y1) * (x2 - x1));
-      TYPE grad_y_2 = ((x2 - x) * (f2_01 - f2_00) + (x - x1) * (f2_11 - f2_10)) / ((y2 - y1) * (x2 - x1));
+      TYPE grad_x_2 = ((f2_10 - f2_00) * (TYPE(1.0) - dy) + (f2_11 - f2_01) * dy) / res_x;
+      TYPE grad_y_2 = ((f2_00 - f2_01) * (TYPE(1.0) - dx) + (f2_10 - f2_11) * dx) / res_y;
 
       grad_values(0,i) = grad_x_1 * (TYPE(1.0) - z_weight) + grad_x_2 * z_weight;
       grad_values(1,i) = grad_y_1 * (TYPE(1.0) - z_weight) + grad_y_2 * z_weight;
@@ -226,20 +226,48 @@ void apply_barrier_penalty(TYPE x, TYPE y,
                            TYPE &h_x, TYPE &h_y) {
 
   if (barrier_penalty > TYPE(0.0)) {
-    TYPE d_barrier = get_bilinear_val(x, y, barrier_dist, raster_extent, raster_resolution);
+#ifdef IS_RCPP_BUILD
+    int n_cols = barrier_dist.n_cols;
+    int n_rows = barrier_dist.n_rows;
+#else
+    int n_cols = barrier_dist.cols();
+    int n_rows = barrier_dist.rows();
+#endif
+
+    TYPE res_x = VEC_ELT(raster_resolution, 0);
+    TYPE res_y = VEC_ELT(raster_resolution, 1);
+
+    TYPE col_raw = (x - VEC_ELT(raster_extent, 0)) / res_x - TYPE(0.5);
+    TYPE row_raw = (VEC_ELT(raster_extent, 3) - y) / res_y - TYPE(0.5);
+
+    int c0 = static_cast<int>(floor(AS_DOUBLE(col_raw)));
+    int r0 = static_cast<int>(floor(AS_DOUBLE(row_raw)));
+
+    if (c0 < 0) c0 = 0; if (c0 >= n_cols - 1) c0 = n_cols - 2;
+    if (r0 < 0) r0 = 0; if (r0 >= n_rows - 1) r0 = n_rows - 2;
+    int c1 = c0 + 1;
+    int r1 = r0 + 1;
+
+    TYPE dx = col_raw - TYPE(c0);
+    TYPE dy = row_raw - TYPE(r0);
+    if(dx < TYPE(0.0)) dx = TYPE(0.0); if(dx > TYPE(1.0)) dx = TYPE(1.0);
+    if(dy < TYPE(0.0)) dy = TYPE(0.0); if(dy > TYPE(1.0)) dy = TYPE(1.0);
+
+    TYPE f00 = barrier_dist(r0, c0);
+    TYPE f10 = barrier_dist(r0, c1);
+    TYPE f01 = barrier_dist(r1, c0);
+    TYPE f11 = barrier_dist(r1, c1);
+
+    // Calculate distance exactly
+    TYPE d_barrier = f00 * (TYPE(1.0) - dx) * (TYPE(1.0) - dy) +
+      f10 * dx * (TYPE(1.0) - dy) +
+      f01 * (TYPE(1.0) - dx) * dy +
+      f11 * dx * dy;
 
     if (d_barrier <= TYPE(0.0)) {
-      // Central difference for gradient of SDF
-      TYPE eps_x = VEC_ELT(raster_resolution, 0) * TYPE(0.01);
-      TYPE eps_y = VEC_ELT(raster_resolution, 1) * TYPE(0.01);
-
-      TYPE d_plus_x  = get_bilinear_val(x + eps_x, y, barrier_dist, raster_extent, raster_resolution);
-      TYPE d_minus_x = get_bilinear_val(x - eps_x, y, barrier_dist, raster_extent, raster_resolution);
-      TYPE grad_sdf_x = (d_plus_x - d_minus_x) / (TYPE(2.0) * eps_x);
-
-      TYPE d_plus_y  = get_bilinear_val(x, y + eps_y, barrier_dist, raster_extent, raster_resolution);
-      TYPE d_minus_y = get_bilinear_val(x, y - eps_y, barrier_dist, raster_extent, raster_resolution);
-      TYPE grad_sdf_y = (d_plus_y - d_minus_y) / (TYPE(2.0) * eps_y);
+      // Analytical gradients of the bilinear surface (no more 'eps' approximations)
+      TYPE grad_sdf_x = ((f10 - f00) * (TYPE(1.0) - dy) + (f11 - f01) * dy) / res_x;
+      TYPE grad_sdf_y = ((f00 - f01) * (TYPE(1.0) - dx) + (f10 - f11) * dx) / res_y;
 
       // Apply force = -lambda * d * grad(d)
       h_x -= barrier_penalty * d_barrier * grad_sdf_x;

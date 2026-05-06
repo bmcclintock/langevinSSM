@@ -178,6 +178,61 @@ reg_prob
 plot(reg_prob, log = TRUE)
 ```
 
+### Spatial constraints (i.e., barriers)
+
+To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas). The SDF is then included as a habitat selection covariate (where negative coefficients indicate attraction to the barrier boundary, e.g., the coast for marine animals) and as part of a penalty term with strength `lambda`:
+```{r barrier, eval=TRUE}
+# create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
+coast_barrier <- exampleCovs[[1]]
+terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
+                                 >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+names(coast_barrier) <- "coast_barrier"
+
+# convert mask to SDF and add to the spatial covariates list
+exampleCovs_barrier <- exampleCovs
+exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+
+# add a beta coefficient for the barrier to the parameter list
+# negative value indicates slight attraction to the "coast"
+par_barrier <- par
+par_barrier$beta <- c(par_barrier$beta, -0.2)
+
+# simulate the data
+set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
+simDat_barrier <- simLangevin(par = par_barrier,
+                              nbAnimals = 3,
+                              spatialCovs = exampleCovs_barrier,
+                              measurementError = list(smaj.sd = 1.5,
+                                                      smin.sd = 0.75,
+                                                      eor.lim = c(0,180)))
+
+# actual penalty (lambda)
+attr(simDat_barrier,"lambda")
+
+# Because by default lambda=NULL and simDat_barrier is a simLangevin object, 
+# fitLangevin will automatically detect and use the exact barrier penalty (lambda) 
+# that generated the data
+fit_barrier <- fitLangevin(data = simDat_barrier,
+                           spatialCovs = exampleCovs_barrier,
+                           silent = TRUE)
+fit_barrier
+
+plot(fit_barrier, data = simDat_barrier,
+                  spatialCovs = exampleCovs_barrier,
+                  maskBarrier = TRUE)
+
+# Using a grid search, posterior predictive checks can be 
+# performed to select the penalty via the tuneBarrier function
+fit_barrier_ks <- tuneBarrier(data = simDat_barrier,
+                              spatialCovs = exampleCovs_barrier,
+                              n_sims = 10,
+                              n_coarse = 5,
+                              n_fine = 5,
+                              ncores = 5,
+                              silent = TRUE)
+fit_barrier_ks
+```
+
 ## Citation
 
 If you use `{langevinSSM}` in your research, please cite it as follows:

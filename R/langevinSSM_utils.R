@@ -103,7 +103,12 @@ print.fitLangevin <- function(x, ...) {
   }
 
   cat("Max Log-Likelihood:", -x$objective, "\n")
-  cat("Optimization time: ", round(x$elapsedTime[3], 2), "seconds\n\n")
+  cat("Optimization time: ", round(x$elapsedTime[3], 2), "seconds\n")
+
+  if (!is.null(x$conditions$barrier) && !is.null(x$conditions$lambda)) {
+    cat("Barrier penalty:   ", signif(x$conditions$lambda, 4), "\n")
+  }
+  cat("\n")
 
   cat("Parameter Estimates (Natural Scale):\n")
   cat("---------------------------------------\n")
@@ -284,7 +289,9 @@ summary.fitLangevin <- function(object, ...) {
     loglik = -object$objective,
     elapsed = object$elapsedTime[3],
     coef_beta = as.matrix(coef_beta), # printCoefmat prefers matrices
-    coef_process = as.matrix(coef_process)
+    coef_process = as.matrix(coef_process),
+    barrier = object$conditions$barrier,
+    lambda = object$conditions$lambda
   )
 
   class(res) <- "summary.fitLangevin"
@@ -313,7 +320,12 @@ print.summary.fitLangevin <- function(x, digits = 4, signif.stars = TRUE, ...) {
   }
 
   cat("Max Log-Likelihood:", x$loglik, "\n")
-  cat("Optimization time: ", round(x$elapsed, 2), "seconds\n\n")
+  cat("Optimization time: ", round(x$elapsed, 2), "seconds\n")
+
+  if (!is.null(x$barrier) && !is.null(x$lambda)) {
+    cat("Barrier penalty:   ", signif(x$lambda, 4), "\n")
+  }
+  cat("\n")
 
   cat("Habitat Selection Coefficients:\n")
   cat("---------------------------------------\n")

@@ -45,7 +45,7 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{coord}{Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.}
 
-\item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{fitLangevin_barrier}} for a strategy to determine the optimal penalty.}
+\item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{tuneBarrier}} for a strategy to determine the optimal penalty.}
 
 \item{scaleFactor}{Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.}
 
@@ -129,7 +129,7 @@ In Langevin dynamics, the force acting on the animal is the negative spatial gra
 
 Because \eqn{d(\boldsymbol{\mu})} is negative in the restricted zone, the equation produces a positive force that pushes the animal in the direction of the shortest path back to the unrestricted area (\eqn{\nabla d(\boldsymbol{\mu})}).
 
-The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if barrier name in \code{spatialCovs} is "barrier"). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{fitLangevin_barrier}} for a strategy to determine the optimal penalty).
+The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if barrier name in \code{spatialCovs} is "barrier"). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{tuneBarrier}} for a strategy to determine the optimal penalty).
 }
 \examples{
 # fit underdamped model with measurement error
@@ -167,8 +167,9 @@ par_barrier <- par
 par_barrier$beta <- c(par_barrier$beta, -0.2)
 
 # simulate the data
-set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
+set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
+                              nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
                               measurementError = list(smaj.sd = 1.5,
                                                       smin.sd = 0.75,
@@ -180,7 +181,9 @@ fit_barrier <- fitLangevin(data = simDat_barrier,
                            spatialCovs = exampleCovs_barrier,
                            silent = TRUE)
 
-plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier)
+plot(fit_barrier, data = simDat_barrier,
+                  spatialCovs = exampleCovs_barrier,
+                  maskBarrier=TRUE)
 }
 
 }

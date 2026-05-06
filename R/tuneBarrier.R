@@ -49,7 +49,7 @@
 #' @return A \code{fitLangevin} object that includes the most optimal penalty from the grid search.
 #' @importFrom terra wrap unwrap
 #' @export
-fitLangevin_barrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ncores = 1, ...) {
+tuneBarrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ncores = 1, ...) {
 
   if (!inherits(data, "dataLangevin")) stop("'data' must be a dataLangevin object.")
   barrier <- .find_barrier(spatialCovs)

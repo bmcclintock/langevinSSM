@@ -1,4 +1,4 @@
-# tests/testthat/test_fitLangevin_barrier.R
+# tests/testthat/test_tuneBarrier.R
 
 # ==============================================================================
 # 1. SETUP MOCK DATA
@@ -26,33 +26,33 @@ attr(mock_df, "time.unit") <- "secs"
 # 2. TEST INPUT VALIDATION & USER ERRORS
 # ==============================================================================
 
-test_that("fitLangevin_barrier fails fast on invalid data classes", {
+test_that("tuneBarrier fails fast on invalid data classes", {
   bad_df <- mock_df
   class(bad_df) <- "data.frame"
 
   expect_error(
-    fitLangevin_barrier(bad_df, mock_covs),
+    tuneBarrier(bad_df, mock_covs),
     "'data' must be a dataLangevin object"
   )
 })
 
-test_that("fitLangevin_barrier fails fast on insufficient data for empirical calculations", {
+test_that("tuneBarrier fails fast on insufficient data for empirical calculations", {
   tiny_df <- mock_df[1:3, ]
   class(tiny_df) <- c("dataLangevin", "data.frame")
 
   expect_error(
-    suppressMessages(fitLangevin_barrier(tiny_df, mock_covs, lambda_max = NULL)),
+    suppressMessages(tuneBarrier(tiny_df, mock_covs, lambda_max = NULL)),
     "Insufficient valid steps"
   )
 })
 
-test_that("fitLangevin_barrier handles spatial overlap failure gracefully", {
+test_that("tuneBarrier handles spatial overlap failure gracefully", {
   oob_df <- mock_df
   oob_df$x <- oob_df$x + 500
   class(oob_df) <- c("dataLangevin", "data.frame")
 
   expect_error(
-    suppressMessages(fitLangevin_barrier(oob_df, mock_covs, lambda_max = NULL)),
+    suppressMessages(tuneBarrier(oob_df, mock_covs, lambda_max = NULL)),
     "No valid spatial observations"
   )
 })
@@ -61,22 +61,22 @@ test_that("fitLangevin_barrier handles spatial overlap failure gracefully", {
 # 3. TEST EDGE CASES & LOGIC OVERRIDES
 # ==============================================================================
 
-test_that("fitLangevin_barrier strictly enforces minimum data size even if lambda_max is provided", {
+test_that("tuneBarrier strictly enforces minimum data size even if lambda_max is provided", {
   tiny_df <- mock_df[1:3, ]
   class(tiny_df) <- c("dataLangevin", "data.frame")
 
   # Because empirical_sigma is required for lambda_min, the function
   # must fail fast regardless of whether lambda_max is supplied.
   expect_error(
-    suppressMessages(fitLangevin_barrier(tiny_df, mock_covs, lambda_max = 50, n_coarse = 2, n_sims = 1)),
+    suppressMessages(tuneBarrier(tiny_df, mock_covs, lambda_max = 50, n_coarse = 2, n_sims = 1)),
     regexp = "Insufficient valid steps"
   )
 })
 
-test_that("fitLangevin_barrier handles total optimization failure gracefully", {
+test_that("tuneBarrier handles total optimization failure gracefully", {
   # Use the valid mock_covs, but set lambda_max absurdly high to break numerical integration
   expect_error(
-    suppressMessages(fitLangevin_barrier(mock_df, mock_covs,
+    suppressMessages(tuneBarrier(mock_df, mock_covs,
                                          lambda_max = 1e6, n_coarse = 2, n_fine = 1, n_sims = 1)),
     "All models in the coarse grid failed"
   )
@@ -85,7 +85,7 @@ test_that("fitLangevin_barrier handles total optimization failure gracefully", {
 test_that("Initialization grids calculate safely without throwing internal NA/NaN warnings", {
   expect_warning(
     tryCatch(
-      suppressMessages(fitLangevin_barrier(mock_df, mock_covs,
+      suppressMessages(tuneBarrier(mock_df, mock_covs,
                                            n_coarse = 2, n_fine = 1, n_sims = 1)),
       error = function(e) NA
     ),
@@ -93,24 +93,24 @@ test_that("Initialization grids calculate safely without throwing internal NA/Na
   )
 })
 
-test_that("fitLangevin_barrier fails fast if no barrier attribute is found", {
+test_that("tuneBarrier fails fast if no barrier attribute is found", {
   # Strip the 'barLangevin' attribute from the mock covariates
   untagged_covs <- mock_covs
   attr(untagged_covs$coast_mask, "barLangevin") <- NULL
 
   expect_error(
-    fitLangevin_barrier(mock_df, untagged_covs),
+    tuneBarrier(mock_df, untagged_covs),
     "No barrier found in 'spatialCovs'. Did you run prepBarrier"
   )
 })
 
-test_that("fitLangevin_barrier fails fast if multiple barriers are tagged", {
+test_that("tuneBarrier fails fast if multiple barriers are tagged", {
   # Duplicate the tagged barrier raster
   multi_covs <- mock_covs
   multi_covs$second_mask <- mock_covs$coast_mask
 
   expect_error(
-    fitLangevin_barrier(mock_df, multi_covs),
+    tuneBarrier(mock_df, multi_covs),
     "Multiple rasters in 'spatialCovs' are tagged as barriers"
   )
 })

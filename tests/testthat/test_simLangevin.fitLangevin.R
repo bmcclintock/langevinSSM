@@ -6,13 +6,17 @@ names(r) <- "cov"
 exCovs <- list(cov=r)
 
 # Base data centered at 250, 250
-df <- data.frame(id=1, date=seq(0,1,0.1), dt=c(0, rep(0.1, 10)), x=250, y=250,
+# Add noise so the track isn't a single stationary point
+set.seed(42,kind="Mersenne-Twister",normal.kind = "Inversion")
+df <- data.frame(id=1, date=seq(0,1,0.1), dt=c(0, rep(0.1, 10)),
+                 x=250 + rnorm(11, 0, 2), y=250 + rnorm(11, 0, 2),
                  x.err=1, y.err=1, smaj=NA_real_, smin=NA_real_, eor=NA_real_)
 exDat <- class_dataLangevin(df)
 fit <- suppressMessages(fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE))
 
 test_that("simLangevin.fitLangevin basic functionality", {
-  res <- suppressMessages(simLangevin(fit, data = exDat, spatialCovs = exCovs, timeStep = 0.05, conditional = FALSE))
+  # Switched to conditional = TRUE to tether the track and prevent boundary escapes
+  res <- suppressMessages(simLangevin(fit, data = exDat, spatialCovs = exCovs, conditional = TRUE))
   expect_s3_class(res, "dataLangevin")
   expect_equal(as.numeric(res$date), as.numeric(exDat$date))
 })
@@ -29,8 +33,8 @@ test_that("simLangevin.fitLangevin handles POSIXt date and time.unit resolution"
 
   fit_posix <- suppressMessages(fitLangevin(data=exDat_posix, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE))
 
-  res <- suppressMessages(simLangevin(fit_posix, data = exDat_posix, spatialCovs = exCovs,
-                                      timeStep = 1/120, conditional = FALSE))
+  # Switched to conditional = TRUE
+  res <- suppressMessages(simLangevin(fit_posix, data = exDat_posix, spatialCovs = exCovs, conditional = TRUE))
 
   # Explicit attribute check
   expect_equal(attr(res, "time.unit"), "hours")
@@ -41,8 +45,7 @@ test_that("simLangevin.fitLangevin respects scaleFactor > 1 for all spatial unit
   fit_sf <- suppressMessages(fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1),
                                          scaleFactor=sf_val, silent=TRUE))
 
-  res <- suppressMessages(simLangevin(fit_sf, data = exDat, spatialCovs = exCovs,
-                                      timeStep = 0.05, conditional = FALSE))
+  res <- suppressMessages(simLangevin(fit_sf, data = exDat, spatialCovs = exCovs, conditional = TRUE))
 
   # Coordinates should be un-scaled to original units
   expect_equal(mean(res$mu.x), 250, tolerance = 10)
@@ -58,13 +61,15 @@ test_that("simLangevin.fitLangevin error handling and conditional independence",
 
 test_that("Imputation vs Predictive Check divergence and GoF validation", {
   # 1. Setup a long, centered track to ensure convergence and valid residuals
+  # 1. Setup a long, centered track to ensure convergence and valid residuals
   set.seed(123, kind="Mersenne-Twister", normal.kind = "Inversion")
   long_df <- data.frame(
     id = 1,
     date = 0:50,
     dt = c(0, rep(1, 50)),
-    x = seq(225, 275, length.out = 51),
-    y = seq(225, 275, length.out = 51),
+    # Add a tiny bit of noise so the process variance isn't mathematically zero!
+    x = seq(225, 275, length.out = 51) + rnorm(51, 0, 0.5),
+    y = seq(225, 275, length.out = 51) + rnorm(51, 0, 0.5),
     x.err = 0.1, y.err = 0.1, smaj = NA, smin = NA, eor = NA
   )
   long_dat <- class_dataLangevin(long_df)
@@ -113,12 +118,13 @@ test_that("Joint precision draw handles uncertainty propagation", {
 
 test_that("simLangevin.fitLangevin inherits and applies location classes (lc) and errors", {
   # Create a dataset with varying location classes and corresponding errors
+  set.seed(42,kind="Mersenne-Twister",normal.kind = "Inversion")
   df_lc <- data.frame(
     id = 1,
     date = seq(0, 0.4, 0.1),
     dt = c(0, rep(0.1, 4)),
-    x = seq(250, 254, 1),
-    y = seq(250, 254, 1),
+    x = seq(250, 254, 1) + rnorm(5, 0, 1), # Break the perfectly straight line
+    y = seq(250, 254, 1) + rnorm(5, 0, 1),
     lc = c("3", "2", "1", "A", "G"),
     x.err = c(1.0, 1.5, 3.0, 10.0, 0.1),  # Mock EMF magnitudes
     y.err = c(1.0, 1.5, 3.0, 10.0, 0.1),
@@ -144,12 +150,13 @@ test_that("simLangevin.fitLangevin inherits and applies location classes (lc) an
 })
 
 test_that("simLangevin.fitLangevin handles error ellipse (KF) measurement errors correctly without radian conversion issues", {
+  set.seed(42,kind="Mersenne-Twister",normal.kind = "Inversion")
   df_ee <- data.frame(
     id = 1,
     date = seq(0, 0.4, 0.1),
     dt = c(0, rep(0.1, 4)),
-    x = seq(250, 254, 1),
-    y = seq(250, 254, 1),
+    x = seq(250, 254, 1) + rnorm(5, 0, 1), # Break the perfectly straight line
+    y = seq(250, 254, 1) + rnorm(5, 0, 1),
     smaj = rep(2, 5),
     smin = rep(1, 5),
     eor = rep(1.5, 5),

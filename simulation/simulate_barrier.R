@@ -2,6 +2,8 @@ library(langevinSSM)
 library(terra)
 library(ggplot2)
 
+model <- "underdamped"
+
 sca <- 600
 set.seed(1, kind="Mersenne-Twister", normal.kind="Inversion")
 timeStep <- 0.01
@@ -17,9 +19,9 @@ measurementError = list(smaj.sd = 1.5, smin.sd = 0.75)
 sim_pars <- list(
   beta = c(4, -1, -0.2 , -0.1),
   sigma = 5,
-  gamma = 0.5,
   psi = 1
 )
+if(model=="underdamped") sim_pars$gamma <- 0.5
 
 nSims <- 100
 parMat <- matrix(NA, nSims, 7)
@@ -70,7 +72,7 @@ for(isim in 1:nSims){
 
     sim_data <- tryCatch({
       out_data <- simLangevin(
-        model = "underdamped",
+        model = model,
         par = sim_pars,
         spatialCovs = covs,
         nbAnimals = nbAnimals,
@@ -93,11 +95,11 @@ for(isim in 1:nSims){
 
   trueUD <- getUD(covs, beta=sim_pars$beta, lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
-  fit <- tryCatch(fitLangevin_barrier(sim_data,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, n_coarse=5, n_fine=5, ncores = 5, silent=TRUE),error=function(e) e)
+  fit <- tryCatch(tuneBarrier(sim_data,model=model,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, n_coarse=5, n_fine=5, ncores = 5, silent=TRUE),error=function(e) e)
 
   fit_true <- tryCatch(fitLangevin(
     data = sim_data,
-    model = "underdamped",
+    model = model,
     spatialCovs = covs,
     silent = TRUE
   ),error=function(e) e)

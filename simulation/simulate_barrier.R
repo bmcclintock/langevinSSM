@@ -68,13 +68,16 @@ for(isim in 1:nSims){
     d2c <- terra::setValues(cov1, dist2)
     names(d2c) <- "d2c"
 
-    covs <- list(cov1 = cov1, cov2 = cov2, d2c = d2c, coast_barrier = prepBarrier(water_mask))
+    barrier <- prepBarrier(water_mask)
+
+    covs <- list(cov1 = cov1, cov2 = cov2, d2c = d2c, d2coast = barrier/100, coast_barrier = barrier)
 
     sim_data <- tryCatch({
       out_data <- simLangevin(
         model = model,
         par = sim_pars,
         spatialCovs = covs,
+        barrier = "coast_barrier",
         nbAnimals = nbAnimals,
         obsPerAnimal = obsPerAnimal,
         timeStep = timeStep,
@@ -93,7 +96,7 @@ for(isim in 1:nSims){
 
   }
 
-  trueUD <- getUD(covs, beta=sim_pars$beta, lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
+  trueUD <- getUD(covs, beta=sim_pars$beta, barrier="coast_barrier", lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
   fit <- tryCatch(tuneBarrier(sim_data,model=model,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, n_coarse=5, n_fine=5, ncores = 5, silent=TRUE),error=function(e) e)
 
@@ -108,7 +111,7 @@ for(isim in 1:nSims){
     estUD <- suppressMessages(getUD(covs, fit=fit, log=TRUE, plot=FALSE))
     parMat[isim, 1:6] <- fit$estimates$natural$Estimate[1:6]
     parMat[isim, "BA"] <- rasterOverlap(exp(estUD), exp(trueUD))#,local=fit)
-    print(plot(fit,data=sim_data,spatialCovs=covs,log=TRUE,maskBarrier=TRUE)+labs(title=paste0("Sim ",isim)))
+    print(plot(fit,data=sim_data,spatialCovs=covs,log=TRUE,maskRast=water_mask)+labs(title=paste0("Sim ",isim)))
   }
 
   if(!inherits(fit_true, "error")){

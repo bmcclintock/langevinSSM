@@ -18,7 +18,7 @@
   data = NULL,
   time = NULL,
   compact = TRUE,
-  maskBarrier = FALSE,
+  maskRast = NULL,
   ...
 )
 
@@ -30,25 +30,25 @@
   extent = NULL,
   time = NULL,
   compact = TRUE,
-  maskBarrier = FALSE,
+  maskRast = NULL,
   ...
 )
 
-\method{plot}{dataLangevin}(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...)
+\method{plot}{dataLangevin}(
+  x,
+  spatialCovs,
+  extent = NULL,
+  time = NULL,
+  compact = TRUE,
+  maskRast = NULL,
+  ...
+)
 
 \method{plot}{resLangevin}(x, tracks = NULL, ...)
 
 \method{plot}{regLangevin}(x, extent = NULL, log = FALSE, ...)
 
-plotUD(
-  x,
-  spatialCovs = NULL,
-  log = TRUE,
-  extent = NULL,
-  time = NULL,
-  maskBarrier = FALSE,
-  ...
-)
+plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 }
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.}
@@ -65,11 +65,11 @@ plotUD(
 
 \item{compact}{Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).}
 
-\item{maskBarrier}{Logical. If \code{TRUE}, restricted areas defined by the barrier are masked out (set to \code{NA}) before plotting the UD. This prevents the barrier penalty from compressing the color scale of the UD in the unrestricted areas. Set to \code{FALSE} to visualize the raw UD including the barrier penalty. Default: \code{FALSE}}
+\item{maskRast}{\code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{0}) before plotting the UD. Default: \code{NULL} (no mask).}
 
 \item{...}{Additional arguments passed to internal plotting methods.}
 
-\item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.}
+\item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs} minus the barrier (if present). If provided, plots the UD instead of individual covariates.}
 
 \item{tracks}{Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).}
 }

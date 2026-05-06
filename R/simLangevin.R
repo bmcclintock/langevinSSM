@@ -8,15 +8,16 @@
 #' @param ... Additional arguments passed to the specific methods.
 #'
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
-#' @param timeStep Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.
+#' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #'
 #' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. See \code{\link{fitLangevin}}.
+#' @param lambda Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.
+#' @param timeStep Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.
 #' @param nbAnimals Number of animals to simulate. Default: 1.
 #' @param obsPerAnimal Number of observations to simulate per animal. Default: 500.
 #' @param initialPosition Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.
 #' @param measurementError A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.
 #' @param subSample List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).
-#' @param lambda Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.
 #'
 #' @param data The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.
 #' @param jointPrecision Logical. If \code{TRUE}, draws parameters and latent variables from the full joint precision matrix of both fixed parameters and random effects. If \code{FALSE}, fixes the movement parameters at their point estimates and draws only random effects. Default: \code{FALSE}.
@@ -88,38 +89,45 @@
 #' # unconditional
 #' simFit <- simLangevin(fit,
 #'                       data = exampleDat,
-#'                       spatialCovs = exampleCovs)
+#'                       spatialCovs = exampleCovs,
+#'                       timeStep = "10 secs")
 #'
 #' # conditional on observed tracks
 #' simFit_cond <- simLangevin(fit,
 #'                            data = exampleDat,
 #'                            spatialCovs = exampleCovs,
+#'                            timeStep = "10 secs",
 #'                            conditional = TRUE)
 #'
 #' # simulating with a barrier
 #' # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
 #' coast_barrier <- exampleCovs[[1]]
-#' terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"] >=
-#'                                        mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+#' terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
+#'                                  >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 #' names(coast_barrier) <- "coast_barrier"
 #'
 #' # convert mask to SDF and add to the spatial covariates list
 #' exampleCovs_barrier <- exampleCovs
 #' exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+#' exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier / 100
 #'
-#' # add a beta coefficient for the barrier to the parameter list
+#' # add a beta coefficient for d2coast to the parameter list
 #' par_barrier <- par
 #' par_barrier$beta <- c(par_barrier$beta, -0.2)
 #'
 #' # simulate the data
-#' set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
+#' set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 #' simDat_barrier <- simLangevin(par = par_barrier,
+#'                               nbAnimals = 3,
 #'                               spatialCovs = exampleCovs_barrier,
+#'                               barrier = "coast_barrier",
 #'                               measurementError = list(smaj.sd = 1.5,
 #'                                                       smin.sd = 0.75,
 #'                                                       eor.lim = c(0,180)))
 #'
-#' plot(simDat_barrier,beta=par_barrier$beta,spatialCovs=exampleCovs_barrier)
+#' plot(simDat_barrier,beta=par_barrier$beta,
+#'      spatialCovs=exampleCovs_barrier,
+#'      maskRast = coast_barrier)
 #' }
 #' @references
 #' Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
@@ -139,29 +147,37 @@ simLangevin <- function(model, ...) {
 #' @rdname simLangevin
 #' @export
 simLangevin.default <- function(model = c("underdamped", "overdamped"),
-                                par,
                                 spatialCovs,
+                                barrier = NULL,
+                                par,
+                                lambda = NULL,
+                                timeStep = 0.01,
                                 nbAnimals = 1,
                                 obsPerAnimal = 500,
-                                timeStep = 0.01,
                                 initialPosition,
                                 measurementError = NULL,
                                 subSample = NULL,
-                                lambda = NULL,
                                 ...) {
 
   model <- match.arg(model)
-
   .validate_lambda(lambda)
+  orig_spatialCovs <- spatialCovs
 
-  barrier <- .find_barrier(spatialCovs)
   if (!is.null(barrier)) {
-    barrier_dist_mat <- terra::as.matrix(spatialCovs[[barrier]], wide = TRUE)
+    if (!(barrier %in% names(spatialCovs))) stop(sprintf("Barrier raster '%s' not found in spatialCovs.", barrier))
+
+    barrier_sdf <- spatialCovs[[barrier]]
+    if(!isTRUE(attr(barrier_sdf,"barLangevin"))) stop("barrier is not a 'barLangevin' object created by prepBarrier.")
+    spatialCovs[[barrier]] <- NULL # Decouple physics constraint from habitat selection
+    barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE)
   } else {
     barrier_dist_mat <- matrix(0, 1, 1)
   }
 
-  # spatialCovs now contains the continuous SDF instead of the flat 0/1 mask
+  if (length(spatialCovs) == 0) {
+    stop("At least one habitat covariate must remain in spatialCovs after isolating the barrier constraint.")
+  }
+
   raster_data <- prepareRaster(spatialCovs)
 
   if(!is.finite(nbAnimals) || nbAnimals < 1) stop("nbAnimals should be at least 1.")
@@ -208,14 +224,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   # --- 3. Lambda Auto-Scaling ---
   if (!is.null(barrier) && is.null(lambda)) {
     max_dt <- max(dt_vec, na.rm = TRUE)
-    if (model == "overdamped") {
-      lambda <- 2 / (sigma^2 * max_dt)
-    } else {
-      # Underdamped exact analytical stability limit
-      num <- (gamma^2) * (1 - exp(-gamma * max_dt))
-      den <- (sigma^2) * (1 - exp(-gamma * max_dt) - (gamma * max_dt * exp(-gamma * max_dt)))
-      lambda <- num / den
-    }
+    lambda <- .calc_lambda_limit(model, sigma, gamma, max_dt)
     message("   Auto-scaling barrier lambda based on true simulation parameters: ", signif(lambda, 4))
   }
 
@@ -223,7 +232,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
 
   # --- 4. Initial Position ---
   init_pos_sim <- if (missing(initialPosition)) {
-    getInitialPosition(nbAnimals = nbAnimals, spatialCovs = spatialCovs,
+    getInitialPosition(nbAnimals = nbAnimals, spatialCovs = orig_spatialCovs, barrier = barrier,
                        beta = beta, lambda = lambda)
   } else {
     getInitialPosition(nbAnimals = nbAnimals, initialPosition = initialPosition,
@@ -269,34 +278,11 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   }
 
   if(!is.null(subSample)){
-    # Capture the original maximum time step before degrading the data
-    orig_mean_dt <- mean(out$dt, na.rm = TRUE)
-
+    orig_mean_dt <- mean(out$dt[out$dt > 0], na.rm = TRUE)
     out <- subSampleData(out, samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
+    new_mean_dt <- mean(out$dt[out$dt > 0], na.rm = TRUE)
 
-    # Capture the new maximum time step
-    new_mean_dt <- mean(out$dt, na.rm = TRUE)
-
-    # Calculate exact stability ceilings for both time steps to find the exact scaling ratio
-    if (model == "overdamped") {
-      L_orig <- 2 / (sigma^2 * orig_mean_dt)
-      L_new <- 2 / (sigma^2 * new_mean_dt)
-    } else {
-      # Underdamped exact analytical stability limits
-      num_orig <- (gamma^2) * (1 - exp(-gamma * orig_mean_dt))
-      den_orig <- (sigma^2) * (1 - exp(-gamma * orig_mean_dt) - (gamma * orig_mean_dt * exp(-gamma * orig_mean_dt)))
-      L_orig <- num_orig / den_orig
-
-      num_new <- (gamma^2) * (1 - exp(-gamma * new_mean_dt))
-      den_new <- (sigma^2) * (1 - exp(-gamma * new_mean_dt) - (gamma * new_mean_dt * exp(-gamma * new_mean_dt)))
-      L_new <- num_new / den_new
-    }
-
-    effective_ratio <- L_new / L_orig
-
-    # Scale the true penalty to find the exact equivalent effective penalty
-    effective_lambda <- lambda * effective_ratio
-
+    effective_lambda <- .rescale_lambda(lambda, model, sigma, gamma, orig_mean_dt, new_mean_dt)
     attr(out, "lambda") <- effective_lambda
 
     if(!is.null(barrier) & isTRUE(subSample$samplingRate>1)) {
@@ -323,31 +309,62 @@ simLangevin.fitLangevin <- function(model,
 
   time.unit <- attr(data, "time.unit")
 
-  if (is.character(timeStep)) {
-    if (!inherits(data$date, c("POSIXt", "Date"))) {
-      stop("'timeStep' can only be a character string (e.g., '1 hour') if the 'date' column is POSIXt or Date.")
+  # --- POSIXt Type Enforcement & Parsing ---
+  if (inherits(data$date, c("POSIXt", "Date"))) {
+    if (!is.character(timeStep)) {
+      stop("When the 'date' column is POSIXt or Date, 'timeStep' must be a character string specifying the time interval (e.g., '1 sec', '30 mins', '1 hour', '6 hours').")
     }
-    if (is.null(time.unit)) time.unit <- "secs" # Fallback if missing
+    if (is.null(time.unit)) stop("When the 'date' column is POSIXt or Date, the 'data' object must have a 'time.unit' attribute specifying the time unit (e.g., 'secs', 'mins', 'hours').")
 
-    # Safely convert the string into a numeric value scaled to the model's time.unit
-    timeStep <- as.numeric(as.difftime(timeStep), units = time.unit)
+    t0 <- as.POSIXct("1970-01-01", tz = "UTC")
+    t1 <- tryCatch(seq(t0, by = timeStep, length.out = 2)[2], error = function(e) NA)
+
+    if (is.na(t1)) {
+      stop("Invalid 'timeStep' string provided. Use valid base R formats like '1 sec', '30 mins', or '1 hour'.")
+    }
+
+    timeStep <- as.numeric(difftime(t1, t0, units = time.unit))
+
+    if (timeStep <= 0) stop("Invalid 'timeStep' string provided. Must result in a positive duration.")
+  } else {
+    if (!is.numeric(timeStep)) {
+      stop("When the 'date' column is numeric, 'timeStep' must also be numeric.")
+    }
   }
 
   if (!conditional && (!is.finite(timeStep) || timeStep <= 0)) {
-    stop("timeStep should be a valid string (e.g., '1 hour') or numeric value greater than zero.")
+    stop("timeStep must be a valid positive value.")
   }
 
   fit <- model
   verify_signatures(fit, data = data, spatialCovs = spatialCovs)
 
   cond <- fit$conditions
-  time.unit <- attr(data, "time.unit")
   coord <- cond$coord
   scaleFactor <- cond$scaleFactor
+  lambda <- cond$lambda
+
+  if(!is.null(lambda)){
+
+    orig_mean_dt <- mean(data$dt[data$dt > 0], na.rm = TRUE)
+    new_mean_dt <- timeStep
+
+    sigma <- exp(fit$tmb_setup$parList$log_sigma)
+    gamma <- if (cond$model == "underdamped") exp(fit$tmb_setup$parList$log_gamma) else 1
+
+    lambda <- .rescale_lambda(lambda, cond$model, sigma, gamma, orig_mean_dt, new_mean_dt)
+  }
+
+  if (!is.null(cond$barrier)) {
+    barrier_sdf <- spatialCovs[[cond$barrier]] / scaleFactor
+    spatialCovs[[cond$barrier]] <- NULL
+  } else {
+    barrier_sdf <- NULL
+  }
 
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
                         cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
-                        barrier_names = cond$barrier, lambda = cond$lambda)
+                        barrier_sdf = barrier_sdf, lambda = lambda)
 
   dat <- c(dat, fit$tmb_setup$priors)
 
@@ -412,26 +429,31 @@ simLangevin.fitLangevin <- function(model,
   full_par[obj2$env$lrandom()] <- samp_random
 
   par_drawn <- obj2$env$parList(par = full_par)
-  mu_mat <- t(matrix(par_drawn$mu, nrow = 2)) * scaleFactor
-  vel_mat <- if (fit$conditions$model == "underdamped") t(matrix(par_drawn$vel, nrow = 2)) * scaleFactor else NULL
 
+  mu_working <- t(matrix(par_drawn$mu, nrow = 2))
+  vel_working <- if (fit$conditions$model == "underdamped") t(matrix(par_drawn$vel, nrow = 2)) else NULL
+
+  # Construct natural parameters using the scaled sigma
   nat_par <- list(
     beta = par_drawn$beta,
-    sigma = exp(par_drawn$log_sigma) * scaleFactor,
+    sigma = exp(par_drawn$log_sigma) * scaleFactor, # original scale sigma
     gamma = if(!is.null(par_drawn$log_gamma)) exp(par_drawn$log_gamma) else 1,
     psi = if(!is.null(par_drawn$l_psi)) exp(par_drawn$l_psi) else 1,
     tau = if(!is.null(par_drawn$l_tau)) exp(par_drawn$l_tau) else c(1, 1),
     rho_o = if(!is.null(par_drawn$l_rho_o)) 2/(1 + exp(-par_drawn$l_rho_o)) - 1 else 0
   )
 
+  sigma_working <- exp(par_drawn$log_sigma)
+
   if (conditional) {
     out <- data
-    out$mu.x <- mu_mat[, 1]
-    out$mu.y <- mu_mat[, 2]
+    out$mu.x <- mu_working[, 1] * scaleFactor
+    out$mu.y <- mu_working[, 2] * scaleFactor
     if (fit$conditions$model == "underdamped") {
-      out$vel.x <- vel_mat[, 1]
-      out$vel.y <- vel_mat[, 2]
+      out$vel.x <- vel_working[, 1] * scaleFactor
+      out$vel.y <- vel_working[, 2] * scaleFactor
     }
+
     out <- addMeasurementError(out, nat_par)
   } else {
     out_list <- vector("list", length(unique(data$id)))
@@ -442,7 +464,13 @@ simLangevin.fitLangevin <- function(model,
 
     for (i in unique(data$id)) {
       ind_data <- data[data$id == i, ]
-      obs_times <- as.numeric(ind_data$date) - as.numeric(ind_data$date[1])
+
+      if (inherits(ind_data$date, c("POSIXt", "Date"))) {
+        obs_times <- as.numeric(difftime(ind_data$date, ind_data$date[1], units = time.unit))
+      } else {
+        obs_times <- as.numeric(ind_data$date) - as.numeric(ind_data$date[1])
+      }
+
       acc_grid <- seq(0, max(obs_times), by = timeStep)
 
       full_grid <- sort(unique(round(c(obs_times, acc_grid), prec)))
@@ -450,7 +478,9 @@ simLangevin.fitLangevin <- function(model,
       obs_idx <- match(round(obs_times, prec), round(full_grid, prec))
 
       first_idx <- which(data$id == i)[1]
-      init_pos <- matrix(c(mu_mat[first_idx, 1], mu_mat[first_idx, 2]), nrow = 1, ncol = 2)
+
+      # Feed the working scale initial positions to the solver
+      init_pos <- matrix(c(mu_working[first_idx, 1], mu_working[first_idx, 2]), nrow = 1, ncol = 2)
 
       raster_names <- c("raster_vals","raster_coords","raster_resolution","raster_extent","n_covs","all_z_values","n_zvals_cov","cov_offset")
 
@@ -460,7 +490,7 @@ simLangevin.fitLangevin <- function(model,
         obsPerAnimal = length(full_dt_vec),
         dt_vec = full_dt_vec,
         gamma = nat_par$gamma,
-        sigma = nat_par$sigma / scaleFactor,
+        sigma = sigma_working, # Provide working scale sigma
         beta = nat_par$beta,
         raster_data = dat[raster_names],
         initialPosition = init_pos,
@@ -469,6 +499,15 @@ simLangevin.fitLangevin <- function(model,
       )
 
       sim_ind <- sim_full[obs_idx, ]
+
+      # rescale the outputs back to the natural scale
+      sim_ind$mu.x <- sim_ind$mu.x * scaleFactor
+      sim_ind$mu.y <- sim_ind$mu.y * scaleFactor
+      if (fit$conditions$model == "underdamped") {
+        sim_ind$vel.x <- sim_ind$vel.x * scaleFactor
+        sim_ind$vel.y <- sim_ind$vel.y * scaleFactor
+      }
+
       sim_ind$id <- i
       sim_ind$date <- ind_data$date
       sim_ind$dt <- ind_data$dt
@@ -507,7 +546,25 @@ simLangevin.fitLangevin <- function(model,
   if (!is.null(cond$barrier)) {
     attr(out, "lambda") <- cond$lambda
     attr(out, "barrier") <- cond$barrier
+    attr(out, "scaleFactor") <- scaleFactor
   }
 
   return(out)
+}
+
+# --- Lambda Rescaling Helpers ---
+.calc_lambda_limit <- function(model, sigma, gamma, dt) {
+  if (model == "overdamped") {
+    return(2 / (sigma^2 * dt))
+  } else {
+    num <- (gamma^2) * (1 - exp(-gamma * dt))
+    den <- (sigma^2) * (1 - exp(-gamma * dt) - (gamma * dt * exp(-gamma * dt)))
+    return(num / den)
+  }
+}
+
+.rescale_lambda <- function(lambda, model, sigma, gamma, orig_mean_dt, new_mean_dt) {
+  L_orig <- .calc_lambda_limit(model, sigma, gamma, orig_mean_dt)
+  L_new <- .calc_lambda_limit(model, sigma, gamma, new_mean_dt)
+  return(lambda * (L_new / L_orig))
 }

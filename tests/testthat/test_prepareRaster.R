@@ -185,7 +185,7 @@ test_that("Valid inputs successfully build the C++ ready list structure", {
   expect_equal(dim(res$raster_vals), c(10, 10, 2))
 
   # Check scale factor application on extent
-  expected_extent <- as.vector(terra::ext(r1) / scale_factor)
+  expected_extent <- as.vector(terra::ext(r1)) / scale_factor
   expect_equal(res$raster_extent, expected_extent)
 
   # Check single-layer times evaluate to 0
@@ -216,6 +216,6 @@ test_that("Spatial overlap buffer warning catches data close to the edge", {
     smaj = NA
   )
 
-  expect_error(prepareRaster(spatialCovs = covs, data = warn_data, coord = c("x", "y")),
+  expect_warning(prepareRaster(spatialCovs = covs, data = warn_data, coord = c("x", "y")),
                  "close to the edge of 'spatialCovs' relative to their measurement error")
 })

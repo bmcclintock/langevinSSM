@@ -4,7 +4,14 @@
 \alias{plotRaster}
 \title{Plot Raster}
 \usage{
-plotRaster(rast, legend.title = NULL, extent = NULL, time = NULL, ...)
+plotRaster(
+  rast,
+  legend.title = NULL,
+  extent = NULL,
+  time = NULL,
+  maskRast = NULL,
+  ...
+)
 }
 \arguments{
 \item{rast}{A \code{\link[terra]{SpatRaster-class}} object to plot.}
@@ -14,6 +21,8 @@ plotRaster(rast, legend.title = NULL, extent = NULL, time = NULL, ...)
 \item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. Default: \code{NULL}.}
 
 \item{time}{Optional. Indicates which layer(s) of a dynamic raster to plot. Can be a numeric index, a layer name, or a value matching the raster's \code{\link[terra]{time}} attribute (e.g., a \code{POSIXct}/\code{Date} or numeric object). If \code{NULL} (default), all layers are plotted.}
+
+\item{maskRast}{\code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{0}) before plotting the raster. Default: \code{NULL} (no mask).}
 
 \item{...}{Additional arguments passed to \code{\link[ggplot2]{scale_fill_viridis_c}} (e.g., \code{direction = -1}).}
 }

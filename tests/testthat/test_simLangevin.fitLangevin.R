@@ -34,7 +34,7 @@ test_that("simLangevin.fitLangevin handles POSIXt date and time.unit resolution"
   fit_posix <- suppressMessages(fitLangevin(data=exDat_posix, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE))
 
   # Switched to conditional = TRUE
-  res <- suppressMessages(simLangevin(fit_posix, data = exDat_posix, spatialCovs = exCovs, conditional = TRUE))
+  res <- suppressMessages(simLangevin(fit_posix, data = exDat_posix, timeStep = "1 min", spatialCovs = exCovs, conditional = TRUE))
 
   # Explicit attribute check
   expect_equal(attr(res, "time.unit"), "hours")
@@ -54,7 +54,7 @@ test_that("simLangevin.fitLangevin respects scaleFactor > 1 for all spatial unit
 test_that("simLangevin.fitLangevin error handling and conditional independence", {
   expect_error(simLangevin(fit, data = exDat[0,], spatialCovs = exCovs), "data contains no observations")
   expect_error(simLangevin(fit, data = exDat, spatialCovs = exCovs, timeStep = 0, conditional = FALSE),
-               "greater than zero")
+               "valid positive value")
   expect_no_error(suppressMessages(simLangevin(fit, data = exDat, spatialCovs = exCovs,
                                                timeStep = 0, conditional = TRUE)))
 })

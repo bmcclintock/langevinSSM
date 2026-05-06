@@ -79,7 +79,7 @@ get_mock_sim <- function() {
 
 test_that("plot.fitLangevin catches missing spatialCovs", {
   fit <- get_mock_fit()
-  expect_error(plot(fit), "You must provide the 'spatialCovs'")
+  expect_error(plot(fit), "'spatialCovs' must be provided")
 })
 
 test_that("plot.fitLangevin works for static rasters (Single Layer)", {

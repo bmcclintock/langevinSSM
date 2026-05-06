@@ -12,31 +12,30 @@
 #'
 #' @param x A \code{fitLangevin}, \code{dataLangevin}, \code{simLangevin}, \code{regLangevin}, \code{udLangevin}, or \code{resLangevin} object.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
-#' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs}. If provided, plots the UD instead of individual covariates.
+#' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs} minus the barrier (if present). If provided, plots the UD instead of individual covariates.
 #' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
 #' @param tracks Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).
-#' @param maskBarrier Logical. If \code{TRUE}, restricted areas defined by the barrier are masked out (set to \code{NA}) before plotting the UD. This prevents the barrier penalty from compressing the color scale of the UD in the unrestricted areas. Set to \code{FALSE} to visualize the raw UD including the barrier penalty. Default: \code{FALSE}
+#' @param maskRast \code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{0}) before plotting the UD. Default: \code{NULL} (no mask).
 #' @param ... Additional arguments passed to internal plotting methods.
 #'
 #' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
 #'
 #' @name plot.langevin
-#' @importFrom terra as.data.frame nlyr time crop ext ifel mask trim
+#' @importFrom terra as.data.frame nlyr time crop ext ifel mask trim compareGeom
 NULL
 
 #' @rdname plot.langevin
 #' @method plot fitLangevin
 #' @export
-plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = NULL, time = NULL, compact = TRUE, maskBarrier = FALSE, ...) {
-  if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
+plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = NULL, time = NULL, compact = TRUE, maskRast = NULL, ...) {
+  if (missing(spatialCovs)) stop("'spatialCovs' must be provided.")
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
 
   verify_signatures(x, data = data, spatialCovs = spatialCovs)
-
   boundsWarning(x)
 
   # --- Prepare Tracks ---
@@ -83,26 +82,18 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
     }
   }
 
-  # --- Prepare UD Raster ---
+  barrier <- x$conditions$barrier
+  lambda <- x$conditions$lambda
+  scaleFactor <- x$conditions$scaleFactor
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
-  barrier <- .find_barrier(spatialCovs)
-  lambda <- x$conditions$lambda
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, lambda = lambda, log = log, plot = FALSE)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier=barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
   target_idx <- which(names(ud_full) == ud_layer_name)
   ud_raster <- ud_full[[target_idx]]
-
-  # --- MASK OUT THE BARRIER FOR VISUALIZATION ---
-  if (!is.null(barrier) && maskBarrier) {
-    sp_mask <- spatialCovs[[barrier]]
-    # Safely convert restricted areas (<=0) to NA so they don't crush the ggplot color scale
-    m_na <- terra::ifel(sp_mask <= 0, NA, 1)
-    ud_raster <- terra::mask(ud_raster, m_na)
-  }
 
   if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
@@ -119,7 +110,8 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
       track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
       track_colors = track_colors,
-      track_lines = track_lines, ...
+      track_lines = track_lines,
+      maskRast = maskRast, ...
     )
   }
 
@@ -129,24 +121,29 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 #' @rdname plot.langevin
 #' @method plot simLangevin
 #' @export
-plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, time = NULL, compact = TRUE, maskBarrier = FALSE, ...) {
+plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, time = NULL, compact = TRUE, maskRast = NULL, ...) {
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
 
-  # If no beta is provided, fall back to dataLangevin plotting behavior
   if (is.null(beta)){
-    if(maskBarrier==FALSE) return(plot.dataLangevin(x, spatialCovs, extent = extent, time = time, compact = compact, ...))
-    stop("'beta' must be provided in order to mask the theoretical UD plot.")
+    return(plot.dataLangevin(x, spatialCovs, extent = extent, time = time, compact = compact, maskRast = maskRast, ...))
   }
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
 
-  if (length(beta) != length(spatialCovs)) {
-    stop("The length of 'beta' must match the number of covariates in 'spatialCovs'.")
-  }
-
-  # --- Smart Extraction of Barrier and Lambda ---
   barrier <- attr(x, "barrier")
   lambda <- attr(x, "lambda")
+  sf_attr <- attr(x, "scaleFactor")
+  scaleFactor <- if (!is.null(sf_attr)) sf_attr else 1
+
+  # Check that lengths line up after handling the barrier
+  expected_length <- length(spatialCovs)
+  if (!is.null(barrier) && barrier %in% names(spatialCovs)) {
+    expected_length <- expected_length - 1
+  }
+
+  if (length(beta) != expected_length) {
+    stop(sprintf("The length of 'beta' must match the number of habitat covariates in 'spatialCovs' (%d).", expected_length))
+  }
 
   # --- Prepare Tracks ---
   err_cols <- c("smaj", "smin", "eor", "x.err", "y.err")
@@ -173,20 +170,12 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     track_lines <- c("True" = "solid")
   }
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, lambda = lambda, log = log, plot = FALSE)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
   target_idx <- which(names(ud_full) == ud_layer_name)
   ud_raster <- ud_full[[target_idx]]
-
-  # --- MASK OUT THE BARRIER FOR VISUALIZATION ---
-  if (!is.null(barrier) && maskBarrier) {
-    sp_mask <- spatialCovs[[barrier]]
-    # Safely convert restricted areas (<=0) to NA so they don't crush the ggplot color scale
-    m_na <- terra::ifel(sp_mask <= 0, NA, 1)
-    ud_raster <- terra::mask(ud_raster, m_na)
-  }
 
   if (!is.null(time) && terra::nlyr(ud_raster) == 1) {
     warning("'time' argument provided, but the resulting UD is static. Ignoring 'time'.")
@@ -202,7 +191,8 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     plot_list[[pid]] <- .build_langevin_plot(
       track_df = track_df, pid = pid, raster_obj = ud_raster, user_extent = extent, time = time,
       compact = compact, title_text = title_text, fill_label = fill_label,
-      track_colors = track_colors, track_lines = track_lines, ...
+      track_colors = track_colors, track_lines = track_lines,
+      maskRast = maskRast, ...
     )
   }
 
@@ -212,7 +202,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
 #' @rdname plot.langevin
 #' @method plot dataLangevin
 #' @export
-plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, ...) {
+plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compact = TRUE, maskRast = NULL, ...) {
 
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
@@ -274,7 +264,8 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
       cov_plot_list[[pid]] <- .build_langevin_plot(
         track_df = track_df, pid = pid, raster_obj = cov_rast, user_extent = extent, time = time,
         compact = compact, title_text = title_text, fill_label = cov_name,
-        track_colors = track_colors, track_lines = track_lines, ...
+        track_colors = track_colors, track_lines = track_lines,
+        maskRast = maskRast, ...
       )
     }
     main_plot_list[[cov_name]] <- if (compact) cov_plot_list[[1]] else cov_plot_list
@@ -394,18 +385,11 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
 #' @details Because \code{getUD} returns a standard \code{\link[terra]{SpatRaster}} object, users are free to bypass \code{plotUD} and visualize the rasters using base \code{plot()}, \code{ggplot2}, or \code{tidyterra} to suit their specific needs.
 #' @rdname plot.langevin
 #' @export
-plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL, maskBarrier = FALSE, ...) {
+plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
 
-  if(!is.null(spatialCovs)) barrier <- .find_barrier(spatialCovs)
-  else barrier <- NULL
-
-  if (maskBarrier && !is.null(barrier) && !is.null(spatialCovs)) {
-    sp_mask <- spatialCovs[[barrier]]
-    m_na <- terra::ifel(sp_mask <= 0, NA, 1)
-    x <- terra::mask(x, m_na)
-  }
+  if(!inherits(x, "SpatRaster")) stop("'x' must be a SpatRaster object containing the UD and optionally its uncertainty layers.")
 
   plot_list <- list()
   layer_names <- names(x)
@@ -415,7 +399,11 @@ plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL
 
   ud_name <- if (has_log_ud) "log_UD" else "UD"
   target_idx <- which(layer_names == ud_name)
-  ud_rast <- x[[target_idx]]
+  if(length(target_idx)) {
+    ud_rast <- x[[target_idx]]
+  } else {
+    stop("No UD layer found in the provided SpatRaster. Expected a layer named 'UD' or 'log_UD'.")
+  }
 
   # Actively transform base UD based on log argument regardless of raster origin
   if (log) {
@@ -595,7 +583,7 @@ plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL
 }
 
 # --- Internal Helper for Plotting Engine ---
-.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent = NULL, time = NULL, compact = TRUE, title_text = "", fill_label = "", track_colors = NULL, track_lines = NULL, ...) {
+.build_langevin_plot <- function(track_df, pid, raster_obj, user_extent = NULL, time = NULL, compact = TRUE, title_text = "", fill_label = "", track_colors = NULL, track_lines = NULL, maskRast = NULL, ...) {
 
   trk_sub <- NULL
   if (!is.null(track_df)) {
@@ -616,12 +604,34 @@ plotUD <- function(x, spatialCovs = NULL, log = TRUE, extent = NULL, time = NULL
   if (!is.null(current_extent)) {
     crop_ext <- tryCatch(terra::ext(current_extent), error = function(e) NULL)
     if (!is.null(crop_ext)) {
-      raster_obj <- tryCatch({
-        terra::crop(raster_obj, crop_ext)
-      }, error = function(e) {
-        warning("terra::crop failed. Ignoring extent.")
-        return(raster_obj)
-      })
+      raster_obj <- tryCatch(
+        terra::crop(raster_obj, crop_ext),
+        error = function(e) {
+          warning("terra::crop failed. Ignoring extent.")
+          return(raster_obj)
+        }
+      )
+    }
+  }
+
+  if (!is.null(maskRast)) {
+    if(!inherits(maskRast, "SpatRaster")) stop("'maskRast' must be a SpatRaster")
+
+    if (!is.null(crop_ext)) {
+      maskRast <- tryCatch(
+        terra::crop(maskRast, crop_ext),
+        error = function(e) {
+          warning("terra::crop failed on maskRast. Ignoring maskRast.")
+          return(NULL)
+        }
+      )
+    }
+
+    if(!is.null(maskRast)) {
+      if (!terra::compareGeom(raster_obj, maskRast, stopOnError = FALSE)) {
+        stop("The 'maskRast' raster must share the same projection (CRS), extent, and resolution as the rasters in 'spatialCovs'.")
+      }
+      raster_obj <- terra::ifel(maskRast <= 0, NA, raster_obj)
     }
   }
 

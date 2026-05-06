@@ -130,7 +130,7 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
 
     if (prob_xmin < cov_ext["xmin"] || prob_xmax > cov_ext["xmax"] ||
         prob_ymin < cov_ext["ymin"] || prob_ymax > cov_ext["ymax"]) {
-      stop("Some tracking locations are dangerously close to the edge of 'spatialCovs' relative to their measurement error. Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates, the optimizer will likely push these locations outside the raster extent during model fitting. The spatial extent of the rasters must be extended before proceeding.")
+      warning("Some tracking locations are dangerously close to the edge of 'spatialCovs' relative to their measurement error.\n  Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates,\n   the optimizer will likely push these locations outside the raster extent during model fitting.\n  The spatial extent of the rasters should be extended before proceeding.\n", immediate. = TRUE)
     }
   }
 
@@ -153,7 +153,7 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
     raster_vals = vals_array,
     raster_coords = terra::crds(rasterStack)/scaleFactor,
     raster_resolution = terra::res(rasterStack)/scaleFactor,
-    raster_extent = as.vector(terra::ext(rasterStack)/scaleFactor),
+    raster_extent = as.vector(terra::ext(rasterStack)) / scaleFactor,
     n_covs = length(n_zvals_cov),
     all_z_values = as.numeric(all_z_values_R), # The flattened raster slice times
     n_zvals_cov = as.integer(n_zvals_cov),

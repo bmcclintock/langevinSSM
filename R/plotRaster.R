@@ -7,15 +7,17 @@
 #' @param legend.title Character string for the legend title. Default: \code{NULL}, in which case the name of the first raster layer (see \code{\link[terra]{names}}) will be used as the legend title.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. Default: \code{NULL}.
 #' @param time Optional. Indicates which layer(s) of a dynamic raster to plot. Can be a numeric index, a layer name, or a value matching the raster's \code{\link[terra]{time}} attribute (e.g., a \code{POSIXct}/\code{Date} or numeric object). If \code{NULL} (default), all layers are plotted.
+#' @param maskRast \code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{0}) before plotting the raster. Default: \code{NULL} (no mask).
 #' @param ... Additional arguments passed to \code{\link[ggplot2]{scale_fill_viridis_c}} (e.g., \code{direction = -1}).
 #' @return A \code{\link[ggplot2]{ggplot}} object containing the raster plot.
 #' @examples
 #' # exampleCovs included in package; see ?exampleCovs for details
 #' plotRaster(exampleCovs$cov1)
 #'
-#' @importFrom terra as.data.frame nlyr time ext crop
+#' @importFrom terra as.data.frame nlyr time ext crop ifel compareGeom
 #' @export
-plotRaster <- function(rast, legend.title = NULL, extent = NULL, time = NULL, ...) {
+plotRaster <- function(rast, legend.title = NULL, extent = NULL, time = NULL, maskRast = NULL, ...) {
+
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("Package \"ggplot2\" needed for plotting rasters. Please install it.", call. = FALSE)
   }
@@ -46,6 +48,7 @@ plotRaster <- function(rast, legend.title = NULL, extent = NULL, time = NULL, ..
 
   # --- Extent Parsing ---
   xlim <- ylim <- NULL
+  crop_ext <- NULL
   if (!is.null(extent)) {
     crop_ext <- tryCatch(terra::ext(extent), error = function(e) NULL)
     if (!is.null(crop_ext)) {
@@ -56,6 +59,23 @@ plotRaster <- function(rast, legend.title = NULL, extent = NULL, time = NULL, ..
     } else { warning("Invalid extent object. Ignoring.") }
   }
 
+  # --- Masking ---
+  if (!is.null(maskRast)) {
+
+    if(!inherits(maskRast, "SpatRaster")) stop("'maskRast' must be a SpatRaster")
+    if (!terra::compareGeom(rast, maskRast, stopOnError = FALSE)) stop("The 'maskRast' raster must share the same projection (CRS), extent, and resolution as the rasters in 'spatialCovs'.")
+
+    maskRast_eval <- tryCatch({
+      if (!is.null(crop_ext)) terra::crop(maskRast, crop_ext) else maskRast
+    }, error = function(e) {
+      warning("terra::crop failed on maskRast. Ignoring maskRast.")
+      return(NULL)
+    })
+    if(!is.null(maskRast_eval)) {
+      rast <- terra::ifel(maskRast_eval <= 0, NA, rast)
+    }
+  }
+
   # --- Renaming for Facets ---
   n_layers <- terra::nlyr(rast)
   layer_times <- terra::time(rast)
@@ -63,7 +83,8 @@ plotRaster <- function(rast, legend.title = NULL, extent = NULL, time = NULL, ..
     names(rast) <- if (!is.null(layer_times) && !all(is.na(layer_times))) paste0("Time: ", layer_times) else paste0("Layer ", seq_len(n_layers))
   }
 
-  covmap_wide <- terra::as.data.frame(rast, xy = TRUE, na.rm = TRUE)
+  covmap_wide <- terra::as.data.frame(rast, xy = TRUE, na.rm = FALSE)
+
   layer_names <- setdiff(names(covmap_wide), c("x", "y"))
   covmap_long <- do.call(rbind, lapply(layer_names, function(lyr) {
     data.frame(x = covmap_wide$x, y = covmap_wide$y, layer = lyr, val = covmap_wide[[lyr]])

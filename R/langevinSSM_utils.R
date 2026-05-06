@@ -707,20 +707,3 @@ boundsWarning <- function(fit, as_warning = TRUE) {
   }
   return(invisible(TRUE))
 }
-
-# Internal Helper: Scan spatialCovs for the barrier tag
-.find_barrier <- function(spatialCovs) {
-  barrier_name <- NULL
-
-  for (nm in names(spatialCovs)) {
-    if (isTRUE(attr(spatialCovs[[nm]], "barLangevin"))) {
-      if (!is.null(barrier_name)) {
-        stop("Multiple rasters in 'spatialCovs' are tagged as barriers. Only one barrier is supported.")
-      }
-      barrier_name <- nm
-    }
-  }
-
-  return(barrier_name) # returns NULL if no barrier is found
-}
-

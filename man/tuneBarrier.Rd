@@ -7,6 +7,7 @@
 tuneBarrier(
   data,
   spatialCovs,
+  barrier,
   lambda_max = NULL,
   n_coarse = 3,
   n_fine = 4,
@@ -21,7 +22,9 @@ tuneBarrier(
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.}
 
-\item{lambda_max}{Numeric. The maximum barrier penalty to start the top-down search. If \code{NULL}, it is estimated from the empirical step variance.}
+\item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).}
+
+\item{lambda_max}{Numeric. The maximum barrier penalty to start the top-down search. If \code{NULL}, it is estimated automatically using a "baseline 0" model fit that assumes \code{lambda}=0 (i.e., no barrier).}
 
 \item{n_coarse}{Integer. The number of linearly spaced penalties to evaluate in the coarse grid. Default: \code{3}.}
 
@@ -36,7 +39,7 @@ tuneBarrier(
 \item{...}{Additional arguments passed to \code{\link{fitLangevin}}.}
 }
 \value{
-A \code{fitLangevin} object that includes the most optimal penalty from the grid search.
+A \code{fitLangevin} object that includes the ``best'' penalty from the grid search.
 }
 \description{
 Fits a Langevin diffusion model constrained by a spatial barrier using a two-stage grid search.
@@ -64,15 +67,16 @@ The barrier penalty (\code{lambda}) cannot be estimated at the same time as the 
 
 \strong{Two-phase search strategy:}
 \itemize{
-  \item \strong{Phase I (Coarse Search):} If \code{lambda_max} is not provided, the algorithm calculates the maximum penalty the numerical solver can process. It then evaluates a set of \code{n_coarse} penalties, spaced evenly from \code{lambda_max} down to a lower boundary.
-  \item \strong{Phase II (Fine Search):} After finding the most effective penalty from Phase I, the algorithm creates a narrower search window around that value. It then evaluates \code{n_fine} evenly spaced penalties to refine the estimate.
+  \item \strong{Phase I (Coarse Search):} It first evaluates a set of \code{n_coarse} penalties, spaced evenly from \code{lambda_max} down to a lower boundary.
+  \item \strong{Phase II (Fine Search):} After finding the ``best'' penalty from Phase I, the algorithm creates a narrower search window around that value. It then evaluates \code{n_fine} evenly spaced penalties to refine the penalty.
 }
 
 \strong{Calculating the Search Boundaries}
-If \code{lambda_max} is \code{NULL}, the algorithm calculates the upper and lower boundaries for the grid search using empirical properties of the tracking data:
+If \code{lambda_max} is \code{NULL}, the algorithm calculates the upper and lower boundaries for the grid search using a "baseline 0" approach:
 \itemize{
-  \item \strong{Upper Boundary (\code{lambda_max}):} This is estimated using the maximum observed time step between locations, combined with the animal's empirical speed (and friction, if using the underdamped model). Higher values beyond this limit will likely lead to numerical issues during model fitting.
-  \item \strong{Lower Boundary (\code{lambda_min}):} This represents the weakest plausible penalty. It is calculated by finding the maximum distance the animal was observed inside the restricted area. The algorithm sets \code{lambda_min} just high enough to ensure the barrier's restoring force could counteract the animal's empirical kinetic energy at that specific depth.
+  \item \strong{Upper Boundary (\code{lambda_max}):} The algorithm first fits a baseline model with the barrier penalty temporarily turned off (i.e., \code{lambda = 0}). This allows the model to approximate the movement speed and friction. The algorithm then uses these rough estimates to calculate the maximum barrier penalty the model appears to be able to handle.
+  Note that this is just a ballpark estimate based on a model that ignores the barrier and can be corrupted by measurement error. It may therefore not be optimal, and users are encouraged to explore other (larger) values for \code{lambda_max}.
+  \item \strong{Lower Boundary (\code{lambda_min}):} This represents the weakest plausible penalty. It is calculated by finding the maximum distance an animal was observed inside the restricted area. The algorithm sets \code{lambda_min} just high enough to ensure the barrier's restoring force could push the animal back from that specific depth.
 }
 
 \strong{The Scoring Metric: Comparing Distance Distributions}

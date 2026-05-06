@@ -4,10 +4,10 @@
 \alias{prepBarrier}
 \title{Prepare a spatial barrier for Langevin models}
 \usage{
-prepBarrier(mask_rast)
+prepBarrier(maskRast)
 }
 \arguments{
-\item{mask_rast}{A \code{\link[terra]{SpatRaster-class}} object containing a binary mask. Values of \code{1} indicate allowed movement areas (e.g., water), and values of \code{0} indicate restricted areas (e.g., land).}
+\item{maskRast}{A \code{\link[terra]{SpatRaster-class}} object containing a binary mask. Values of \code{1} indicate allowed movement areas (e.g., water), and values of \code{0} indicate restricted areas (e.g., land).}
 }
 \value{
 A \code{\link[terra]{SpatRaster-class}} object containing the calculated signed distance field. Positive values represent distance into the allowed area; negative values represent distance into the restricted area. The object is assigned a \code{"barLangevin" = TRUE} attribute.

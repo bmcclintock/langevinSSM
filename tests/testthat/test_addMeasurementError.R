@@ -295,7 +295,7 @@ test_that("addMeasurementError handles simLangevin objects from simLangevin.fitL
 
   # 3. Simulate Forward Unconditionally
   sim_fit_dat <- suppressWarnings(suppressMessages(
-    simLangevin(fit, data = fmt_dat, spatialCovs = spatialCovs, timeStep = 1, conditional = FALSE)
+    simLangevin(fit, data = fmt_dat, spatialCovs = spatialCovs, timeStep = "30 mins", conditional = FALSE)
   ))
 
   expect_s3_class(sim_fit_dat, "simLangevin")

@@ -8,12 +8,14 @@ getUD(
   spatialCovs,
   fit,
   beta,
+  barrier = NULL,
   lambda = NULL,
+  scaleFactor = 1,
   log = TRUE,
   nSims = 0,
   show_progress = TRUE,
   plot = TRUE,
-  maskBarrier = FALSE
+  maskRast = NULL
 )
 }
 \arguments{
@@ -23,7 +25,11 @@ getUD(
 
 \item{beta}{Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.}
 
+\item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier). If \code{fit} is provided, this is extracted automatically.}
+
 \item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically.}
+
+\item{scaleFactor}{Internal scaling factor for the coordinates and parameters (see \code{\link{fitLangevin}}). Automatically extracted if \code{fit} is provided. Default: 1 (no scaling).}
 
 \item{log}{Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.}
 
@@ -33,7 +39,7 @@ getUD(
 
 \item{plot}{Logical. Plot the resulting UD using \code{\link{plotUD}}? Default: \code{TRUE}.}
 
-\item{maskBarrier}{Logical. If \code{TRUE}, restricted areas defined by the barrier are masked out (set to \code{NA}) before plotting the UD. This prevents the barrier penalty from compressing the color scale of the UD in the unrestricted areas. Set to \code{FALSE} to visualize the raw UD including the barrier penalty. Default: \code{FALSE}}
+\item{maskRast}{\code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{NA}) before plotting the UD. Default: \code{NULL} (no mask).}
 }
 \value{
 A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).

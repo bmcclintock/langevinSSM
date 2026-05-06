@@ -1,9 +1,8 @@
 # --- Helper: Build TMB Data List ---
-build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_names = NULL, lambda = NULL) {
+build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_sdf = NULL, lambda = NULL) {
 
-  if (!is.null(barrier_names)) {
-    barrier_sdf <- spatialCovs[[barrier_names]]
-    barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE)
+  if (!is.null(barrier_sdf)) {
+    barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE) / scaleFactor
     barrier_pen <- lambda
   } else {
     barrier_dist_mat <- matrix(0, 1, 1)
@@ -188,13 +187,14 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param data \code{dataLangevin} object. See \code{\link{formatData}}.
 #' @param model Character string indicating which Langevin diffusion model to fit (``underdamped'', or ``overdamped''). Default: ``underdamped''.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
+#' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma'').
 #' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). All parameter are specified on their natural scale and are converted to working scale internally.
 #' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, and ``rho_o'' = 0) via \code{map}. See Details.
+#' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{tuneBarrier}} for a strategy to determine the optimal penalty.
 #' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).
 #' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
 #' @param coord Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.
-#' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{tuneBarrier}} for a strategy to determine the optimal penalty.
 #' @param scaleFactor Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.
 #' @param smoothGradient Logical indicating whether or not to smooth the gradients. See Details. Default: \code{FALSE}.
 #' @param npoints Number of smoothing points around current cell (4 = diagonal, 8 = queen neighborhood). Ignored unless \code{smoothGradient=TRUE}.
@@ -291,8 +291,9 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' # convert mask to SDF and add to the spatial covariates list
 #' exampleCovs_barrier <- exampleCovs
 #' exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+#' exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier / 100
 #'
-#' # add a beta coefficient for the barrier to the parameter list
+#' # add a beta coefficient for d2coast to the parameter list
 #' par_barrier <- par
 #' par_barrier$beta <- c(par_barrier$beta, -0.2)
 #'
@@ -301,6 +302,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' simDat_barrier <- simLangevin(par = par_barrier,
 #'                               nbAnimals = 3,
 #'                               spatialCovs = exampleCovs_barrier,
+#'                               barrier = "coast_barrier",
 #'                               measurementError = list(smaj.sd = 1.5,
 #'                                                       smin.sd = 0.75,
 #'                                                       eor.lim = c(0,180)))
@@ -313,14 +315,14 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'
 #' plot(fit_barrier, data = simDat_barrier,
 #'                   spatialCovs = exampleCovs_barrier,
-#'                   maskBarrier=TRUE)
+#'                   maskRast = coast_barrier)
 #' }
 #'
 #' @rawNamespace useDynLib(langevinSSM, .registration=TRUE); useDynLib(langevinSSM_TMBExports)
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, par, prior = NULL, map=NULL, coord = c("x", "y"), lambda = NULL, scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   model <- match.arg(model)
@@ -332,8 +334,23 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
   checkErrorData(data, coord)
 
-  barrier <- .find_barrier(spatialCovs)
+  if(is.null(barrier)){
+    sim_barrier <- attr(data,"barrier")
+    if(!is.null(sim_barrier)){
+      barrier <- sim_barrier
+      message("   Auto-detected barrier from simLangevin data: ", barrier)
+    }
+  }
+
+  orig_spatialCovs <- spatialCovs
+
   if (!is.null(barrier)) {
+    if (!(barrier %in% names(spatialCovs))) stop(sprintf("Barrier raster '%s' not found in spatialCovs.", barrier))
+
+    barrier_sdf <- spatialCovs[[barrier]]
+    if(!isTRUE(attr(barrier_sdf,"barLangevin"))) stop("barrier is not a 'barLangevin' object created by prepBarrier.")
+    spatialCovs[[barrier]] <- NULL
+
     if (is.null(lambda)) {
       sim_lambda <- attr(data, "lambda")
       if (!is.null(sim_lambda)) {
@@ -345,9 +362,15 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       }
     }
     .validate_lambda(lambda)
+  } else {
+    barrier_sdf <- NULL
   }
 
-  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_names = barrier, lambda = lambda)
+  if (length(spatialCovs) == 0) {
+    stop("At least one habitat covariate must remain in spatialCovs after isolating the barrier constraint.")
+  }
+
+  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_sdf = barrier_sdf, lambda = lambda)
 
   par <- initialValues(data, model, par, spatialCovs, coord)
   cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior)
@@ -432,8 +455,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     cov_ext <- as.vector(terra::ext(spatialCovs[[1]]))
     cov_res <- terra::res(spatialCovs[[1]])
 
-    safe_xmin <- cov_ext["xmin"] + cov_res[1]; safe_xmax <- cov_ext["xmax"] - cov_res[1]
-    safe_ymin <- cov_ext["ymin"] + cov_res[2]; safe_ymax <- cov_ext["ymax"] - cov_res[2]
+    safe_xmin <- cov_ext[1] + cov_res[1]; safe_xmax <- cov_ext[2] - cov_res[1]
+    safe_ymin <- cov_ext[3] + cov_res[2]; safe_ymax <- cov_ext[4] - cov_res[2]
 
     out_of_bounds <- any(mu_est$mu.x < safe_xmin | mu_est$mu.x > safe_xmax |
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
@@ -443,7 +466,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
   boundsWarning(fit)
 
-  fit$signatures <- list(data = get_data_signature(data, coord), covs = get_covs_signature(spatialCovs))
+  fit$signatures <- list(data = get_data_signature(data, coord), covs = get_covs_signature(orig_spatialCovs))
   fit$tmb_setup <- list(parList = obj2$env$parList(fit$par), map = map, random = re, priors = cp$priors)
 
   fit <- class_fitLangevin(fit)

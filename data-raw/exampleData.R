@@ -91,7 +91,7 @@ fit_barrier <- fitLangevin(data = simDat_barrier,
                            silent = TRUE)
 fit_barrier
 
-plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskBarrier=TRUE)
+plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast = coast_barrier)
 
 
 res_barrier <- residuals(fit_barrier,simDat_barrier, exampleCovs_barrier, run_tests = TRUE, ncores=nbAnimals)
@@ -102,7 +102,7 @@ fit_barrier_ks <- tuneBarrier(data = simDat_barrier,
                               spatialCovs = exampleCovs_barrier,
                               silent = TRUE)
 
-plot(fit_barrier_ks,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskBarrier=TRUE)
+plot(fit_barrier_ks,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast = coast_barrier)
 
 
 start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")

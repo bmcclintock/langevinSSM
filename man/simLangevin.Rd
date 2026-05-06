@@ -10,15 +10,16 @@ simLangevin(model, ...)
 
 \method{simLangevin}{default}(
   model = c("underdamped", "overdamped"),
-  par,
   spatialCovs,
+  barrier = NULL,
+  par,
+  lambda = NULL,
+  timeStep = 0.01,
   nbAnimals = 1,
   obsPerAnimal = 500,
-  timeStep = 0.01,
   initialPosition,
   measurementError = NULL,
   subSample = NULL,
-  lambda = NULL,
   ...
 )
 
@@ -37,23 +38,25 @@ simLangevin(model, ...)
 
 \item{...}{Additional arguments passed to the specific methods.}
 
+\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
+
+\item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).}
+
 \item{par}{List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. See \code{\link{fitLangevin}}.}
 
-\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
+\item{lambda}{Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.}
+
+\item{timeStep}{Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.}
 
 \item{nbAnimals}{Number of animals to simulate. Default: 1.}
 
 \item{obsPerAnimal}{Number of observations to simulate per animal. Default: 500.}
-
-\item{timeStep}{Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.}
 
 \item{initialPosition}{Initial position(s) for the simulation. A 2-vector, or a list of length \code{nbAnimals} of 2-vectors. If missing, initial positions are randomly generated based on the utilization distribution.}
 
 \item{measurementError}{A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.}
 
 \item{subSample}{List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
-
-\item{lambda}{Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.}
 
 \item{data}{The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.}
 
@@ -144,38 +147,45 @@ fit <- fitLangevin(data = exampleDat,
 # unconditional
 simFit <- simLangevin(fit,
                       data = exampleDat,
-                      spatialCovs = exampleCovs)
+                      spatialCovs = exampleCovs,
+                      timeStep = "10 secs")
 
 # conditional on observed tracks
 simFit_cond <- simLangevin(fit,
                            data = exampleDat,
                            spatialCovs = exampleCovs,
+                           timeStep = "10 secs",
                            conditional = TRUE)
 
 # simulating with a barrier
 # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
 coast_barrier <- exampleCovs[[1]]
-terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"] >=
-                                       mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
+                                 >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 names(coast_barrier) <- "coast_barrier"
 
 # convert mask to SDF and add to the spatial covariates list
 exampleCovs_barrier <- exampleCovs
 exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier / 100
 
-# add a beta coefficient for the barrier to the parameter list
+# add a beta coefficient for d2coast to the parameter list
 par_barrier <- par
 par_barrier$beta <- c(par_barrier$beta, -0.2)
 
 # simulate the data
-set.seed(123,kind="Mersenne-Twister",normal.kind="Inversion")
+set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
+                              nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
+                              barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 1.5,
                                                       smin.sd = 0.75,
                                                       eor.lim = c(0,180)))
 
-plot(simDat_barrier,beta=par_barrier$beta,spatialCovs=exampleCovs_barrier)
+plot(simDat_barrier,beta=par_barrier$beta,
+     spatialCovs=exampleCovs_barrier,
+     maskRast = coast_barrier)
 }
 }
 \references{

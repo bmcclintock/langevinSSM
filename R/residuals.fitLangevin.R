@@ -51,11 +51,19 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
   time.unit <- attr(data, "time.unit")
   coord <- cond$coord
+  scaleFactor <- cond$scaleFactor
+
+  if (!is.null(cond$barrier)) {
+    barrier_sdf <- spatialCovs[[cond$barrier]] / scaleFactor
+    spatialCovs[[cond$barrier]] <- NULL
+  } else {
+    barrier_sdf <- NULL
+  }
 
   # Now passing barrier and lambda so OSA residuals account for coastal bounces
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, cond$scaleFactor,
                         cond$smoothGradient, cond$npoints, cond$curweight,
-                        cond$zetaScale, barrier_names = cond$barrier, lambda = cond$lambda)
+                        cond$zetaScale, barrier_sdf = barrier_sdf, lambda = cond$lambda)
 
   # Re-attach priors from the blueprint
   dat <- c(dat, object$tmb_setup$priors)

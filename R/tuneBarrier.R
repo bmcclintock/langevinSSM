@@ -7,7 +7,8 @@
 #'
 #' @param data A \code{dataLangevin} object containing the tracking data.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
-#' @param lambda_max Numeric. The maximum barrier penalty to start the top-down search. If \code{NULL}, it is estimated from the empirical step variance.
+#' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
+#' @param lambda_max Numeric. The maximum barrier penalty to start the top-down search. If \code{NULL}, it is estimated automatically using a "baseline 0" model fit that assumes \code{lambda}=0 (i.e., no barrier).
 #' @param n_coarse Integer. The number of linearly spaced penalties to evaluate in the coarse grid. Default: \code{3}.
 #' @param n_fine Integer. The number of linearly spaced penalties to evaluate in the fine grid around the coarse winner. Default: \code{4}.
 #' @param n_sims Integer. The number of repeated simulations to run per penalty to calculate the overall (median) KS score. Default: \code{5}.
@@ -22,15 +23,16 @@
 #'
 #' \strong{Two-phase search strategy:}
 #' \itemize{
-#'   \item \strong{Phase I (Coarse Search):} If \code{lambda_max} is not provided, the algorithm calculates the maximum penalty the numerical solver can process. It then evaluates a set of \code{n_coarse} penalties, spaced evenly from \code{lambda_max} down to a lower boundary.
-#'   \item \strong{Phase II (Fine Search):} After finding the most effective penalty from Phase I, the algorithm creates a narrower search window around that value. It then evaluates \code{n_fine} evenly spaced penalties to refine the estimate.
+#'   \item \strong{Phase I (Coarse Search):} It first evaluates a set of \code{n_coarse} penalties, spaced evenly from \code{lambda_max} down to a lower boundary.
+#'   \item \strong{Phase II (Fine Search):} After finding the ``best'' penalty from Phase I, the algorithm creates a narrower search window around that value. It then evaluates \code{n_fine} evenly spaced penalties to refine the penalty.
 #' }
 #'
 #' \strong{Calculating the Search Boundaries}
-#' If \code{lambda_max} is \code{NULL}, the algorithm calculates the upper and lower boundaries for the grid search using empirical properties of the tracking data:
+#' If \code{lambda_max} is \code{NULL}, the algorithm calculates the upper and lower boundaries for the grid search using a "baseline 0" approach:
 #' \itemize{
-#'   \item \strong{Upper Boundary (\code{lambda_max}):} This is estimated using the maximum observed time step between locations, combined with the animal's empirical speed (and friction, if using the underdamped model). Higher values beyond this limit will likely lead to numerical issues during model fitting.
-#'   \item \strong{Lower Boundary (\code{lambda_min}):} This represents the weakest plausible penalty. It is calculated by finding the maximum distance the animal was observed inside the restricted area. The algorithm sets \code{lambda_min} just high enough to ensure the barrier's restoring force could counteract the animal's empirical kinetic energy at that specific depth.
+#'   \item \strong{Upper Boundary (\code{lambda_max}):} The algorithm first fits a baseline model with the barrier penalty temporarily turned off (i.e., \code{lambda = 0}). This allows the model to approximate the movement speed and friction. The algorithm then uses these rough estimates to calculate the maximum barrier penalty the model appears to be able to handle.
+#'   Note that this is just a ballpark estimate based on a model that ignores the barrier and can be corrupted by measurement error. It may therefore not be optimal, and users are encouraged to explore other (larger) values for \code{lambda_max}.
+#'   \item \strong{Lower Boundary (\code{lambda_min}):} This represents the weakest plausible penalty. It is calculated by finding the maximum distance an animal was observed inside the restricted area. The algorithm sets \code{lambda_min} just high enough to ensure the barrier's restoring force could push the animal back from that specific depth.
 #' }
 #'
 #' \strong{The Scoring Metric: Comparing Distance Distributions}
@@ -46,23 +48,68 @@
 #'
 #' The similarity between the simulated and real distances is measured using the two-sample Kolmogorov-Smirnov (KS) test. The KS test provides a score between 0 and 1, where lower scores indicate a closer match to the real data. Because simulations involve randomness, the algorithm runs \code{n_sims} simulations per penalty and uses the \strong{median KS score}.
 #'
-#' @return A \code{fitLangevin} object that includes the most optimal penalty from the grid search.
+#' @return A \code{fitLangevin} object that includes the ``best'' penalty from the grid search.
 #' @importFrom terra wrap unwrap
 #' @export
-tuneBarrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ncores = 1, ...) {
+tuneBarrier <- function(data, spatialCovs, barrier, lambda_max = NULL, n_coarse = 3, n_fine = 4, n_sims = 5, timeStep = 0.01, ncores = 1, ...) {
 
   if (!inherits(data, "dataLangevin")) stop("'data' must be a dataLangevin object.")
-  barrier <- .find_barrier(spatialCovs)
-  if (is.null(barrier)) stop("No barrier found in 'spatialCovs'. Did you run prepBarrier()?")
-  sdf_rast <- spatialCovs[[barrier]]
+  if (missing(spatialCovs) || !is.list(spatialCovs)) stop("'spatialCovs' list must be provided.")
+
+  if (missing(barrier) || is.null(barrier)) {
+    sim_barrier <- attr(data,"barrier")
+    if(!is.null(sim_barrier)){
+      barrier <- sim_barrier
+    } else stop("'barrier' argument (the name of the barrier raster in 'spatialCovs') must be provided.")
+  }
+  if (!(barrier %in% names(spatialCovs))) stop(sprintf("Barrier raster '%s' not found in spatialCovs.", barrier))
 
   args <- list(...)
   model_type <- if (!is.null(args$model)) match.arg(args$model, c("underdamped", "overdamped")) else "underdamped"
   coord <- if (!is.null(args$coord)) args$coord else c("x", "y")
+  scaleFactor <- if (!is.null(args$scaleFactor)) args$scaleFactor else 1
 
+  sdf_rast <- spatialCovs[[barrier]]
+  if(!isTRUE(attr(sdf_rast,"barLangevin"))) stop("barrier is not a 'barLangevin' object created by prepBarrier.")
   checkErrorData(data, coord)
+
+  global_warnings <- character()
+
+  # --- POSIXt Type Enforcement & Parsing ---
+  time.unit <- attr(data, "time.unit")
+  if (inherits(data$date, c("POSIXt", "Date"))) {
+    if (!is.character(timeStep)) {
+      stop("When the 'date' column is POSIXt or Date, 'timeStep' must be a character string specifying the time interval (e.g., '1 sec', '30 mins', '1 hour', '6 hours').")
+    }
+    if (is.null(time.unit)) time.unit <- "secs"
+
+    t0 <- as.POSIXct("1970-01-01", tz = "UTC")
+    t1 <- tryCatch(seq(t0, by = timeStep, length.out = 2)[2], error = function(e) NA)
+
+    if (is.na(t1)) stop("Invalid 'timeStep' string provided. Use valid base R formats like '1 sec', '30 mins', or '1 hour'.")
+
+    timeStep_num <- as.numeric(difftime(t1, t0, units = time.unit))
+    if (timeStep_num <= 0) stop("Invalid 'timeStep' string provided. Must result in a positive duration.")
+  } else {
+    if (!is.numeric(timeStep)) stop("When the 'date' column is numeric, 'timeStep' must also be numeric.")
+  }
+
   max_dt <- max(data$dt, na.rm = TRUE)
   if (max_dt <= 0) max_dt <- 1
+
+  # --- Warning Deduplication Architecture ---
+  seen_warnings <- new.env(parent = emptyenv())
+  dedup_warning_handler <- function(w) {
+    msg <- conditionMessage(w)
+    if (grepl("cannot compute exact p-value with ties", msg)) {
+      invokeRestart("muffleWarning")
+    }
+    if (is.null(seen_warnings[[msg]])) {
+      seen_warnings[[msg]] <- TRUE
+      warning(msg, call. = FALSE, immediate. = TRUE)
+    }
+    invokeRestart("muffleWarning")
+  }
 
   # --- Setup Parallel Processing ---
   if (ncores > 1) {
@@ -79,155 +126,175 @@ tuneBarrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fi
     `%loop%` <- foreach::`%do%`
   }
 
-  # --- Pre-calculate Observed Distances for PPC Scoring ---
   obs_pts <- cbind(data[[coord[1]]], data[[coord[2]]])
-
-  obs_dist <- terra::extract(sdf_rast, obs_pts)[, barrier]
+  obs_dist <- terra::extract(sdf_rast, obs_pts)[, 1]
   obs_dist <- obs_dist[!is.na(obs_dist)]
 
   if (length(obs_dist) == 0) stop("No valid spatial observations to calculate distance.")
 
-  # --- 1. Top-Down Grid Initialization ---
-  message("   Initializing predictive top-down search grids...")
+  # --- 1. Top-Down Grid Initialization (Phase 0) ---
+  message("   Initializing Top-Down Search Grids...")
 
-  dx <- diff(data[[coord[1]]])
-  dy <- diff(data[[coord[2]]])
-  dt_steps <- data$dt[-1]
-  valid <- which(dt_steps > 0 & !is.na(dx) & !is.na(dy))
-
-  if(length(valid) < 3) {
-    stop("Insufficient valid steps to auto-calculate empirical parameters. The dataset must contain at least 4 valid, consecutive locations.")
-  }
-
-  mean_dt <- mean(dt_steps[valid])
-
-  if (model_type == "underdamped") {
-    # 1. Empirical Gamma via velocity autocorrelation (OU mean-reversion)
-    vx <- dx[valid] / dt_steps[valid]
-    vy <- dy[valid] / dt_steps[valid]
-
-    rho_x <- suppressWarnings(stats::cor(vx[-length(vx)], vx[-1], use = "complete.obs"))
-    rho_y <- suppressWarnings(stats::cor(vy[-length(vy)], vy[-1], use = "complete.obs"))
-    rho_mean <- mean(c(rho_x, rho_y), na.rm = TRUE)
-
-    if (is.na(rho_mean)) rho_mean <- 0.01
-
-    # Bound rho between high friction (0.001) and highly ballistic (0.999)
-    rho_bounded <- max(0.001, min(0.999, rho_mean))
-    empirical_gamma <- -log(rho_bounded) / mean_dt
-
-    # 2. Empirical Sigma (Underdamped formulation)
-    msd <- mean(dx[valid]^2 + dy[valid]^2)
-    num_sig <- msd * (empirical_gamma^2)
-    den_sig <- 2 * (empirical_gamma * mean_dt - 1 + exp(-empirical_gamma * mean_dt))
-    empirical_sigma <- sqrt(num_sig / den_sig)
-
-  } else {
-    # Empirical Sigma (Overdamped formulation)
-    empirical_sigma <- sqrt(mean((dx[valid]^2 + dy[valid]^2) / (2 * mean_dt)))
-  }
-
-  # Set lambda_max
   if (is.null(lambda_max)) {
-    if (model_type == "overdamped") {
-      lambda_max <- 2 / (empirical_sigma^2 * max_dt)
-    } else {
-      # Use exact analytical stability limit for the underdamped SDE solver
-      num <- (empirical_gamma^2) * (1 - exp(-empirical_gamma * max_dt))
-      den <- (empirical_sigma^2) * (1 - exp(-empirical_gamma * max_dt) - (empirical_gamma * max_dt * exp(-empirical_gamma * max_dt)))
-      lambda_max <- num / den
+    message("     Method: Baseline 0 fit (lambda = 0)")
+
+    fit0_args <- args
+    fit0_args$data <- data
+    fit0_args$spatialCovs <- spatialCovs
+    fit0_args$barrier <- barrier
+    fit0_args$lambda <- 0
+    fit0_args$silent <- TRUE
+
+    withCallingHandlers({
+      fit0 <- suppressMessages(tryCatch(do.call(fitLangevin, fit0_args), error = function(e) e))
+    }, warning = dedup_warning_handler)
+
+    if (inherits(fit0, "error")) {
+      stop("Baseline 0 fit failed. Please provide 'lambda_max' manually.")
     }
 
-    message("     'lambda_max' was not provided. Using data-driven empirical stability limit: ",round(lambda_max,4),".\n     Note that measurement error can break autocorrelation and cause the empirical limit to be inflated.\n")
+    est_sigma <- fit0$estimates$natural["sigma", "Estimate"]
+    est_sigma_work <- est_sigma / scaleFactor
+
+    valid_dists <- obs_dist[obs_dist > 0]
+    D_max <- if (length(valid_dists) > 0) max(valid_dists, na.rm = TRUE) else max(diff(range(data[[coord[1]]], na.rm=TRUE)), diff(range(data[[coord[2]]], na.rm=TRUE))) / scaleFactor
+
+    # heuristic formula for lambda_min is invariant and does not scale with 1/L^2 like lambda_max does
+    # normalize the spatial parameters, calculate the boundaries, and then apply the 1/L^2 transformation
+    RS <- 10^(floor(log10(est_sigma_work)))
+
+    sigma_rs <- est_sigma_work / RS
+    D_max_rs <- D_max / RS
+
+    if (model_type == "underdamped") {
+      est_gamma <- fit0$estimates$natural["gamma", "Estimate"]
+
+      num <- (est_gamma^2) * (1 - exp(-est_gamma * max_dt))
+      den <- (sigma_rs^2) * (1 - exp(-est_gamma * max_dt) - (est_gamma * max_dt * exp(-est_gamma * max_dt)))
+      lambda_max_rs <- num / den
+    } else {
+      lambda_max_rs <- 2 / (sigma_rs^2 * max_dt)
+    }
+
+    lambda_min_rs <- max(1e-12, (sigma_rs^2) / (2 * D_max_rs^2))
+
+    if (lambda_min_rs >= lambda_max_rs) lambda_min_rs <- lambda_max_rs * 0.01
+
+    lambda_max <- (lambda_max_rs / (RS^2)) * 0.99
+    lambda_min <- lambda_min_rs / (RS^2)
+
+    message(sprintf("     Calculated Maximum Penalty: %g\n", lambda_max))
+  } else {
+    message("     Method: User-provided limit\n")
+    var_x <- stats::var(data[[coord[1]]], na.rm = TRUE)
+    var_y <- stats::var(data[[coord[2]]], na.rm = TRUE)
+    time_num <- as.numeric(data$date)
+    T_total <- max(time_num, na.rm = TRUE) - min(time_num, na.rm = TRUE)
+    D_macro <- (var_x + var_y) / max(1, T_total)
+
+    est_sigma <- if (model_type == "underdamped") sqrt(D_macro) else sqrt(2 * D_macro)
+    est_sigma_work <- est_sigma / scaleFactor
+
+    valid_dists <- obs_dist[obs_dist > 0]
+    D_max <- if (length(valid_dists) > 0) max(valid_dists, na.rm = TRUE) else max(diff(range(data[[coord[1]]], na.rm=TRUE)), diff(range(data[[coord[2]]], na.rm=TRUE))) / scaleFactor
+
+    RS <- 10^(floor(log10(est_sigma_work)))
+
+    sigma_rs <- est_sigma_work / RS
+    D_max_rs <- D_max / RS
+
+    lambda_max_rs <- lambda_max * (RS^2)
+    lambda_min_rs <- max(1e-12, (sigma_rs^2) / (2 * D_max_rs^2))
+
+    if (lambda_min_rs >= lambda_max_rs) lambda_min_rs <- lambda_max_rs * 0.01
+
+    lambda_min <- lambda_min_rs / (RS^2)
   }
 
-  # Set lambda_min
-  valid_dists <- obs_dist[obs_dist > 0]
-  D_max <- if (length(valid_dists) > 0) max(valid_dists, na.rm = TRUE) else max(diff(range(data[[coord[1]]], na.rm=TRUE)), diff(range(data[[coord[2]]], na.rm=TRUE)))
-  lambda_min <- max(1e-6, (empirical_sigma^2) / (2 * D_max^2))
-
-  if (lambda_min >= lambda_max) lambda_min <- lambda_max * 0.01
-
-  # --- Construct Linear Coarse Grid ---
   coarse_grid <- seq(lambda_max, lambda_min, length.out = n_coarse)
 
-  message(sprintf("    Upper boundary: %.4f", lambda_max))
-  message(sprintf("    Lower boundary: %.6f", lambda_min))
-  message(sprintf("    Linear coarse grid: [%.4f down to %.6f] with %d steps\n", lambda_max, lambda_min, n_coarse))
+  message("   Grid Parameters:")
+  message(sprintf("     Upper boundary : %g", lambda_max))
+  message(sprintf("     Lower boundary : %g", lambda_min))
+  message(sprintf("     Coarse grid    : %d steps [%g -> %g]\n", n_coarse, lambda_max, lambda_min))
 
-  # --- Safely serialize SpatRasters for parallel export ---
   spatialCovs_wrapped <- lapply(spatialCovs, terra::wrap)
 
   # --- Helper: Model Fitting & Scoring Function ---
-  score_lambda <- function(lam) {
-    message(sprintf("  -> Testing lambda = %.4f...", lam))
+  score_lambda <- function(lam, step_idx, total_steps) {
+    prefix_msg <- sprintf("     [%d/%d] Testing lambda = %-8.4g ... ", step_idx, total_steps, lam)
+    local_warnings <- character()
 
-    # Unwrap the rasters inside the worker node so they are valid C++ pointers again
-    spatialCovs_worker <- lapply(spatialCovs_wrapped, terra::unwrap)
+    res <- withCallingHandlers({
+      spatialCovs_worker <- lapply(spatialCovs_wrapped, terra::unwrap)
+      attr(spatialCovs_worker[[barrier]],"barLangevin") <- TRUE
 
-    attr(spatialCovs_worker[[barrier]], "barLangevin") <- TRUE # restore barLangevin attribute
+      fit_args <- args
+      fit_args$data <- data
+      fit_args$spatialCovs <- spatialCovs_worker
+      fit_args$barrier <- barrier
+      fit_args$lambda <- lam
+      fit_args$silent <- TRUE
 
-    fit_args <- args
-    fit_args$data <- data
-    fit_args$spatialCovs <- spatialCovs_worker
-    fit_args$lambda <- lam
-    fit_args$silent <- TRUE
+      fit <- suppressMessages(tryCatch(do.call(fitLangevin, fit_args), error = function(e) e))
 
-    fit <- tryCatch(do.call(fitLangevin, fit_args), error = function(e) e)
+      if (inherits(fit, "error")) {
+        err_msg <- if(inherits(fit, "error")) fit$message else paste("Convergence code", fit$convergence)
+        message(paste0(prefix_msg, "Fit Failed (", err_msg, ")"))
+        list(score = Inf, sd = Inf, fit = NULL)
+      } else {
+        sim_args <- list(model = fit, data = data, spatialCovs = spatialCovs_worker, timeStep = timeStep, conditional = FALSE)
 
-    if (inherits(fit, "error") || (!is.null(fit$convergence) && fit$convergence != 0)) {
-      err_msg <- if(inherits(fit, "error")) fit$message else paste("Convergence code", fit$convergence)
-      message(sprintf("     [Fit failed: %s]", err_msg))
-      return(list(score = Inf, fit = NULL))
-    }
+        ks_scores <- c()
+        err_msgs <- c()
 
-    # Pass the unwrapped covariates to the simulator
-    sim_args <- list(model = fit, data = data, spatialCovs = spatialCovs_worker, timeStep = timeStep, conditional = FALSE)
+        for (s in 1:n_sims) {
+          sim_data <- suppressMessages(tryCatch(do.call(simLangevin, sim_args), error = function(e) e))
 
-    ks_scores <- c()
-    err_msgs <- c()
+          if (inherits(sim_data, "error")) {
+            err_msgs <- c(err_msgs, sim_data$message)
+            next
+          }
 
-    for (s in 1:n_sims) {
-      if(s==1) message("   Simulating tracks forward using movement parameters fixed at point estimates...")
-      sim_data <- tryCatch(suppressMessages(do.call(simLangevin, sim_args)), error = function(e) e)
+          sim_pts <- cbind(sim_data[[coord[1]]], sim_data[[coord[2]]])
+          sim_dist <- terra::extract(spatialCovs_worker[[barrier]], sim_pts)[, 1]
+          sim_dist <- sim_dist[!is.na(sim_dist)]
 
-      if (inherits(sim_data, "error")) {
-        err_msgs <- c(err_msgs, sim_data$message)
-        next
+          if(length(sim_dist) == 0) {
+            err_msgs <- c(err_msgs, "No valid spatial observations extracted")
+            next
+          }
+
+          ks_scores <- c(ks_scores, suppressWarnings(stats::ks.test(obs_dist, sim_dist)$statistic))
+        }
+
+        if (length(ks_scores) == 0) {
+          message(paste0(prefix_msg, "Simulations Failed (", err_msgs[1], ")"))
+          list(score = Inf, sd = Inf, fit = fit)
+        } else {
+          overall_ks <- stats::median(ks_scores)
+          sd_ks <- if(length(ks_scores) > 1) stats::sd(ks_scores) else 0.0
+
+          message(paste0(prefix_msg, sprintf("Median KS = %.4f, SD = %.4f (%d/%d valid sims)", overall_ks, sd_ks, length(ks_scores), n_sims)))
+          list(score = unname(overall_ks), sd = unname(sd_ks), fit = fit)
+        }
       }
+    }, warning = function(w) {
+      local_warnings <<- c(local_warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
 
-      sim_pts <- cbind(sim_data[[coord[1]]], sim_data[[coord[2]]])
-
-      # Extract directly using the safely unwrapped raster
-      sim_dist <- terra::extract(spatialCovs_worker[[barrier]], sim_pts)[, barrier]
-      sim_dist <- sim_dist[!is.na(sim_dist)]
-
-      if(length(sim_dist) == 0) {
-        err_msgs <- c(err_msgs, "No valid spatial observations extracted")
-        next
-      }
-
-      ks_scores <- c(ks_scores, suppressWarnings(stats::ks.test(obs_dist, sim_dist)$statistic))
-    }
-
-    if (length(ks_scores) == 0) {
-      message(sprintf("     [All simulations failed. First error: %s]", err_msgs[1]))
-      return(list(score = Inf, fit = fit))
-    }
-
-    overall_ks <- stats::median(ks_scores)
-    ks_details <- paste(sprintf("%.4f", ks_scores), collapse = ", ")
-    message(sprintf("     [Median KS Score: %.4f (over %d valid sims) | Individual KS: %s]", overall_ks, length(ks_scores), ks_details))
-    return(list(score = unname(overall_ks), fit = fit))
+    res$warnings <- local_warnings
+    return(res)
   }
 
   # --- 2. Phase I: Top-Down Coarse Linear Search ---
-  message("==================================================")
-  message(" PHASE I: Top-Down Coarse Linear Search")
-  message("==================================================")
+  message("   --------------------------------------------------")
+  message("    PHASE I: Coarse Linear Search")
+  message("   --------------------------------------------------")
 
   coarse_results <- foreach::foreach(i = seq_along(coarse_grid), .packages = c("terra", "stats", "langevinSSM")) %loop% {
-    score_lambda(coarse_grid[i])
+    score_lambda(coarse_grid[i], i, n_coarse)
   }
 
   coarse_scores <- sapply(coarse_results, function(x) x$score)
@@ -240,29 +307,31 @@ tuneBarrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fi
   best_coarse_idx <- valid_coarse_idx[which.min(coarse_scores[valid_coarse_idx])]
   best_coarse_lam <- coarse_grid[best_coarse_idx]
   best_coarse_score <- coarse_scores[best_coarse_idx]
+  best_coarse_sd <- coarse_results[[best_coarse_idx]]$sd
 
-  message(sprintf("\n=> Coarse Winner: lambda = %.4f (Median KS Score: %.4f)\n", best_coarse_lam, best_coarse_score))
+  global_warnings <- c(global_warnings, unlist(lapply(coarse_results, function(x) x$warnings)))
+
+  message(sprintf("\n   => Phase I Winner: lambda = %g (Median KS = %.4f, SD = %.4f)\n", best_coarse_lam, best_coarse_score, best_coarse_sd))
 
   # --- 3. Phase II: Fine Linear Search ---
-  message("==================================================")
-  message(" PHASE II: Fine Linear Search")
-  message("==================================================")
+  message("   --------------------------------------------------")
+  message("    PHASE II: Fine Linear Search")
+  message("   --------------------------------------------------")
 
-  # Determine bounds for the fine grid centrally around the winner
   step_size <- (lambda_max - lambda_min) / (n_coarse - 1)
   upper_bound <- best_coarse_lam + step_size
   lower_bound <- max(lambda_min, best_coarse_lam - step_size)
 
-  # Create linear fine grid (descending)
   fine_grid <- seq(upper_bound, lower_bound, length.out = n_fine + 2)[-c(1, n_fine + 2)]
-
-  # Exclude the coarse winner to prevent redundant fitting and simulation noise
   fine_grid <- fine_grid[abs(fine_grid - best_coarse_lam) > 1e-8]
 
-  if (length(fine_grid) > 0) {
+  n_fine_actual <- length(fine_grid)
+  if (n_fine_actual > 0) {
     fine_results <- foreach::foreach(i = seq_along(fine_grid), .packages = c("terra", "stats", "langevinSSM")) %loop% {
-      score_lambda(fine_grid[i])
+      score_lambda(fine_grid[i], i, n_fine_actual)
     }
+
+    global_warnings <- c(global_warnings, unlist(lapply(fine_results, function(x) x$warnings)))
   } else {
     fine_results <- list()
   }
@@ -270,25 +339,34 @@ tuneBarrier <- function(data, spatialCovs, lambda_max = NULL, n_coarse = 3, n_fi
   fine_scores <- sapply(fine_results, function(x) x$score)
   valid_fine_idx <- which(!is.infinite(fine_scores))
 
-  # Combine coarse winner and valid fine results
   all_lams <- best_coarse_lam
   all_scores <- best_coarse_score
+  all_sds <- best_coarse_sd
   all_fits <- list(coarse_results[[best_coarse_idx]]$fit)
 
   if (length(valid_fine_idx) > 0) {
     all_lams <- c(all_lams, fine_grid[valid_fine_idx])
     all_scores <- c(all_scores, fine_scores[valid_fine_idx])
+    all_sds <- c(all_sds, sapply(fine_results[valid_fine_idx], function(x) x$sd))
     all_fits <- c(all_fits, lapply(fine_results[valid_fine_idx], function(x) x$fit))
   }
 
   best_final_idx <- which.min(all_scores)
   best_final_lam <- all_lams[best_final_idx]
   best_final_score <- all_scores[best_final_idx]
+  best_final_sd <- all_sds[best_final_idx]
   best_final_fit <- all_fits[[best_final_idx]]
 
-  message(sprintf("\n=================================================="))
-  message(sprintf(" OPTIMAL LAMBDA FOUND: %.4f (Median KS Score: %.4f)", best_final_lam, best_final_score))
-  message(sprintf("=================================================="))
+  message(sprintf("\n   =================================================="))
+  message(sprintf("    OPTIMAL LAMBDA FOUND: %g (Median KS = %.4f, SD = %.4f)", best_final_lam, best_final_score, best_final_sd))
+  message(sprintf("   =================================================="))
+
+  global_warnings <- unique(global_warnings)
+  if (length(global_warnings) > 0) {
+    for (w in global_warnings) {
+      warning(w, call. = FALSE, immediate. = TRUE)
+    }
+  }
 
   return(best_final_fit)
 }

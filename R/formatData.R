@@ -4,7 +4,7 @@
 #'
 #' @param data A data frame or \code{\link[sf]{sf}} object containing the tracking data to be formatted. The data must contain columns for the animal ID (``id''), date/time (``date''), location quality class (``lc''; if applicable), coordinates (``coord''), and measurement error (``epar'' and/or ``sderr''; if applicable). The column names can be specified using the corresponding arguments of this function.
 #' @param id Character string specifying the column name for the animal ID. Default: ``id''.
-#' @param date Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}} or a character string parseable to a date/time (e.g., "YYYY-MM-DD HH:MM:SS"). Default: ``date''.
+#' @param date Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}}, a character string parseable to a date/time (e.g., "YYYY-MM-DD HH:MM:SS"), or numeric. Default: ``date''.
 #' @param coord Character vector of length 2 specifying the column names for the (projected) coordinates. Default: c("x", "y").
 #' @param lc Character string specifying the column name for the location quality class. Default: ``lc''.
 #' @param epar Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). See Details. Default: c("smaj", "smin", "eor").
@@ -13,6 +13,7 @@
 #' @param predTimes An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.
 #' @param time.unit Character string specifying the time unit for the time steps. Default: ``hours''.
 #' @param tz Character string specifying the time zone for the date/time column. Default: ``UTC''.
+#' @param max_dt Optional threshold for splitting tracks based on temporal gaps. If the \code{date} column is numeric, \code{max_dt} must be numeric. If the \code{date} column is \code{POSIXt} or character, \code{max_dt} must be a character string specifying a time duration (e.g., "1 hour", "1 day", "2 weeks"). If any calculated time step (\code{dt}) exceeds \code{max_dt}, the track is split, and subsequent locations are assigned a new ID with an incremented suffix (e.g., "_2", "_3"). Default: \code{NULL}.
 #' @return A data frame of class \code{dataLangevin} containing the formatted tracking data. The data frame contains the following columns:
 #' \item{id}{Animal ID}
 #' \item{date}{Date/time of observation}
@@ -54,10 +55,10 @@
 #' # exampleCovs included in package; see ?exampleCovs for details
 #' fit <- fitLangevin(formatDat, spatialCovs = exampleCovs, silent=TRUE)
 #' }
-#' @importFrom dplyr rename arrange select all_of everything group_by ungroup filter row_number n
+#' @importFrom dplyr rename arrange select all_of everything group_by ungroup filter row_number n mutate summarise
 #' @importFrom sf st_coordinates st_drop_geometry st_is_longlat
 #' @export
-formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.err", "y.err"), emf = NULL, predTimes = NULL, time.unit = "hours", tz = "UTC"){
+formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc = "lc", epar = c("smaj", "smin", "eor"), sderr = c("x.err", "y.err"), emf = NULL, predTimes = NULL, time.unit = "hours", tz = "UTC", max_dt = NULL){
 
   if(inherits(data,"simLangevin") | inherits(data,"dataLangevin")) stop('data is already formatted for fitLangevin')
 
@@ -83,8 +84,10 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
     }
   }
 
-  if(!inherits(data[[date]],"POSIXt") && !is.character(data[[date]])) {
-    stop(paste0("data$", date, " must be of class 'POSIXt' or a character string parseable to a date."))
+  is_numeric_date <- is.numeric(data[[date]])
+
+  if(!inherits(data[[date]],"POSIXt") && !is.character(data[[date]]) && !is_numeric_date) {
+    stop(paste0("data$", date, " must be of class 'POSIXt', numeric, or a character string parseable to a date."))
   }
 
   if (!(lc %in% names(data))) {
@@ -102,11 +105,21 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
   if (!is.null(predTimes)) {
     if (!is.data.frame(predTimes)) stop("'predTimes' must be a data frame.")
     if (!all(c(id, date) %in% names(predTimes))) stop(paste0("'predTimes' must contain '", id, "' and '", date, "' columns to match 'data'."))
-    if (!all(predTimes[[id]] %in% data[[id]])) stop(paste0("All track ID's in 'predTimes[[", id, "]]' must exist in 'data[[", id, "]]'."))
+
+    if (!all(predTimes[[id]] %in% data[[id]])) {
+      warning(paste0("Some track IDs in 'predTimes' do not exist in 'data'. Filtering 'predTimes' to match available IDs."))
+      predTimes <- predTimes[predTimes[[id]] %in% data[[id]], ]
+
+      if (nrow(predTimes) == 0) predTimes <- NULL
+    }
+  }
+
+  if (!is.null(predTimes)) {  # Re-check in case it was just nullified above!
     is_posix <- inherits(data[[date]], "POSIXt") && inherits(predTimes[[date]], "POSIXt")
     is_char <- is.character(data[[date]]) && is.character(predTimes[[date]])
-    if (!(is_posix || is_char)) {
-      stop(paste0("The '", date, "' column in 'predTimes' must be of the same type (POSIXt or character) as the '", date, "' column in 'data'."))
+    is_num <- is_numeric_date && is.numeric(predTimes[[date]])
+    if (!(is_posix || is_char || is_num)) {
+      stop(paste0("The '", date, "' column in 'predTimes' must be of the same type (POSIXt, character, or numeric) as the '", date, "' column in 'data'."))
     }
   }
 
@@ -123,7 +136,7 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
 
   if (!is.null(predTimes)) {
     pt_dates <- predTimes[[date]]
-    if (!inherits(pt_dates, "POSIXt")) {
+    if (!is_numeric_date && !inherits(pt_dates, "POSIXt")) {
       pt_dates <- try(as.POSIXct(pt_dates, tz = tz), silent = TRUE)
       if (inherits(pt_dates, "try-error")) stop("'predTimes' dates must be in a standard format: YYYY-MM-DD HH:MM:SS")
     }
@@ -171,10 +184,63 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
 
   # -------------------------------
 
-  dt_list <- lapply(split(out$date, out$id), function(t) {
-    c(0, as.numeric(difftime(t[-1], t[-length(t)], units = time.unit)))
-  })
-  out$dt <- unsplit(dt_list, out$id)
+  # Calculate initial dt
+  out <- out %>%
+    dplyr::group_by(id) %>%
+    dplyr::mutate(
+      dt = if (is_numeric_date) {
+        c(0, as.numeric(diff(date)))
+      } else {
+        c(0, as.numeric(difftime(date[-1], date[-dplyr::n()], units = time.unit)))
+      }
+    ) %>%
+    dplyr::ungroup()
+
+  if (!is.null(max_dt)) {
+    if (is_numeric_date) {
+      if (!is.numeric(max_dt)) stop("'max_dt' must be numeric when 'date' is numeric.")
+      max_dt_num <- max_dt
+    } else {
+      if (!is.character(max_dt)) stop("'max_dt' must be a character string (e.g., '12 hours', '1 day') when 'date' is POSIXt or character.")
+
+      # Parse the character string to numeric based on time.unit
+      val <- as.numeric(gsub("[^0-9\\.]", "", max_dt))
+      unit <- trimws(tolower(gsub("[0-9\\.]", "", max_dt)))
+
+      if (!endsWith(unit, "s")) unit <- paste0(unit, "s")
+      if (!(unit %in% c("secs", "mins", "hours", "days", "weeks"))) {
+        stop("Invalid unit in max_dt. Please use secs, mins, hours, days, or weeks (e.g., '1 hour', '2 days').")
+      }
+
+      max_dt_num <- as.numeric(as.difftime(val, units = unit), units = time.unit)
+    }
+
+    out <- out %>%
+      dplyr::group_by(id) %>%
+      dplyr::mutate(
+        split_flag = dt > max_dt_num,
+        segment = cumsum(split_flag) + 1,
+        id = ifelse(segment > 1, paste0(as.character(id), "_", segment), as.character(id))
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(
+        dt = ifelse(split_flag, 0, dt) # Reset the first dt of the newly split track segment to 0
+      ) %>%
+      dplyr::select(-split_flag, -segment)
+  }
+  # -------------------------------
+
+  obs_counts <- out %>%
+    dplyr::group_by(id) %>%
+    dplyr::summarise(n_obs = sum(!is.na(x) & !is.na(y))) %>%
+    dplyr::ungroup()
+
+  invalid_ids <- obs_counts$id[obs_counts$n_obs < 2]
+
+  if (length(invalid_ids) > 0) {
+    warning("The following tracks or split segments contain fewer than 2 observed locations and were removed: ", paste(invalid_ids, collapse = ", "))
+    out <- out %>% dplyr::filter(!(id %in% invalid_ids))
+  }
 
   out <- out %>% dplyr::select(id, date, dt, x, y, lc, smaj, smin, eor, x.err, y.err, dplyr::everything())
 

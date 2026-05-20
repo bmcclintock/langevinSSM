@@ -24,8 +24,8 @@ sim_pars <- list(
 if(model=="underdamped") sim_pars$gamma <- 0.5
 
 nSims <- 100
-parMat <- matrix(NA, nSims, 7)
-colnames(parMat) <- c(paste0("beta", 1:length(sim_pars$beta)), "sigma", "gamma", "BA")
+parMat <- matrix(NA, nSims, 8)
+colnames(parMat) <- c(paste0("beta", 1:length(sim_pars$beta)), "sigma", "gamma", "lambda", "BA")
 parMat_true <- parMat
 
 for(isim in 1:nSims){
@@ -98,7 +98,16 @@ for(isim in 1:nSims){
 
   trueUD <- getUD(covs, beta=sim_pars$beta, barrier="coast_barrier", lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
-  fit <- tryCatch(tuneBarrier(sim_data,model=model,spatialCovs=covs, lambda_max = lambda_max, timeStep=timeStep, n_sims = 10, n_coarse=5, n_fine=5, ncores = 5, silent=TRUE),error=function(e) e)
+  lambda_max <- tryCatch(suggestLambda(sim_data,model=model,spatialCovs=covs, silent=TRUE,
+                                       smoothGradient=TRUE,npoints=8),error=function(e) e)
+
+  fit <- tryCatch(fitLangevin(
+    data = sim_data,
+    model = model,
+    spatialCovs = covs,
+    lambda = lambda_max,
+    silent = TRUE
+  ),error=function(e) e)
 
   fit_true <- tryCatch(fitLangevin(
     data = sim_data,
@@ -111,6 +120,7 @@ for(isim in 1:nSims){
     estUD <- suppressMessages(getUD(covs, fit=fit, log=TRUE, plot=FALSE))
     parMat[isim, 1:6] <- fit$estimates$natural$Estimate[1:6]
     parMat[isim, "BA"] <- rasterOverlap(exp(estUD), exp(trueUD))#,local=fit)
+    parMat[isim, "lambda"] <- fit$conditions$lambda
     print(plot(fit,data=sim_data,spatialCovs=covs,log=TRUE,maskRast=water_mask)+labs(title=paste0("Sim ",isim)))
   }
 
@@ -118,6 +128,7 @@ for(isim in 1:nSims){
     estUD_true <- suppressMessages(getUD(covs, fit=fit_true, log=TRUE, plot=FALSE))
     parMat_true[isim, 1:6] <- fit_true$estimates$natural$Estimate[1:6]
     parMat_true[isim, "BA"] <- rasterOverlap(exp(estUD_true), exp(trueUD))#,local=fit_true)
+    parMat_true[isim, "lambda"] <- fit_true$conditions$lambda
   }
 
   message(" Iterative lambda ")

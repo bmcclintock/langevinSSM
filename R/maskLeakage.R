@@ -1,8 +1,7 @@
 #' Assess mask leakage for a fitted Langevin model or tracking data
 #'
 #' Evaluates the proportion and severity of track locations that cross into restricted spatial boundaries,
-#' by integrating the exact 2D probability density of the observation error or estimated uncertainty
-#' over the restricted raster cells.
+#' based on the bivariate normal probability density of the observation error or estimated uncertainty for the true locations.
 #'
 #' @param x A \code{fitLangevin}, \code{simLangevin}, or \code{dataLangevin} object.
 #' @param maskRast A SpatRaster binary mask (1 = allowed, 0 = restricted).

@@ -11,8 +11,8 @@
 #' \item{beta}{Numeric vector of initial values for the coefficients of the spatial covariates. Length should match the number of spatial covariates.}
 #' \item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
 #' \item{gamma}{Numeric value for the initial estimate of the friction parameter (only for the underdamped model).}
-#' \item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates.}
-#' \item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.}
+#' \item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates. If \code{mu} includes missing values (\code{NA}), these are filled in using linear interpolation.}
+#' \item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.} If \code{vel} includes missing values (\code{NA}), these are filled in using linear interpolation.
 #' And, if provided in \code{par}, the following observation process parameters:
 #' \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
 #' \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}
@@ -100,7 +100,29 @@ initialValues <- function(data, model=c("underdamped","overdamped"), par, spatia
         stop("'par$vel' must be a matrix with the same number of rows as 'data' and 2 columns corresponding to the x and y velocity components.")
       }
       if (any(is.na(par$vel))) {
-        stop("'par$vel' cannot contain missing values (NAs).")
+        vel_x <- par$vel[, 1]
+        vel_y <- par$vel[, 2]
+        for(uid in unique(data$id)) {
+          trk_idx <- which(data$id == uid)
+          t_num <- as.numeric(data$date[trk_idx])
+
+          valid_x <- !is.na(vel_x[trk_idx])
+          if(any(!valid_x)) {
+            vel_x[trk_idx] <- stats::approx(x = t_num[valid_x],
+                                            y = vel_x[trk_idx][valid_x],
+                                            xout = t_num,
+                                            rule = 2)$y
+          }
+
+          valid_y <- !is.na(vel_y[trk_idx])
+          if(any(!valid_y)) {
+            vel_y[trk_idx] <- stats::approx(x = t_num[valid_y],
+                                            y = vel_y[trk_idx][valid_y],
+                                            xout = t_num,
+                                            rule = 2)$y
+          }
+        }
+        par$vel <- unname(cbind(vel_x, vel_y))
       }
     }
   }
@@ -137,7 +159,29 @@ initialValues <- function(data, model=c("underdamped","overdamped"), par, spatia
       stop("'par$mu' must be a matrix with the same number of rows as 'data' and 2 columns.")
     }
     if (any(is.na(par$mu))) {
-      stop("'par$mu' cannot contain missing values (NAs). Please interpolate missing locations.")
+      mu_x <- par$mu[, 1]
+      mu_y <- par$mu[, 2]
+      for(uid in unique(data$id)) {
+        trk_idx <- which(data$id == uid)
+        t_num <- as.numeric(data$date[trk_idx])
+
+        valid_x <- !is.na(mu_x[trk_idx])
+        if(any(!valid_x)) {
+          mu_x[trk_idx] <- stats::approx(x = t_num[valid_x],
+                                         y = mu_x[trk_idx][valid_x],
+                                         xout = t_num,
+                                         rule = 2)$y
+        }
+
+        valid_y <- !is.na(mu_y[trk_idx])
+        if(any(!valid_y)) {
+          mu_y[trk_idx] <- stats::approx(x = t_num[valid_y],
+                                         y = mu_y[trk_idx][valid_y],
+                                         xout = t_num,
+                                         rule = 2)$y
+        }
+      }
+      par$mu <- unname(cbind(mu_x, mu_y))
     }
   }
   return(par)

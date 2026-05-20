@@ -46,6 +46,5 @@ A list containing two data frames:
 }
 \description{
 Evaluates the proportion and severity of track locations that cross into restricted spatial boundaries,
-by integrating the exact 2D probability density of the observation error or estimated uncertainty
-over the restricted raster cells.
+based on the bivariate normal probability density of the observation error or estimated uncertainty for the true locations.
 }

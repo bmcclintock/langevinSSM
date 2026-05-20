@@ -216,8 +216,8 @@ test_that("predTimes catches input formatting errors", {
 
   # id not present in the actual dataset
   pt_bad_id <- data.frame(id = "GhostAnimal", date = dat13$date[2])
-  expect_error(formatData(dat13, predTimes = pt_bad_id),
-               "must exist in")
+  expect_warning(formatData(dat13, predTimes = pt_bad_id),
+                 "Filtering 'predTimes' to match available IDs.")
 
   # mismatched date classes (data is POSIXct, predTime is Numeric)
   pt_bad_class <- data.frame(id = "A1", date = 1672570800)

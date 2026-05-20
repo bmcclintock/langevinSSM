@@ -8,7 +8,7 @@ library(usethis)
 library(langevinSSM)
 library(patchwork)
 
-set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
+set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=10)
 
 # simulate data
 nbAnimals <- 3
@@ -69,17 +69,20 @@ terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
                                        >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 names(coast_barrier) <- "coast_barrier"
 exampleCovs_barrier <- exampleCovs
-exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+maskBuff <- maskBuffer(coast_barrier,bufferCells=1)
+exampleCovs_barrier$coast_barrier <- prepBarrier(maskBuff)
+exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier
 
 # add a beta coefficient for the barrier to the parameter list
 par_barrier <- examplePar
-par_barrier$beta <- c(par_barrier$beta, -0.2)
+par_barrier$beta <- c(par_barrier$beta, -0.1)
 
 # simulate the data
 set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
+                              barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 1.5,
                                                       smin.sd = 0.75,
                                                       eor.lim = c(0,180)))
@@ -98,9 +101,9 @@ res_barrier <- residuals(fit_barrier,simDat_barrier, exampleCovs_barrier, run_te
 
 
 
-fit_barrier_ks <- tuneBarrier(data = simDat_barrier,
-                              spatialCovs = exampleCovs_barrier,
-                              silent = TRUE)
+lambda <- suggestLambda(data = simDat_barrier,
+                        spatialCovs = exampleCovs_barrier,
+                        silent = TRUE)
 
 plot(fit_barrier_ks,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast = coast_barrier)
 

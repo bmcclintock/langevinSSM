@@ -1,5 +1,5 @@
 #' @importFrom utils globalVariables
-utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid", "i"))
+utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid", "i", "split_flag", "segment"))
 
 #' Example Spatial Covariates
 #'

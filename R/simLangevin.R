@@ -539,6 +539,7 @@ simLangevin.fitLangevin <- function(model,
     out <- out %>% dplyr::select(id, date, dt, dplyr::any_of("lc"), x, y, smaj, smin, eor, x.err, y.err, mu.x, mu.y)
   }
 
+  rownames(out) <- NULL
   attr(out,"time.unit") <- time.unit
   out <- class_dataLangevin(out)
   class(out) <- unique(c("simLangevin", class(out)))

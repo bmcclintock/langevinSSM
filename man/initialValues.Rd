@@ -28,8 +28,8 @@ A list of initial parameter values, with names corresponding to the parameters u
 \item{beta}{Numeric vector of initial values for the coefficients of the spatial covariates. Length should match the number of spatial covariates.}
 \item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
 \item{gamma}{Numeric value for the initial estimate of the friction parameter (only for the underdamped model).}
-\item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates.}
-\item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.}
+\item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates. If \code{mu} includes missing values (\code{NA}), these are filled in using linear interpolation.}
+\item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.} If \code{vel} includes missing values (\code{NA}), these are filled in using linear interpolation.
 And, if provided in \code{par}, the following observation process parameters:
 \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
 \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}

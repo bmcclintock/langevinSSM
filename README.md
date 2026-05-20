@@ -11,14 +11,16 @@ location measurement error and temporal irregularity. The habitat-driven
 Langevin diffusion provides inferences about both habitat selection and
 utilization distributions. The package provides tools for simulating
 animal movement paths (`simLangevin`) and fitting the Langevin diffusion
-model to observed tracking data (`fitLangevin`). Location measurement
-error can take the form of (older) Argos Least Squares-based locations,
-(newer) Argos Kalman Filter-based locations with error ellipse
-information, or general x- and y-axis errors (e.g. for GPS data). The
-Langevin diffusion is a continuous-time model in state-space form that
-estimates the underlying movement process while accounting for location
-measurement error and associated uncertainty in the spatial (habitat)
-covariates. Template Model Builder {TMB} is used for fast estimation.
+model to observed tracking data (`fitLangevin`). It can also enforce
+barrier constraints (e.g., land for marine animals). Location
+measurement error can take the form of (older) Argos Least Squares-based
+locations, (newer) Argos Kalman Filter-based locations with error
+ellipse information, or general x- and y-axis errors (e.g. for GPS
+data). The Langevin diffusion is a continuous-time model in state-space
+form that estimates the underlying movement process while accounting for
+location measurement error and associated uncertainty in the spatial
+(habitat) covariates. Template Model Builder {TMB} is used for fast
+estimation.
 
 ## Installation
 
@@ -165,7 +167,7 @@ fit_over
 #> Model type:        Overdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2533.968 
-#> Optimization time:  0.37 seconds
+#> Optimization time:  0.36 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
@@ -193,7 +195,7 @@ fit_under
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2056.739 
-#> Optimization time:  0.72 seconds
+#> Optimization time:  0.71 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
@@ -413,32 +415,35 @@ plot(reg_prob, log = TRUE)
 To include barriers to movement (e.g., land for marine animals), the
 `prepBarrier` function can be used to create a signed distance field
 (SDF) from a binary raster mask (where 1 indicates allowed movement
-areas and 0 indicates restricted movement areas). The SDF is then
-included as a habitat selection covariate (where negative coefficients
-indicate attraction to the barrier boundary, e.g., the coast for marine
-animals) and as part of a penalty term with strength `lambda`:
+areas and 0 indicates restricted movement areas). When included in
+`spatialCovs` and identified by the `barrier` argument in
+`simLangevin' and`fitLangevin’, the SDF is then included as part of a
+penalty term with strength `lambda`:
 
 ``` r
 # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
 coast_barrier <- exampleCovs[[1]]
 terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
-                                 >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+                                       >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 names(coast_barrier) <- "coast_barrier"
 
 # convert mask to SDF and add to the spatial covariates list
+# maskBuffer adds 1 cell buffer to barrier
 exampleCovs_barrier <- exampleCovs
-exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+maskBuff <- maskBuffer(coast_barrier,bufferCells=1)
+exampleCovs_barrier$coast_barrier <- prepBarrier(maskBuff)
+exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier
 
-# add a beta coefficient for the barrier to the parameter list
+# add a beta coefficient for d2c to the parameter list
 # negative value indicates slight attraction to the "coast"
 par_barrier <- par
-par_barrier$beta <- c(par_barrier$beta, -0.2)
+par_barrier$beta <- c(par_barrier$beta, -0.1)
 
 # simulate the data
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
+                              barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 1.5,
                                                       smin.sd = 0.75,
                                                       eor.lim = c(0,180)))
@@ -459,68 +464,102 @@ fit_barrier
 #> =======================================
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -2054.328 
-#> Optimization time:  0.81 seconds
+#> Max Log-Likelihood: -2059.884 
+#> Optimization time:  0.75 seconds
 #> Barrier penalty:    4.003 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
-#>                    Estimate Std. Error
-#> beta_cov1          -5.69776      1.397
-#> beta_cov2           6.71585      1.604
-#> beta_cov3           4.46631      1.210
-#> beta_d2c            0.05763      0.543
-#> beta_coast_barrier -0.24950      0.089
-#> sigma               4.59473      0.426
-#> gamma               0.48286      0.104
-#> rho_o               0.00000      0.000
-#> tau_1               1.00000      0.000
-#> tau_2               1.00000      0.000
-#> psi                 1.00000      0.000
+#>              Estimate Std. Error
+#> beta_cov1     -4.2551      1.076
+#> beta_cov2      6.7485      1.032
+#> beta_cov3      3.8614      0.913
+#> beta_d2c       0.1454      0.492
+#> beta_d2coast  -0.1375      0.090
+#> sigma          4.9250      0.249
+#> gamma          0.4379      0.068
+#> rho_o          0.0000      0.000
+#> tau_1          1.0000      0.000
+#> tau_2          1.0000      0.000
+#> psi            1.0000      0.000
 
 plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,
-                  maskBarrier = TRUE)
+                  maskRast = coast_barrier)
 ```
 
 ![](man/figures/README-barrier-1.png)<!-- -->
 
 ``` r
 
-# Using a grid search, posterior predictive checks can be 
-# performed to select the penalty via the tuneBarrier function
-fit_barrier_ks <- tuneBarrier(data = simDat_barrier,
-                              spatialCovs = exampleCovs_barrier,
-                              n_sims = 10,
-                              n_coarse = 5,
-                              n_fine = 5,
-                              ncores = 5,
-                              silent = TRUE)
-fit_barrier_ks
+
+
+# if lambda is not known, suggestLanbda can provide a ballpark estimate
+lambda <- suggestLambda(data = simDat_barrier,
+                        spatialCovs = exampleCovs_barrier,
+                        silent = TRUE)
 #> 
 #> Habitat-Driven Langevin Diffusion Model
 #> =======================================
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -2055.597 
-#> Optimization time:  0.97 seconds
-#> Barrier penalty:    2.808 
+#> Max Log-Likelihood: -2097.606 
+#> Optimization time:  0.85 seconds
+#> Barrier penalty:    0 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
-#>                    Estimate Std. Error
-#> beta_cov1          -4.63890      1.230
-#> beta_cov2           5.48585      1.453
-#> beta_cov3           3.66207      1.066
-#> beta_d2c           -0.01664      0.452
-#> beta_coast_barrier -0.19956      0.073
-#> sigma               5.05621      0.547
-#> gamma               0.40460      0.102
-#> rho_o               0.00000      0.000
-#> tau_1               1.00000      0.000
-#> tau_2               1.00000      0.000
-#> psi                 1.00000      0.000
+#>              Estimate Std. Error
+#> beta_cov1     -3.8244      1.391
+#> beta_cov2      6.2167      1.739
+#> beta_cov3      3.1851      1.236
+#> beta_d2c      -1.2679      0.605
+#> beta_d2coast   0.1968      0.111
+#> sigma          5.0906      0.588
+#> gamma          0.6428      0.159
+#> rho_o          0.0000      0.000
+#> tau_1          1.0000      0.000
+#> tau_2          1.0000      0.000
+#> psi            1.0000      0.000
+
+lambda
+#> [1] 4.966307
+
+fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
+                                  spatialCovs = exampleCovs_barrier,
+                                  lambda = lambda,
+                                  silent = TRUE)
+fit_barrier_lambda
+#> 
+#> Habitat-Driven Langevin Diffusion Model
+#> =======================================
+#> Model type:        Underdamped 
+#> Convergence:       Successful 
+#> Max Log-Likelihood: -2059.575 
+#> Optimization time:  0.96 seconds
+#> Barrier penalty:    4.966 
+#> 
+#> Parameter Estimates (Natural Scale):
+#> ---------------------------------------
+#>              Estimate Std. Error
+#> beta_cov1     -5.0249      1.262
+#> beta_cov2      8.0968      1.194
+#> beta_cov3      4.6576      1.074
+#> beta_d2c       0.2684      0.579
+#> beta_d2coast  -0.1780      0.107
+#> sigma          4.5105      0.213
+#> gamma          0.5139      0.075
+#> rho_o          0.0000      0.000
+#> tau_1          1.0000      0.000
+#> tau_2          1.0000      0.000
+#> psi            1.0000      0.000
+
+plot(fit_barrier_lambda, data = simDat_barrier,
+                         spatialCovs = exampleCovs_barrier,
+                         maskRast = coast_barrier)
 ```
+
+![](man/figures/README-barrier-2.png)<!-- -->
 
 ## Citation
 

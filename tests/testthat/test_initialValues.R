@@ -172,12 +172,6 @@ test_that("initialValues validates user-provided par$mu", {
   bad_mu_vec <- rep(0, nrow(dat) * 2)
   expect_error(initialValues(data = dat, par = list(mu = bad_mu_vec), spatialCovs = covs),
                "must be a matrix")
-
-  # contains NAs
-  bad_mu_na <- matrix(0, nrow = nrow(dat), ncol = 2)
-  bad_mu_na[1, 1] <- NA
-  expect_error(initialValues(data = dat, par = list(mu = bad_mu_na), spatialCovs = covs),
-               "cannot contain missing values")
 })
 
 test_that("initialValues rejects observation parameters when data lacks corresponding errors", {

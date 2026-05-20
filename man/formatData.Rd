@@ -15,7 +15,8 @@ formatData(
   emf = NULL,
   predTimes = NULL,
   time.unit = "hours",
-  tz = "UTC"
+  tz = "UTC",
+  max_dt = NULL
 )
 }
 \arguments{
@@ -23,7 +24,7 @@ formatData(
 
 \item{id}{Character string specifying the column name for the animal ID. Default: ``id''.}
 
-\item{date}{Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}} or a character string parseable to a date/time (e.g., "YYYY-MM-DD HH:MM:SS"). Default: ``date''.}
+\item{date}{Character string specifying the column name for the date/time, which must be of class \code{\link{DateTimeClasses}}, a character string parseable to a date/time (e.g., "YYYY-MM-DD HH:MM:SS"), or numeric. Default: ``date''.}
 
 \item{coord}{Character vector of length 2 specifying the column names for the (projected) coordinates. Default: c("x", "y").}
 
@@ -40,6 +41,8 @@ formatData(
 \item{time.unit}{Character string specifying the time unit for the time steps. Default: ``hours''.}
 
 \item{tz}{Character string specifying the time zone for the date/time column. Default: ``UTC''.}
+
+\item{max_dt}{Optional threshold for splitting tracks based on temporal gaps. If the \code{date} column is numeric, \code{max_dt} must be numeric. If the \code{date} column is \code{POSIXt} or character, \code{max_dt} must be a character string specifying a time duration (e.g., "1 hour", "1 day", "2 weeks"). If any calculated time step (\code{dt}) exceeds \code{max_dt}, the track is split, and subsequent locations are assigned a new ID with an incremented suffix (e.g., "_2", "_3"). Default: \code{NULL}.}
 }
 \value{
 A data frame of class \code{dataLangevin} containing the formatted tracking data. The data frame contains the following columns:

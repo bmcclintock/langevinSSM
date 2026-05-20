@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 
 ####  Habitat-driven Langevin Diffusion with Spatial Uncertainty
 
-`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The habitat-driven Langevin diffusion provides inferences about both habitat selection and utilization distributions. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). Location measurement error can take the form of  (older) Argos Least Squares-based locations, (newer) Argos Kalman Filter-based locations with error ellipse information, or general x- and y-axis errors (e.g. for GPS data). The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
+`{langevinSSM}` is an R package for simulating and fitting the habitat-driven Langevin diffusion to animal tracking data subject to location measurement error and temporal irregularity. The habitat-driven Langevin diffusion provides inferences about both habitat selection and utilization distributions. The package provides tools for simulating animal movement paths (`simLangevin`) and fitting the Langevin diffusion model to observed tracking data (`fitLangevin`). It can also enforce barrier constraints (e.g., land for marine animals). Location measurement error can take the form of  (older) Argos Least Squares-based locations, (newer) Argos Kalman Filter-based locations with error ellipse information, or general x- and y-axis errors (e.g. for GPS data). The Langevin diffusion is a continuous-time model in state-space form that estimates the underlying movement process while accounting for location measurement error and associated uncertainty in the spatial (habitat) covariates. Template Model Builder {TMB} is used for fast estimation. 
 
 ## Installation 
 One can install the `langevinSSM` package from CRAN using the following command:
@@ -180,28 +180,32 @@ plot(reg_prob, log = TRUE)
 
 ### Spatial constraints (i.e., barriers)
 
-To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas). The SDF is then included as a habitat selection covariate (where negative coefficients indicate attraction to the barrier boundary, e.g., the coast for marine animals) and as part of a penalty term with strength `lambda`:
-```{r barrier, eval=TRUE}
+To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas). When included in `spatialCovs` and identified by the `barrier` argument in `simLangevin' and `fitLangevin', the SDF is then included as part of a penalty term with strength `lambda`:
+```{r barrier, eval=TRUE, echo=-19}
 # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
 coast_barrier <- exampleCovs[[1]]
 terra::values(coast_barrier) <- ifelse(terra::crds(coast_barrier)[, "x"]
-                                 >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
+                                       >= mean(terra::crds(coast_barrier)[, "x"]), 1, 0)
 names(coast_barrier) <- "coast_barrier"
 
 # convert mask to SDF and add to the spatial covariates list
+# maskBuffer adds 1 cell buffer to barrier
 exampleCovs_barrier <- exampleCovs
-exampleCovs_barrier$coast_barrier <- prepBarrier(coast_barrier)
+maskBuff <- maskBuffer(coast_barrier,bufferCells=1)
+exampleCovs_barrier$coast_barrier <- prepBarrier(maskBuff)
+exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier
 
-# add a beta coefficient for the barrier to the parameter list
+# add a beta coefficient for d2c to the parameter list
 # negative value indicates slight attraction to the "coast"
 par_barrier <- par
-par_barrier$beta <- c(par_barrier$beta, -0.2)
+par_barrier$beta <- c(par_barrier$beta, -0.1)
 
 # simulate the data
 set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
+                              barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 1.5,
                                                       smin.sd = 0.75,
                                                       eor.lim = c(0,180)))
@@ -219,18 +223,26 @@ fit_barrier
 
 plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,
-                  maskBarrier = TRUE)
+                  maskRast = coast_barrier)
 
-# Using a grid search, posterior predictive checks can be 
-# performed to select the penalty via the tuneBarrier function
-fit_barrier_ks <- tuneBarrier(data = simDat_barrier,
-                              spatialCovs = exampleCovs_barrier,
-                              n_sims = 10,
-                              n_coarse = 5,
-                              n_fine = 5,
-                              ncores = 5,
-                              silent = TRUE)
-fit_barrier_ks
+
+
+# if lambda is not known, suggestLanbda can provide a ballpark estimate
+lambda <- suggestLambda(data = simDat_barrier,
+                        spatialCovs = exampleCovs_barrier,
+                        silent = TRUE)
+
+lambda
+
+fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
+                                  spatialCovs = exampleCovs_barrier,
+                                  lambda = lambda,
+                                  silent = TRUE)
+fit_barrier_lambda
+
+plot(fit_barrier_lambda, data = simDat_barrier,
+                         spatialCovs = exampleCovs_barrier,
+                         maskRast = coast_barrier)
 ```
 
 ## Citation

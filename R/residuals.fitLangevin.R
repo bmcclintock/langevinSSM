@@ -153,7 +153,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
   message("   Calculating OSA residuals using method: '", method, "' (ncores = ", ncores, ")...")
 
-  results_list <- foreach::foreach(uid = unique_ids, .packages = c("TMB"), .errorhandling = "pass") %loop% {
+  results_list <- foreach::foreach(uid = unique_ids, .packages = c("TMB", "langevinSSM"), .errorhandling = "pass") %loop% {
 
     sub_info <- subset_track_data(dat, object$tmb_setup$parList, object$tmb_setup$map, uid, cond$model)
 

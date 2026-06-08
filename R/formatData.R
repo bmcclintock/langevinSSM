@@ -10,7 +10,7 @@
 #' @param epar Character vector of length 3 specifying the column names for the error ellipse parameters (semi-major axis, semi-minor axis, and error ellipse orientation). See Details. Default: c("smaj", "smin", "eor").
 #' @param sderr Character vector of length 2 specifying the column names for the standard deviations of the error for the x and y coordinates. Default: c("x.err", "y.err").
 #' @param emf An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{getEMF}}). If provided, these values will be used to fill in \code{x.err} and \code{y.err} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.
-#' @param predTimes An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.
+#' @param predTimes An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving coordinate and error columns as \code{NA}. Any additional columns in \code{predTimes} that match existing columns in \code{data} will be preserved for these padded rows. Default: \code{NULL}.
 #' @param time.unit Character string specifying the time unit for the time steps. Default: ``hours''.
 #' @param tz Character string specifying the time zone for the date/time column. Default: ``UTC''.
 #' @param max_dt Optional threshold for splitting tracks based on temporal gaps. If the \code{date} column is numeric, \code{max_dt} must be numeric. If the \code{date} column is \code{POSIXt} or character, \code{max_dt} must be a character string specifying a time duration (e.g., "1 hour", "1 day", "2 weeks"). If any calculated time step (\code{dt}) exceeds \code{max_dt}, the track is split, and subsequent locations are assigned a new ID with an incremented suffix (e.g., "_2", "_3"). Default: \code{NULL}.
@@ -151,6 +151,17 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
     }
 
     pt_pad <- data.frame(id = pt_ids, date = pt_dates)
+
+    # Preserve additional user-provided columns (e.g., regions) that exist in the formatted data
+    reserved_cols <- c("x", "y", "lc", "smaj", "smin", "eor", "x.err", "y.err")
+    extra_cols <- setdiff(intersect(names(predTimes), names(out)), c("id", "date", reserved_cols))
+
+    if (length(extra_cols) > 0) {
+      for (col in extra_cols) {
+        pt_pad[[col]] <- predTimes[[col]]
+      }
+    }
+
     missing_cols <- setdiff(names(out), names(pt_pad))
     for (col in missing_cols) {
       pt_pad[[col]] <- NA
@@ -220,13 +231,14 @@ formatData <- function(data, id = "id", date = "date", coord = c("x", "y"), lc =
       dplyr::mutate(
         split_flag = dt > max_dt_num,
         segment = cumsum(split_flag) + 1,
-        id = ifelse(segment > 1, paste0(as.character(id), "_", segment), as.character(id))
+        max_seg = max(segment), # Check if the track splits at all
+        id = ifelse(max_seg > 1, paste0(as.character(id), "_", segment), as.character(id))
       ) %>%
       dplyr::ungroup() %>%
       dplyr::mutate(
         dt = ifelse(split_flag, 0, dt) # Reset the first dt of the newly split track segment to 0
       ) %>%
-      dplyr::select(-split_flag, -segment)
+      dplyr::select(-split_flag, -segment, -max_seg)
   }
   # -------------------------------
 

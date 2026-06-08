@@ -129,7 +129,7 @@ coef(fit_under)
 confint(fit_under) 
 
 # confidence intervals for true locations
-mu_ci <- confint(fit_under, type= "mu") 
+mu_ci <- confint(fit_under, parm= "mu") 
 
 head(mu_ci)
 
@@ -225,12 +225,15 @@ plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,
                   maskRast = coast_barrier)
 
-
-
 # if lambda is not known, suggestLanbda can provide a ballpark estimate
-lambda <- suggestLambda(data = simDat_barrier,
-                        spatialCovs = exampleCovs_barrier,
-                        silent = TRUE)
+
+# first fit baseline model with no barrier penalty
+fit0 <- fitLangevin(data = simDat_barrier,
+                    spatialCovs = exampleCovs_barrier,
+                    lambda = 0,
+                    silent = TRUE)
+
+lambda <- suggestLambda(fit0,max_dt = median(simDat_barrier$dt))
 
 lambda
 

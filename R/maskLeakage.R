@@ -40,7 +40,7 @@ maskLeakage <- function(x, maskRast, level = 0.999, tolerance = 0, coord = c("mu
   if (missing(maskRast)) stop("'maskRast' must be provided.")
   if(!inherits(maskRast, "SpatRaster")) stop("'maskRast' must be a SpatRaster")
 
-  if (!is.numeric(level) || length(level) != 1 || level <= 0 || level >= 1) {
+  if (!is.numeric(level) || length(level) != 1 || level <= 0 || level > 1) {
     stop("'level' must be a numeric value between 0 and 1 (e.g., 0.999).")
   }
   if (!is.numeric(tolerance) || length(tolerance) != 1 || tolerance < 0) {

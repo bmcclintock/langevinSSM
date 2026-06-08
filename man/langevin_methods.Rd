@@ -5,9 +5,9 @@
 \alias{print.fitLangevin}
 \alias{logLik.fitLangevin}
 \alias{coef.fitLangevin}
+\alias{fitted.fitLangevin}
 \alias{vcov.fitLangevin}
 \alias{confint.fitLangevin}
-\alias{fitted.fitLangevin}
 \alias{summary.fitLangevin}
 \title{S3 Methods for Langevin model fits}
 \usage{
@@ -15,13 +15,19 @@
 
 \method{logLik}{fitLangevin}(object, ...)
 
-\method{coef}{fitLangevin}(object, type = "natural", ...)
+\method{coef}{fitLangevin}(object, type = c("natural", "working"), ...)
 
-\method{vcov}{fitLangevin}(object, type = "natural", ...)
+\method{fitted}{fitLangevin}(object, parm = c("mu", "vel"), ...)
 
-\method{confint}{fitLangevin}(object, parm, level = 0.95, type = "natural", ...)
+\method{vcov}{fitLangevin}(object, parm = "fixed", type = c("natural", "working", "random"), ...)
 
-\method{fitted}{fitLangevin}(object, type = c("mu", "vel"), ...)
+\method{confint}{fitLangevin}(
+  object,
+  parm = "fixed",
+  level = 0.95,
+  type = c("natural", "working", "random"),
+  ...
+)
 
 \method{summary}{fitLangevin}(object, ...)
 }
@@ -32,19 +38,19 @@
 
 \item{object}{A \code{fitLangevin} object.}
 
-\item{type}{Character string indicating which scale or state to extract. For \code{coef}, \code{vcov}, and \code{confint}, options are \code{"natural"} (default) or \code{"working"}. For \code{fitted}, options are \code{"mu"} (default) or \code{"vel"}. \code{confint} also accepts \code{"mu"} or \code{"vel"}.}
+\item{type}{Character string indicating which scale or type of estimates to extract. Options are \code{"natural"} (default), \code{"working"}, or \code{"random"}. Ignored for \code{fitted}.}
 
-\item{parm}{A specification of which parameters are to be given confidence intervals. Can be a vector of character names (e.g., \code{"sigma"}), or the name of a latent state (\code{"mu"} or \code{"vel"}).}
+\item{parm}{A specification of which parameters to extract. For fixed parameters (when \code{type} is \code{"natural"} or \code{"working"}), this can be a vector of parameter names, or \code{"fixed"} (default) to return all fixed parameters. For random effects (when \code{type = "random"}, or when using \code{fitted}), this must be either \code{"mu"} (default) or \code{"vel"}.}
 
 \item{level}{The confidence level required. Default: \code{0.95}.}
 }
 \value{
 \itemize{
   \item \strong{\code{logLik}:} Returns an object of class \code{logLik} containing the maximized log-likelihood, with attributes for degrees of freedom (\code{df}) and number of observations (\code{nobs}).
-  \item \strong{\code{coef}:} Returns a named numeric vector of parameter point estimates.
-  \item \strong{\code{vcov}:} Returns the variance-covariance matrix of the estimated parameters.
-  \item \strong{\code{confint}:} For fixed parameters (e.g., \code{type = "natural"}), returns a numeric matrix with lower and upper bounds. For random effects (\code{type = "mu"} or \code{"vel"}), returns a wide data frame containing the \code{id}, \code{date}, and the upper and lower confidence bounds for the x and y coordinates.
-  \item \strong{\code{fitted}:} Returns a data frame containing the \code{id}, \code{date}, and the estimated expected values of the latent states (either \code{mu.x} and \code{mu.y}, or \code{vel.x} and \code{vel.y}).
+  \item \strong{\code{coef}:} Returns a named numeric vector of parameter point estimates. If \code{type = "random"}, returns a data frame of the latent states.
+  \item \strong{\code{vcov}:} Returns the variance-covariance matrix of the estimated parameters. If \code{type = "random"}, returns the sparse joint precision matrix of the random effects.
+  \item \strong{\code{confint}:} For fixed parameters, returns a numeric matrix with lower and upper bounds. For random effects, returns a wide data frame containing the \code{id}, \code{date}, and the upper and lower confidence bounds for the coordinates.
+  \item \strong{\code{fitted}:} Returns a data frame containing the \code{id}, \code{date}, and the estimated expected values of the latent states.
   \item \strong{\code{summary}:} Returns a \code{summary.fitLangevin} object containing convergence details and matrices of coefficients with standard errors (and Z-test p-values for habitat selection coefficients).
 }
 }

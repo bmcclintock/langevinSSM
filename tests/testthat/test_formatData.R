@@ -313,3 +313,28 @@ test_that("formatData handles duplicated times and predTimes padding safely", {
   expect_equal(nrow(fmt_pad), 3)
   expect_true(all(!is.na(fmt_pad$x))) # No NA coordinates should have survived
 })
+
+test_that("predTimes preserves extra user-provided columns matching the original data", {
+  dat17 <- get_base_data()
+  # Add an extra custom column into the original dataset
+  dat17$region <- c("North", "North", "South", "South", "South")
+
+  pt <- data.frame(
+    id = "A1",
+    date = as.POSIXct("2023-01-01 13:00:00", tz = "UTC"),
+    region = "Transition_Zone"
+  )
+
+  res17 <- formatData(dat17, predTimes = pt)
+
+  # The new row should be the 3rd row (13:00 is between 12:00 and 14:00)
+  expect_equal(nrow(res17), 6)
+  expect_equal(res17$date[3], pt$date[1])
+
+  # Coordinates and error metrics should remain NA
+  expect_true(is.na(res17$x[3]))
+  expect_true(is.na(res17$lc[3]))
+
+  # Extra column explicitly provided in predTimes should be preserved!
+  expect_equal(res17$region[3], "Transition_Zone")
+})

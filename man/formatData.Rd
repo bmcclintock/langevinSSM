@@ -36,7 +36,7 @@ formatData(
 
 \item{emf}{An optional data frame containing error multiplication factors (or standard deviations) for location quality classes. Must contain columns \code{lc}, \code{emf.x}, and \code{emf.y} (see \code{\link{getEMF}}). If provided, these values will be used to fill in \code{x.err} and \code{y.err} for observations where neither error ellipse (``epar'') nor standard deviations (``sderr'') information is provided in \code{data}. Default: \code{NULL}.}
 
-\item{predTimes}{An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving all columns (such as coordinates and errors) as \code{NA}. See Details. Default: \code{NULL}.}
+\item{predTimes}{An optional data frame containing custom times at which to predict the animal's location. Must contain columns corresponding to the \code{id} and \code{date} arguments. If provided, the returned \code{dataLangevin} object will be padded with these dates, leaving coordinate and error columns as \code{NA}. Any additional columns in \code{predTimes} that match existing columns in \code{data} will be preserved for these padded rows. Default: \code{NULL}.}
 
 \item{time.unit}{Character string specifying the time unit for the time steps. Default: ``hours''.}
 

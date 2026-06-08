@@ -49,7 +49,7 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
     beta <- fit$estimates$natural[beta_idx, "Estimate"]
   }
 
-  if(length(spatialCovs) != length(beta)) stop("length(spatialCovs) must equal length(beta). Note that the barrier does not receive a beta coefficient.")
+  if(length(spatialCovs) != length(beta)) stop("length(spatialCovs) must equal length(beta). Note that if a barrier is specified, the barrier does not receive a beta coefficient.")
 
   if(!missing(fit)){
     boundsWarning(fit)

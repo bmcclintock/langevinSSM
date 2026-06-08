@@ -53,7 +53,7 @@ test_that("fitLangevin catches missing coordinate columns", {
                "coord not found in data")
 })
 
-test_that("fitLangevin enforces smoothGradient rules", {
+test_that("fitLangevin enforcess smoothGradient rules", {
   r <- list(habitat = get_valid_raster())
   p <- get_valid_par()
   dat <- get_valid_dataLangevin()
@@ -515,15 +515,11 @@ test_that("S3 methods for fitLangevin work", {
   expect_error(confint(mock_fit, parm = "nonsense"), "Parameter\\(s\\) not found")
 
   # 4. confint() for Random Effects (wide layout, no point estimates)
-  ci_mu <- confint(mock_fit, type = "mu")
+  ci_mu <- confint(mock_fit, parm = "mu")
   expect_true(is.data.frame(ci_mu))
   # Should have 6 columns: id, date, x bounds, y bounds
   expect_equal(colnames(ci_mu), c("id", "date", "mu.x_2.5%", "mu.x_97.5%", "mu.y_2.5%", "mu.y_97.5%"))
   expect_equal(nrow(ci_mu), 2)
-
-  # Verify auto-correction of parm="mu" to type="mu"
-  ci_mu_param_intercept <- confint(mock_fit, parm = "mu")
-  expect_equal(ci_mu, ci_mu_param_intercept)
 
   # 5. print() output formatting
   out <- capture.output(print(mock_fit))
@@ -569,20 +565,20 @@ test_that("summary, fitted, and numeric dates work correctly across S3 methods",
   expect_true(is.numeric(fit_mu$date)) # Because we initialized with numeric
   expect_equal(fit_mu$date, c(10, 20))
 
-  fit_vel <- fitted(mock_fit_num, type = "vel")
+  fit_vel <- fitted(mock_fit_num, parm = "vel")
   expect_true("vel.x" %in% names(fit_vel))
   expect_true(is.numeric(fit_vel$date))
 
   # Error catching in fitted
-  expect_error(fitted(mock_fit_num, type = "nonsense"), "should be one of")
+  expect_error(fitted(mock_fit_num, parm = "nonsense"), "should be one of")
 
   # 2. confint() with numeric dates
-  ci_mu <- confint(mock_fit_num, type = "mu")
+  ci_mu <- confint(mock_fit_num, parm = "mu")
   expect_true("date" %in% names(ci_mu))
   expect_true(is.numeric(ci_mu$date))
   expect_equal(ci_mu$date, c(10, 20))
 
-  ci_vel <- confint(mock_fit_num, type = "vel")
+  ci_vel <- confint(mock_fit_num, parm = "vel")
   expect_true("date" %in% names(ci_vel))
   expect_true(is.numeric(ci_vel$date))
   expect_equal(colnames(ci_vel), c("id", "date", "vel.x_2.5%", "vel.x_97.5%", "vel.y_2.5%", "vel.y_97.5%"))
@@ -640,19 +636,15 @@ test_that("Out-of-bounds warnings trigger across fit and downstream methods", {
   )
 
   # 2. Test Computation Functions (Expect Formal Warnings)
-  # Chain expect_warning to absorb both the custom bounds warning
-  # AND the TMB "empty summary" warning caused by the completely frozen mock map
+  # fitLangevin should throw exactly ONE warning: the bounds warning
   expect_warning(
-    expect_warning(
-      suppressMessages({
-        fit <- fitLangevin(
-          data = dat, model = "underdamped", spatialCovs = spatialCovs,
-          par = init_par, map = user_map, silent = TRUE
-        )
-      }),
-      "MODEL FIT LIKELY INVALID"
-    ),
-    "empty summary"
+    suppressMessages({
+      fit <- fitLangevin(
+        data = dat, model = "underdamped", spatialCovs = spatialCovs,
+        par = init_par, map = user_map, silent = TRUE
+      )
+    }),
+    "MODEL FIT LIKELY INVALID"
   )
 
   expect_true(fit$conditions$out_of_bounds)
@@ -666,11 +658,13 @@ test_that("Out-of-bounds warnings trigger across fit and downstream methods", {
     "OSA calculation failed"
   )
 
+  # getUD DOES invoke boundsWarning
   expect_warning(
     suppressMessages(getUD(spatialCovs, fit = fit, log = TRUE, plot = FALSE)),
     "MODEL FIT LIKELY INVALID"
   )
 
+  # plot DOES invoke boundsWarning
   expect_warning(
     suppressMessages(plot(fit, spatialCovs = spatialCovs)),
     "MODEL FIT LIKELY INVALID"

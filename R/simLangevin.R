@@ -164,6 +164,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   orig_spatialCovs <- spatialCovs
 
   if (!is.null(barrier)) {
+    if(!is.character(barrier)) stop("'barrier' must be a character string indicating the spatRaster in 'covs' containing the barrier layer.")
     if (!(barrier %in% names(spatialCovs))) stop(sprintf("Barrier raster '%s' not found in spatialCovs.", barrier))
 
     barrier_sdf <- spatialCovs[[barrier]]

@@ -1,52 +1,33 @@
 #' Suggest a barrier penalty
 #'
-#' Fits a baseline unconstrained model to estimate the animal's speed and uses the maximum time step
+#' Uses the estimated speed/variance from a baseline unconstrained model and a user-specified maximum time step
 #' to suggest a stable upper limit for the barrier penalty (\code{lambda}). This is just a suggestion and is not necessarily the optimal value, but it can help guide users in selecting a reasonable starting point for \code{lambda} when fitting models with barriers.
 #'
-#' @param data A \code{dataLangevin} object containing the tracking data.
-#' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
-#' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If missing, it will attempt to extract the barrier name from the data attributes.
-#' @param ... Additional arguments passed to \code{\link{fitLangevin}}.
+#' @param fit A \code{fitLangevin} object representing the baseline unconstrained model (fitted without a barrier constraint, or with \code{lambda = 0}).
+#' @param max_dt Numeric. A representative maximum time step to use for the calculation. This must be provided by the user. Supplying a value representing the typical sampling rate, a high quantile of the observed time steps, or the intended prediction grid resolution is recommended over the absolute maximum observed time step, which can be heavily skewed by extreme outlier gaps.
+#'
+#' @details
+#' The maximum stable penalty is derived from the animal's movement characteristics (estimated by the baseline \code{fitLangevin} model) and the largest time gap between observations (\code{max_dt}). It balances the movement variance (\code{sigma}), the friction coefficient (\code{gamma}, for underdamped models), and the maximum time step. Fundamentally, if the time gaps between observations are large, or if the animal's movement variance is high, the barrier penalty must be kept relatively small to prevent the trajectory from overshooting when it encounters the barrier.
 #'
 #' @return A numeric value representing the suggested maximum barrier penalty (\code{lambda}).
 #' @export
-suggestLambda <- function(data, spatialCovs, barrier, ...) {
+suggestLambda <- function(fit, max_dt) {
 
-  if (!inherits(data, "dataLangevin")) stop("'data' must be a dataLangevin object.")
-  if (missing(spatialCovs) || !is.list(spatialCovs)) stop("'spatialCovs' list must be provided.")
+  if (missing(fit) || !inherits(fit, "fitLangevin")) stop("'fit' must be provided and must be a fitLangevin object.")
 
-  if (missing(barrier) || is.null(barrier)) {
-    sim_barrier <- attr(data,"barrier")
-    if(!is.null(sim_barrier)){
-      barrier <- sim_barrier
-    } else stop("'barrier' argument (the name of the barrier raster in 'spatialCovs') must be provided.")
+  # Ensure the provided model was actually unconstrained
+  if (!is.null(fit$conditions$lambda) && fit$conditions$lambda != 0) {
+    stop("The provided 'fit' object must be an unconstrained model fitted with lambda = 0 (or no barrier).")
   }
 
-  max_dt <- max(data$dt, na.rm = TRUE)
-
-  args <- list(...)
-  fit0_args <- args
-  fit0_args$data <- data
-  fit0_args$spatialCovs <- spatialCovs
-  fit0_args$barrier <- barrier
-  fit0_args$lambda <- 0
-
-  if(is.null(fit0_args$model)) model <- "underdamped" else model <- fit0_args$model
-  fit0_args$model <- model
-
-  message("   Fitting baseline ",model," Langevin model (lambda = 0) to estimate movement parameters...")
-
-  fit0 <- tryCatch(suppressMessages(do.call(fitLangevin, fit0_args)), error = function(e) e)
-
-  if (inherits(fit0, "error")) {
-    stop("Baseline fit failed.\n    Error details: ", fit0$message)
+  if (missing(max_dt) || !is.numeric(max_dt) || length(max_dt) != 1 || max_dt <= 0) {
+    stop("'max_dt' must be provided as a single positive numeric value.")
   }
 
-  print(fit0)
+  model <- fit$conditions$model
+  scaleFactor <- fit$conditions$scaleFactor
 
-  scaleFactor <- fit0$conditions$scaleFactor
-
-  est_sigma <- fit0$estimates$natural["sigma", "Estimate"]
+  est_sigma <- fit$estimates$natural["sigma", "Estimate"]
   est_sigma_work <- est_sigma / scaleFactor
 
   # Normalize the spatial parameters, calculate the boundaries, and then apply the 1/L^2 transformation
@@ -55,7 +36,7 @@ suggestLambda <- function(data, spatialCovs, barrier, ...) {
   sigma_rs <- est_sigma_work / RS
 
   if (model == "underdamped") {
-    est_gamma <- fit0$estimates$natural["gamma", "Estimate"]
+    est_gamma <- fit$estimates$natural["gamma", "Estimate"]
 
     num <- (est_gamma^2) * (1 - exp(-est_gamma * max_dt))
     den <- (sigma_rs^2) * (1 - exp(-est_gamma * max_dt) - (est_gamma * max_dt * exp(-est_gamma * max_dt)))

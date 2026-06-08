@@ -98,7 +98,12 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
   } else {
 
     estimates$natural <- as.data.frame(summary(sdreport_out, "report"))
-    estimates$working <- as.data.frame(summary(sdreport_out, "fixed"))
+
+    if("All parameters fixed; no outer optimization required" %in% fit$message){
+      estimates$working <- as.data.frame(suppressWarnings(summary(sdreport_out, "fixed")))
+    } else {
+      estimates$working <- as.data.frame(summary(sdreport_out, "fixed"))
+    }
 
     covariance$natural <- sdreport_out$cov
     covariance$working <- sdreport_out$cov.fixed
@@ -399,7 +404,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     if (inherits(obj1, "try-error")) stop("Initial inner optimization (obj1) failed during TMB::MakeADFun. Check parameter initial values or data.\nError details: ", attr(obj1, "condition")$message)
 
-    obj1$fn()
+    obj1$fn(obj1$par)
     smoothed_pars <- obj1$env$parList()
 
     if("mu" %in% re) par$mu <- smoothed_pars$mu

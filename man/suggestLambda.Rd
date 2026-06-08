@@ -4,21 +4,20 @@
 \alias{suggestLambda}
 \title{Suggest a barrier penalty}
 \usage{
-suggestLambda(data, spatialCovs, barrier, ...)
+suggestLambda(fit, max_dt)
 }
 \arguments{
-\item{data}{A \code{dataLangevin} object containing the tracking data.}
+\item{fit}{A \code{fitLangevin} object representing the baseline unconstrained model (fitted without a barrier constraint, or with \code{lambda = 0}).}
 
-\item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.}
-
-\item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If missing, it will attempt to extract the barrier name from the data attributes.}
-
-\item{...}{Additional arguments passed to \code{\link{fitLangevin}}.}
+\item{max_dt}{Numeric. A representative maximum time step to use for the calculation. This must be provided by the user. Supplying a value representing the typical sampling rate, a high quantile of the observed time steps, or the intended prediction grid resolution is recommended over the absolute maximum observed time step, which can be heavily skewed by extreme outlier gaps.}
 }
 \value{
 A numeric value representing the suggested maximum barrier penalty (\code{lambda}).
 }
 \description{
-Fits a baseline unconstrained model to estimate the animal's speed and uses the maximum time step
+Uses the estimated speed/variance from a baseline unconstrained model and a user-specified maximum time step
 to suggest a stable upper limit for the barrier penalty (\code{lambda}). This is just a suggestion and is not necessarily the optimal value, but it can help guide users in selecting a reasonable starting point for \code{lambda} when fitting models with barriers.
+}
+\details{
+The maximum stable penalty is derived from the animal's movement characteristics (estimated by the baseline \code{fitLangevin} model) and the largest time gap between observations (\code{max_dt}). It balances the movement variance (\code{sigma}), the friction coefficient (\code{gamma}, for underdamped models), and the maximum time step. Fundamentally, if the time gaps between observations are large, or if the animal's movement variance is high, the barrier penalty must be kept relatively small to prevent the trajectory from overshooting when it encounters the barrier.
 }

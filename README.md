@@ -277,7 +277,7 @@ confint(fit_under)
 #> psi        1.0000000  1.0000000
 
 # confidence intervals for true locations
-mu_ci <- confint(fit_under, type= "mu") 
+mu_ci <- confint(fit_under, parm= "mu") 
 
 head(mu_ci)
 #>   id                date mu.x_2.5% mu.x_97.5% mu.y_2.5% mu.y_97.5%
@@ -310,23 +310,23 @@ res_under
 #> 
 #> ---- Goodness-of-Fit Tests ----
 #>  metric  statistic   p.value
-#>    KS_x 0.01598432 0.8389506
-#>    KS_y 0.02434843 0.3373330
-#>  KS_mah 0.01965255 0.6097253
-#>    LB_x 7.88961085 0.3424286
-#>    LB_y 3.28849949 0.8570934
-#>  LB_mah 5.37975199 0.6137248
+#>    KS_x 0.01623411 0.8250146
+#>    KS_y 0.02325261 0.3931915
+#>  KS_mah 0.02366581 0.3714851
+#>    LB_x 8.03971355 0.3291050
+#>    LB_y 3.21740171 0.8641889
+#>  LB_mah 5.83083916 0.5596346
 #> -------------------------------
 #> 
 #> Residual Summary:
-#>    residual.x           residual.y      
-#>  Min.   :-3.0898455   Min.   :-3.57833  
-#>  1st Qu.:-0.6737108   1st Qu.:-0.66399  
-#>  Median :-0.0125678   Median : 0.01314  
-#>  Mean   : 0.0003674   Mean   : 0.01898  
-#>  3rd Qu.: 0.6900477   3rd Qu.: 0.71835  
-#>  Max.   : 3.1302167   Max.   : 2.97038  
-#>  NA's   :3            NA's   :3
+#>    residual.x         residual.y      
+#>  Min.   :-3.03539   Min.   :-3.59504  
+#>  1st Qu.:-0.66918   1st Qu.:-0.64664  
+#>  Median : 0.00477   Median : 0.01418  
+#>  Mean   : 0.01512   Mean   : 0.01724  
+#>  3rd Qu.: 0.70205   3rd Qu.: 0.72569  
+#>  Max.   : 3.09371   Max.   : 2.95225  
+#>  NA's   :3          NA's   :3
 
 # plot residuals to check model fit
 p_under <- plot(res_under)
@@ -346,24 +346,24 @@ res_over
 #> Number of tracks:   3 
 #> 
 #> ---- Goodness-of-Fit Tests ----
-#>  metric   statistic      p.value
-#>    KS_x  0.02500516 3.065233e-01
-#>    KS_y  0.02854070 1.744104e-01
-#>  KS_mah  0.01735706 7.579011e-01
-#>    LB_x 33.14761549 2.485147e-05
-#>    LB_y 65.63052339 1.123146e-11
-#>  LB_mah  6.54028837 4.782583e-01
+#>  metric    statistic      p.value
+#>    KS_x   0.01835388 0.6943096864
+#>    KS_y   0.03702382 0.0330107286
+#>  KS_mah   0.02090779 0.5296595534
+#>    LB_x  27.69691301 0.0002495031
+#>    LB_y 164.46091645 0.0000000000
+#>  LB_mah   9.67064806 0.2080183389
 #> -------------------------------
 #> 
 #> Residual Summary:
-#>    residual.x         residual.y      
-#>  Min.   :-3.11105   Min.   :-3.55955  
-#>  1st Qu.:-0.67883   1st Qu.:-0.72711  
-#>  Median :-0.02908   Median :-0.05798  
-#>  Mean   :-0.03422   Mean   :-0.04454  
-#>  3rd Qu.: 0.63190   3rd Qu.: 0.63178  
-#>  Max.   : 2.89999   Max.   : 2.94656  
-#>  NA's   :3          NA's   :3
+#>    residual.x          residual.y      
+#>  Min.   :-3.061934   Min.   :-3.51075  
+#>  1st Qu.:-0.637724   1st Qu.:-0.78183  
+#>  Median :-0.012202   Median :-0.07414  
+#>  Mean   : 0.002239   Mean   :-0.08122  
+#>  3rd Qu.: 0.640902   3rd Qu.: 0.59904  
+#>  Max.   : 2.975504   Max.   : 2.89001  
+#>  NA's   :3           NA's   :3
 
 p_over <- plot(res_over)
 p_over$qq_x + p_over$qq_y + p_over$acf_x + p_over$acf_y + plot_layout(ncol=2)
@@ -401,8 +401,8 @@ reg_prob
 #>   95% CI:         [0.0745, 0.7614]
 #> 
 #> Monte Carlo Simulation:
-#>   Standard Error: 0.2018
-#>   95% CI:         [0.0000, 0.7322]
+#>   Standard Error: 0.2031
+#>   95% CI:         [0.0000, 0.7343]
 #>   (Based on 1000 draws)
 
 plot(reg_prob, log = TRUE)
@@ -465,7 +465,7 @@ fit_barrier
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2059.884 
-#> Optimization time:  0.75 seconds
+#> Optimization time:  0.78 seconds
 #> Barrier penalty:    4.003 
 #> 
 #> Parameter Estimates (Natural Scale):
@@ -492,35 +492,15 @@ plot(fit_barrier, data = simDat_barrier,
 
 ``` r
 
-
-
 # if lambda is not known, suggestLanbda can provide a ballpark estimate
-lambda <- suggestLambda(data = simDat_barrier,
-                        spatialCovs = exampleCovs_barrier,
-                        silent = TRUE)
-#> 
-#> Habitat-Driven Langevin Diffusion Model
-#> =======================================
-#> Model type:        Underdamped 
-#> Convergence:       Successful 
-#> Max Log-Likelihood: -2097.606 
-#> Optimization time:  0.85 seconds
-#> Barrier penalty:    0 
-#> 
-#> Parameter Estimates (Natural Scale):
-#> ---------------------------------------
-#>              Estimate Std. Error
-#> beta_cov1     -3.8244      1.391
-#> beta_cov2      6.2167      1.739
-#> beta_cov3      3.1851      1.236
-#> beta_d2c      -1.2679      0.605
-#> beta_d2coast   0.1968      0.111
-#> sigma          5.0906      0.588
-#> gamma          0.6428      0.159
-#> rho_o          0.0000      0.000
-#> tau_1          1.0000      0.000
-#> tau_2          1.0000      0.000
-#> psi            1.0000      0.000
+
+# first fit baseline model with no barrier penalty
+fit0 <- fitLangevin(data = simDat_barrier,
+                    spatialCovs = exampleCovs_barrier,
+                    lambda = 0,
+                    silent = TRUE)
+
+lambda <- suggestLambda(fit0,max_dt = median(simDat_barrier$dt))
 
 lambda
 #> [1] 4.966307
@@ -536,7 +516,7 @@ fit_barrier_lambda
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2059.575 
-#> Optimization time:  0.96 seconds
+#> Optimization time:  0.92 seconds
 #> Barrier penalty:    4.966 
 #> 
 #> Parameter Estimates (Natural Scale):

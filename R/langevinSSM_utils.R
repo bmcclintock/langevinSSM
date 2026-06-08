@@ -1,5 +1,5 @@
 #' @importFrom utils globalVariables
-utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid", "i", "split_flag", "segment"))
+utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid", "i", "split_flag", "segment","max_seg"))
 
 #' Example Spatial Covariates
 #'
@@ -60,18 +60,18 @@ NULL
 #' Standard S3 methods for extracting information from \code{fitLangevin} objects.
 #'
 #' @param object A \code{fitLangevin} object.
-#' @param type Character string indicating which scale or state to extract. For \code{coef}, \code{vcov}, and \code{confint}, options are \code{"natural"} (default) or \code{"working"}. For \code{fitted}, options are \code{"mu"} (default) or \code{"vel"}. \code{confint} also accepts \code{"mu"} or \code{"vel"}.
-#' @param parm A specification of which parameters are to be given confidence intervals. Can be a vector of character names (e.g., \code{"sigma"}), or the name of a latent state (\code{"mu"} or \code{"vel"}).
+#' @param type Character string indicating which scale or type of estimates to extract. Options are \code{"natural"} (default), \code{"working"}, or \code{"random"}. Ignored for \code{fitted}.
+#' @param parm A specification of which parameters to extract. For fixed parameters (when \code{type} is \code{"natural"} or \code{"working"}), this can be a vector of parameter names, or \code{"fixed"} (default) to return all fixed parameters. For random effects (when \code{type = "random"}, or when using \code{fitted}), this must be either \code{"mu"} (default) or \code{"vel"}.
 #' @param level The confidence level required. Default: \code{0.95}.
 #' @param ... Further arguments passed to or from other methods.
 #'
 #' @return
 #' \itemize{
 #'   \item \strong{\code{logLik}:} Returns an object of class \code{logLik} containing the maximized log-likelihood, with attributes for degrees of freedom (\code{df}) and number of observations (\code{nobs}).
-#'   \item \strong{\code{coef}:} Returns a named numeric vector of parameter point estimates.
-#'   \item \strong{\code{vcov}:} Returns the variance-covariance matrix of the estimated parameters.
-#'   \item \strong{\code{confint}:} For fixed parameters (e.g., \code{type = "natural"}), returns a numeric matrix with lower and upper bounds. For random effects (\code{type = "mu"} or \code{"vel"}), returns a wide data frame containing the \code{id}, \code{date}, and the upper and lower confidence bounds for the x and y coordinates.
-#'   \item \strong{\code{fitted}:} Returns a data frame containing the \code{id}, \code{date}, and the estimated expected values of the latent states (either \code{mu.x} and \code{mu.y}, or \code{vel.x} and \code{vel.y}).
+#'   \item \strong{\code{coef}:} Returns a named numeric vector of parameter point estimates. If \code{type = "random"}, returns a data frame of the latent states.
+#'   \item \strong{\code{vcov}:} Returns the variance-covariance matrix of the estimated parameters. If \code{type = "random"}, returns the sparse joint precision matrix of the random effects.
+#'   \item \strong{\code{confint}:} For fixed parameters, returns a numeric matrix with lower and upper bounds. For random effects, returns a wide data frame containing the \code{id}, \code{date}, and the upper and lower confidence bounds for the coordinates.
+#'   \item \strong{\code{fitted}:} Returns a data frame containing the \code{id}, \code{date}, and the estimated expected values of the latent states.
 #'   \item \strong{\code{summary}:} Returns a \code{summary.fitLangevin} object containing convergence details and matrices of coefficients with standard errors (and Z-test p-values for habitat selection coefficients).
 #' }
 #'
@@ -146,18 +146,16 @@ logLik.fitLangevin <- function(object, ...) {
 
 #' @rdname langevin_methods
 #' @export
-coef.fitLangevin <- function(object, type = "natural", ...) {
+coef.fitLangevin <- function(object, type = c("natural", "working"), ...) {
+
+  type <- match.arg(type)
+  boundsWarning(object, as_warning = FALSE)
 
   if (!type %in% names(object$estimates)) {
     stop("Estimates for type '", type, "' are not available in this model fit.")
   }
 
-  boundsWarning(object, as_warning = FALSE)
-
-  # Extract just the Estimate column
   est_vector <- object$estimates[[type]][, "Estimate"]
-
-  # Assign the parameter names
   names(est_vector) <- rownames(object$estimates[[type]])
 
   return(est_vector)
@@ -165,28 +163,56 @@ coef.fitLangevin <- function(object, type = "natural", ...) {
 
 #' @rdname langevin_methods
 #' @export
-vcov.fitLangevin <- function(object, type = "natural", ...) {
+fitted.fitLangevin <- function(object, parm = c("mu", "vel"), ...) {
 
-  if (!type %in% names(object$covariance)) {
-    stop("Covariance matrix for type '", type, "' is not available in this model fit.")
-  }
-
+  parm <- match.arg(parm)
   boundsWarning(object, as_warning = FALSE)
 
-  return(object$covariance[[type]])
+  if (is.null(object$estimates$random[[parm]])) {
+    stop("Latent state '", parm, "' was not estimated in this model.")
+  }
 
+  return(object$estimates$random[[parm]]$est)
 }
 
 #' @rdname langevin_methods
 #' @export
-confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ...) {
+vcov.fitLangevin <- function(object, parm = "fixed", type = c("natural", "working", "random"), ...) {
 
-  if (!missing(parm) && length(parm) == 1 && parm %in% c("mu", "vel")) {
-    type <- parm
-    is_re_parm <- TRUE
-  } else {
-    is_re_parm <- FALSE
+  if (!missing(parm) && any(parm %in% c("mu", "vel"))) type <- "random"
+  type <- match.arg(type)
+
+  boundsWarning(object, as_warning = FALSE)
+
+  if (type %in% c("natural", "working")) {
+    if (!type %in% names(object$covariance)) {
+      stop("Covariance matrix for type '", type, "' is not available in this model fit.")
+    }
+    vc <- object$covariance[[type]]
+
+    if (!"fixed" %in% parm) {
+      missing_parms <- parm[!parm %in% rownames(vc)]
+      if (length(missing_parms) > 0) {
+        stop("Parameter(s) not found in model: ", paste(missing_parms, collapse = ", "))
+      }
+      vc <- vc[parm, parm, drop = FALSE]
+    }
+    return(vc)
+
+  } else if (type == "random") {
+    if (is.null(object$covariance$random$jointPrecision)) {
+      stop("Joint precision matrix not available. Re-run model with getJointPrecision = TRUE.")
+    }
+    return(object$covariance$random$jointPrecision)
   }
+}
+
+#' @rdname langevin_methods
+#' @export
+confint.fitLangevin <- function(object, parm = "fixed", level = 0.95, type = c("natural", "working", "random"), ...) {
+
+  if (!missing(parm) && any(parm %in% c("mu", "vel"))) type <- "random"
+  type <- match.arg(type)
 
   boundsWarning(object, as_warning = FALSE)
 
@@ -196,35 +222,36 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
   fac <- stats::qnorm(a)
 
   if (type %in% c("natural", "working")) {
-    cf <- coef.fitLangevin(object, type = type)
-    vc <- vcov.fitLangevin(object, type = type)
-    se <- sqrt(diag(vc))
+    cf_all <- object$estimates[[type]][, "Estimate"]
+    names(cf_all) <- rownames(object$estimates[[type]])
+    se_all <- sqrt(diag(object$covariance[[type]]))
 
-    ci <- array(NA, dim = c(length(cf), 2L), dimnames = list(names(cf), pct))
-    ci[, 1] <- cf + fac[1] * se
-    ci[, 2] <- cf + fac[2] * se
+    ci <- array(NA, dim = c(length(cf_all), 2L), dimnames = list(names(cf_all), pct))
+    ci[, 1] <- cf_all + fac[1] * se_all
+    ci[, 2] <- cf_all + fac[2] * se_all
 
-    if (!missing(parm) && !is_re_parm) {
+    if (!"fixed" %in% parm) {
       missing_parms <- parm[!parm %in% rownames(ci)]
       if (length(missing_parms) > 0) {
         stop("Parameter(s) not found in model: ", paste(missing_parms, collapse = ", "))
       }
       ci <- ci[parm, , drop = FALSE]
     }
-
     return(ci)
 
-  } else if (type %in% c("mu", "vel")) {
+  } else if (type == "random") {
+    if ("fixed" %in% parm) parm <- "mu" # Default
+    if (length(parm) > 1) stop("For type='random', please specify a single parm ('mu' or 'vel').")
 
-    if (is.null(object$estimates$random) || !type %in% names(object$estimates$random)) {
-      stop("Random effect '", type, "' is not available in this model fit.")
+    if (!parm %in% names(object$estimates$random)) {
+      stop("Random effect '", parm, "' is not available in this model fit.")
     }
 
-    est_df <- object$estimates$random[[type]]$est
-    se_df  <- object$estimates$random[[type]]$se
+    est_df <- object$estimates$random[[parm]]$est
+    se_df  <- object$estimates$random[[parm]]$se
 
-    x_col <- paste0(type, ".x")
-    y_col <- paste0(type, ".y")
+    x_col <- paste0(parm, ".x")
+    y_col <- paste0(parm, ".y")
 
     pct_clean <- gsub(" ", "", pct)
 
@@ -233,7 +260,6 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
       ci_df$date <- est_df$date
     }
 
-    # Calculate wide bounds without point estimates
     ci_df[[paste0(x_col, "_", pct_clean[1])]] <- est_df[[x_col]] + fac[1] * se_df[[x_col]]
     ci_df[[paste0(x_col, "_", pct_clean[2])]] <- est_df[[x_col]] + fac[2] * se_df[[x_col]]
 
@@ -241,25 +267,7 @@ confint.fitLangevin <- function(object, parm, level = 0.95, type = "natural", ..
     ci_df[[paste0(y_col, "_", pct_clean[2])]] <- est_df[[y_col]] + fac[2] * se_df[[y_col]]
 
     return(ci_df)
-
-  } else {
-    stop("The 'type' argument must be one of: 'natural', 'working', 'mu', or 'vel'.")
   }
-}
-
-#' @rdname langevin_methods
-#' @export
-fitted.fitLangevin <- function(object, type = c("mu", "vel"), ...) {
-
-  type <- match.arg(type)
-
-  boundsWarning(object, as_warning = FALSE)
-
-  if (is.null(object$estimates$random[[type]])) {
-    stop("Latent state '", type, "' was not estimated in this model.")
-  }
-
-  return(object$estimates$random[[type]]$est)
 }
 
 #' @rdname langevin_methods

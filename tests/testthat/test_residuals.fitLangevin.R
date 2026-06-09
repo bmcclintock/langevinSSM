@@ -136,7 +136,7 @@ test_that("residuals handles individual track failures gracefully without crashi
 test_that("underdamped fitLangevin calculates OSA residuals correctly with duplicated times, NA gaps, and known locations", {
 
   # 1. Simulate Dummy Spatial Covariate
-  set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
+  set.seed(42,kind="Mersenne-Twister",normal.kind="Inversion")
   r <- terra::rast(nrows = 10, ncols = 10, ext = c(-500, 500, -500, 500))
   terra::values(r) <- runif(terra::ncell(r))
   names(r) <- "habitat"

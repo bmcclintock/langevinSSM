@@ -653,6 +653,7 @@ verify_signatures <- function(fit, data = NULL, spatialCovs = NULL) {
 }
 
 gof_tests <- function(res_df){
+
   message("   Calculating goodness-of-fit tests...")
 
   res_x <- res_df$residual.x
@@ -684,7 +685,8 @@ gof_tests <- function(res_df){
       stringsAsFactors = FALSE
     )
   } else {
-    warning("Not enough valid residuals to calculate quantitative GOF tests.")
+    warning("Not enough valid residuals to calculate GOF tests.")
+    return(data.frame())
   }
   return(tests_df)
 }

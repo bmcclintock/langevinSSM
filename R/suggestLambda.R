@@ -7,7 +7,17 @@
 #' @param max_dt Numeric. A representative maximum time step to use for the calculation. This must be provided by the user. Supplying a value representing the typical sampling rate, a high quantile of the observed time steps, or the intended prediction grid resolution is recommended over the absolute maximum observed time step, which can be heavily skewed by extreme outlier gaps.
 #'
 #' @details
-#' The maximum stable penalty is derived from the animal's movement characteristics (estimated by the baseline \code{fitLangevin} model) and the largest time gap between observations (\code{max_dt}). It balances the movement variance (\code{sigma}), the friction coefficient (\code{gamma}, for underdamped models), and the maximum time step. Fundamentally, if the time gaps between observations are large, or if the animal's movement variance is high, the barrier penalty must be kept relatively small to prevent the trajectory from overshooting when it encounters the barrier.
+#' The maximum stable penalty is derived from the animal's movement characteristics (estimated by the baseline \code{fitLangevin} model) and the largest time gap between observations (\code{max_dt}). It attempts to balance the movement variance (\code{sigma}), the friction coefficient (\code{gamma}, for underdamped models), and the maximum time step. Fundamentally, if the time gaps between observations are large, or if the animal's movement variance is high, the barrier penalty must be kept relatively small to prevent the trajectory from overshooting when it encounters the barrier.
+#'
+#' The suggested maximum penalty \eqn{\lambda_{max}} is calculated based on the chosen movement model. For the underdamped model:
+#'
+#' \deqn{\lambda_{max}=\frac{\gamma^2(1-e^{-\gamma\Delta t_{max}})}{\sigma_{work}^2(1-e^{-\gamma\Delta t_{max}}-\gamma\Delta t_{max}e^{-\gamma\Delta t_{max}})}}
+#'
+#' For the overdamped model:
+#'
+#' \deqn{\lambda_{max}=\frac{2}{\sigma_{work}^2\Delta t_{max}}}
+#'
+#' where \eqn{\gamma} is the estimated friction coefficient, \eqn{\Delta t_{max}} is the user-specified maximum time step (\code{max_dt}), and \eqn{\sigma_{work}} is the estimated movement variance adjusted to the internal working scale (\eqn{\sigma/\text{scaleFactor}}).
 #'
 #' @return A numeric value representing the suggested maximum barrier penalty (\code{lambda}).
 #' @export

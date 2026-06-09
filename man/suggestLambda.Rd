@@ -19,5 +19,15 @@ Uses the estimated speed/variance from a baseline unconstrained model and a user
 to suggest a stable upper limit for the barrier penalty (\code{lambda}). This is just a suggestion and is not necessarily the optimal value, but it can help guide users in selecting a reasonable starting point for \code{lambda} when fitting models with barriers.
 }
 \details{
-The maximum stable penalty is derived from the animal's movement characteristics (estimated by the baseline \code{fitLangevin} model) and the largest time gap between observations (\code{max_dt}). It balances the movement variance (\code{sigma}), the friction coefficient (\code{gamma}, for underdamped models), and the maximum time step. Fundamentally, if the time gaps between observations are large, or if the animal's movement variance is high, the barrier penalty must be kept relatively small to prevent the trajectory from overshooting when it encounters the barrier.
+The maximum stable penalty is derived from the animal's movement characteristics (estimated by the baseline \code{fitLangevin} model) and the largest time gap between observations (\code{max_dt}). It attempts to balance the movement variance (\code{sigma}), the friction coefficient (\code{gamma}, for underdamped models), and the maximum time step. Fundamentally, if the time gaps between observations are large, or if the animal's movement variance is high, the barrier penalty must be kept relatively small to prevent the trajectory from overshooting when it encounters the barrier.
+
+The suggested maximum penalty \eqn{\lambda_{max}} is calculated based on the chosen movement model. For the underdamped model:
+
+\deqn{\lambda_{max}=\frac{\gamma^2(1-e^{-\gamma\Delta t_{max}})}{\sigma_{work}^2(1-e^{-\gamma\Delta t_{max}}-\gamma\Delta t_{max}e^{-\gamma\Delta t_{max}})}}
+
+For the overdamped model:
+
+\deqn{\lambda_{max}=\frac{2}{\sigma_{work}^2\Delta t_{max}}}
+
+where \eqn{\gamma} is the estimated friction coefficient, \eqn{\Delta t_{max}} is the user-specified maximum time step (\code{max_dt}), and \eqn{\sigma_{work}} is the estimated movement variance adjusted to the internal working scale (\eqn{\sigma/\text{scaleFactor}}).
 }

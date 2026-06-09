@@ -11,7 +11,17 @@
 #' @param ... Additional arguments passed to \code{\link{fitLangevin}}.
 #'
 #' @details
-#' This function provides an efficient way to interpolate animal tracks (e.g., to a perfectly even temporal grid) after the primary model has been fitted on unpadded data. The fixed parameters are frozen and \code{TMB} iteratively evaluates the random effects, allowing for rapid imputation of the missing locations.
+#' This function provides an efficient way to interpolate animal tracks (e.g., along a regular temporal grid) after the primary model has been fitted on unpadded data. The fixed parameters are frozen and \code{TMB} iteratively evaluates the random effects, allowing for rapid imputation of the missing locations.
+#'
+#' To achieve this, \code{predLangevin} repeatedly updates the latent locations (and velocities) using an adaptive step size. Because spatial likelihood surfaces can sometimes cause the optimizer to bounce back and forth, the function monitors the direction of the updates. If a bounce is detected, the step size is reduced. If the updates are moving smoothly in the same direction, the step size is gradually increased.
+#'
+#' For each iteration \eqn{i}, the starting values for the latent locations (\eqn{\mu}) are updated using the following damped formula:
+#'
+#' \deqn{\mu_{i}=\mu_{i-1}+d\times(\mu^*_{i}-\mu_{i-1})}
+#'
+#' where \eqn{\mu_{i-1}} is the location from the previous iteration, \eqn{\mu^*_{i}} is the new raw location proposed by the optimizer, and \eqn{d} is an adaptive damping factor.
+#'
+#' The iterative process stops, and convergence is reached, when the maximum spatial shift between iterations falls below the user-defined \code{tol}, or if the trajectory stops making meaningful improvements.
 #'
 #' Note: If the original dataset used to fit the model contained native \code{NA} coordinates, this function will simultaneously impute those missing values alongside the new \code{predTimes}.
 #'

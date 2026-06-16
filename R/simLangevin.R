@@ -43,11 +43,11 @@
 #' \strong{Barrier Penalty Auto-Scaling:}
 #' When \code{lambda = NULL} and a \code{barrier} is provided, \code{simLangevin} automatically calculates the maximum theoretical stability limit for the barrier penalty based on the SDE numerical integration limits. Because the true generative speed parameter (\eqn{\sigma}) and the maximum simulation time step (\eqn{\max(\Delta t)}) are known, the optimal spring constant can be deterministically calculated to create the "hardest" possible boundary that will not cause the numerical solver to explode.
 #'
+#' For the \strong{underdamped} model, the restoring force acts on the animal's velocity. The optimal stability ceiling incorporates the friction coefficient (\eqn{\gamma}) and scales non-linearly with the time step:
+#' \deqn{\lambda = \frac{\gamma^2(1-e^{-\gamma\max(\Delta t)})}{\sigma^2(1-e^{-\gamma\max(\Delta t)}-\gamma\max(\Delta t)e^{-\gamma\max(\Delta t)})}}
+#'
 #' For the \strong{overdamped} model, the restoring force acts directly on the animal's position. The stability ceiling scales linearly with the inverse of the time step:
 #' \deqn{\lambda = \frac{2}{\sigma^2 \max(\Delta t)}}
-#'
-#' For the \strong{underdamped} model, the restoring force acts on the animal's velocity, creating a true harmonic oscillator. The stability ceiling scales with the inverse square of the time step, allowing for much stiffer penalties:
-#' \deqn{\lambda = \frac{1}{\sigma^2 \max(\Delta t)^2}}
 #'
 #' This auto-calculated value is applied during simulation and stored as a \code{lambda} attribute in the returned \code{dataLangevin} object.
 #'

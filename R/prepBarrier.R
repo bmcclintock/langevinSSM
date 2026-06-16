@@ -7,7 +7,7 @@
 #' @return A \code{\link[terra]{SpatRaster-class}} object containing the calculated signed distance field. Positive values represent distance into the allowed area; negative values represent distance into the restricted area. The object is assigned a \code{"barLangevin" = TRUE} attribute.
 #' @export
 #' @importFrom stats na.omit
-#' @importFrom terra distance unique nlyr
+#' @importFrom terra distance unique nlyr crs "crs<-"
 prepBarrier <- function(maskRast) {
 
   if (!inherits(maskRast, "SpatRaster")) {
@@ -23,10 +23,20 @@ prepBarrier <- function(maskRast) {
     stop("Barrier raster must only contain binary values (0 and 1).")
   }
 
+  orig_crs <- terra::crs(maskRast)
+
+  # If no CRS is provided (e.g., simulated data), temporarily assign "local"
+  # to prevent terra's internal C++ warning about unknown CRSs
+  if (orig_crs == "") {
+    terra::crs(maskRast) <- "local"
+  }
+
   message("   Calculating signed distance field for barrier...")
 
   # Positive allowed, negative prohibited
   sdf <- terra::distance(maskRast, target = 1) - terra::distance(maskRast, target = 0)
+
+  terra::crs(sdf) <- orig_crs
 
   # Tag the SpatRaster with our custom attribute
   attr(sdf, "barLangevin") <- TRUE

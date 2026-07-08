@@ -240,6 +240,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'   For the standard deviation model, \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix},}
 #'   with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.err}=\sigma_x,\text{y.err}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for the correlation between the x- and y-axis errors.
 #' }
+#' Whenever a coordinate is \code{NA} (either present in the original dataset or introduced via the \code{predTimes} argument in \code{\link{formatData}}), \code{fitLangevin} skips the evaluation of the observation error model for that time step. Instead, it relies solely on the Langevin diffusion state process model to predict the true (latent) location.
 #'
 #' \strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}):}
 #' These parameters control the scaling and correlation of measurement errors and can be specified via \code{par} and \code{map}:
@@ -257,6 +258,8 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'
 #' @references
 #' Dupont F, McClintock BT, Fischer J-O, Marcoux M, Hussey N, Auger-Methe M. 2025. Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data using the habitat-driven Langevin diffusion.
+#'
+#' Delporte, A., Ditlevsen, S. and Samson, A., 2025. Spatial constraints improve filtering of measurement noise from animal tracks. arXiv preprint arXiv:2511.22430.
 #'
 #' McClintock BT, London JM, Camneron MF, Boveng PL. 2015. Modelling animal movement using the Argos satellite telemetry location error ellipse. Methods Ecol Evol 6:266–277. doi: 10.1111/2041-210X.12286.
 #'

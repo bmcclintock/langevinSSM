@@ -289,7 +289,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
       }
 
       valid_Y <- !is.na(dat$Y)
-      par$mu[valid_Y] <- dat$Y[valid_Y]
+      par$mu[valid_Y] <- dat$Y[valid_Y] * dat$scale_factor
 
       if (has_nas) {
         mu_map <- rep(NA, length(dat$Y))

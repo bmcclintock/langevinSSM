@@ -68,7 +68,6 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
 
   TYPE dx = col_raw - TYPE(c0);
   TYPE dy = row_raw - TYPE(r0);
-  int rev_row = n_rows - 1 - r0;
 
   for(int i = 0; i < n_covs; i++) {
     int layers = VEC_ELT(n_zvals_cov, i);
@@ -94,22 +93,23 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
       }
     }
 
-    int idx1 = (offset + z_idx1) * (n_rows * n_cols) + rev_row * n_cols + c0;
+    int idx1 = (offset + z_idx1) * (n_rows * n_cols) + r0 * n_cols + c0;
     TYPE f1_00 = GET_VAL(raster_vals, idx1);
     TYPE f1_10 = GET_VAL(raster_vals, idx1 + 1);
-    TYPE f1_01 = GET_VAL(raster_vals, idx1 - n_cols);
-    TYPE f1_11 = GET_VAL(raster_vals, idx1 - n_cols + 1);
+    TYPE f1_01 = GET_VAL(raster_vals, idx1 + n_cols);
+    TYPE f1_11 = GET_VAL(raster_vals, idx1 + n_cols + 1);
 
     // Optimized Analytical Gradient using normalized step lengths
     TYPE grad_x_1 = ((f1_10 - f1_00) * (TYPE(1.0) - dy) + (f1_11 - f1_01) * dy) / res_x;
     TYPE grad_y_1 = ((f1_00 - f1_01) * (TYPE(1.0) - dx) + (f1_10 - f1_11) * dx) / res_y;
 
     if (layers > 1 && z_idx1 != z_idx2) {
-      int idx2 = (offset + z_idx2) * (n_rows * n_cols) + rev_row * n_cols + c0;
+
+      int idx2 = (offset + z_idx2) * (n_rows * n_cols) + r0 * n_cols + c0;
       TYPE f2_00 = GET_VAL(raster_vals, idx2);
       TYPE f2_10 = GET_VAL(raster_vals, idx2 + 1);
-      TYPE f2_01 = GET_VAL(raster_vals, idx2 - n_cols);
-      TYPE f2_11 = GET_VAL(raster_vals, idx2 - n_cols + 1);
+      TYPE f2_01 = GET_VAL(raster_vals, idx2 + n_cols);
+      TYPE f2_11 = GET_VAL(raster_vals, idx2 + n_cols + 1);
 
       TYPE grad_x_2 = ((f2_10 - f2_00) * (TYPE(1.0) - dy) + (f2_11 - f2_01) * dy) / res_x;
       TYPE grad_y_2 = ((f2_00 - f2_01) * (TYPE(1.0) - dx) + (f2_10 - f2_11) * dx) / res_y;

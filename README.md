@@ -72,18 +72,18 @@ simDat <- simLangevin(model = "underdamped",
 head(simDat)
 #>   id date   dt        x        y smaj smin eor x.err y.err     mu.x     mu.y
 #> 1  1 0.00 0.00 1022.500 1007.500   NA   NA  NA    NA    NA 1022.500 1007.500
-#> 2  1 0.01 0.01 1022.568 1007.561   NA   NA  NA    NA    NA 1022.568 1007.561
-#> 3  1 0.02 0.01 1022.635 1007.623   NA   NA  NA    NA    NA 1022.635 1007.623
-#> 4  1 0.03 0.01 1022.706 1007.684   NA   NA  NA    NA    NA 1022.706 1007.684
-#> 5  1 0.04 0.01 1022.776 1007.746   NA   NA  NA    NA    NA 1022.776 1007.746
-#> 6  1 0.05 0.01 1022.846 1007.807   NA   NA  NA    NA    NA 1022.846 1007.807
+#> 2  1 0.01 0.01 1022.567 1007.562   NA   NA  NA    NA    NA 1022.567 1007.562
+#> 3  1 0.02 0.01 1022.630 1007.624   NA   NA  NA    NA    NA 1022.630 1007.624
+#> 4  1 0.03 0.01 1022.695 1007.685   NA   NA  NA    NA    NA 1022.695 1007.685
+#> 5  1 0.04 0.01 1022.758 1007.745   NA   NA  NA    NA    NA 1022.758 1007.745
+#> 6  1 0.05 0.01 1022.817 1007.804   NA   NA  NA    NA    NA 1022.817 1007.804
 #>      vel.x    vel.y
 #> 1 6.648996 6.362147
-#> 2 6.594244 5.901401
-#> 3 7.340222 6.150873
-#> 4 6.912809 6.033203
-#> 5 6.937667 6.022787
-#> 6 7.070177 6.387858
+#> 2 6.358570 6.000276
+#> 3 6.873469 6.151582
+#> 4 6.219595 5.939985
+#> 5 6.022555 5.840098
+#> 6 5.937764 6.120124
 
 # Simulate an underdamped Langevin diffusion path with measurement error
 measurementError <- list(smaj.sd = 1.5,      # sd of semi-major axis of error ellipse
@@ -100,18 +100,18 @@ exampleDat <- simLangevin(model = "underdamped",
 head(exampleDat)
 #>   id date   dt        x        y      smaj      smin       eor x.err y.err
 #> 1  1 0.00 0.00 1022.110 1006.222 3.1904213 0.8238468 0.4407540    NA    NA
-#> 2  1 0.01 0.01 1022.557 1007.536 0.2602149 0.1929297 0.8419944    NA    NA
-#> 3  1 0.02 0.01 1021.448 1008.586 1.9072127 0.6294832 2.2160981    NA    NA
-#> 4  1 0.03 0.01 1022.754 1007.629 0.1952989 0.0469546 2.2100417    NA    NA
-#> 5  1 0.04 0.01 1023.516 1008.080 1.4343749 1.1175133 2.8685380    NA    NA
-#> 6  1 0.05 0.01 1023.020 1008.433 0.8349596 0.1392169 0.4690632    NA    NA
+#> 2  1 0.01 0.01 1022.556 1007.537 0.2602149 0.1929297 0.8419944    NA    NA
+#> 3  1 0.02 0.01 1021.443 1008.587 1.9072127 0.6294832 2.2160981    NA    NA
+#> 4  1 0.03 0.01 1022.744 1007.630 0.1952989 0.0469546 2.2100417    NA    NA
+#> 5  1 0.04 0.01 1023.498 1008.079 1.4343749 1.1175133 2.8685380    NA    NA
+#> 6  1 0.05 0.01 1022.992 1008.429 0.8349596 0.1392169 0.4690632    NA    NA
 #>       mu.x     mu.y    vel.x    vel.y
 #> 1 1022.500 1007.500 6.648996 6.362147
-#> 2 1022.568 1007.561 6.594244 5.901401
-#> 3 1022.635 1007.623 7.340222 6.150873
-#> 4 1022.706 1007.684 6.912809 6.033203
-#> 5 1022.776 1007.746 6.937667 6.022787
-#> 6 1022.846 1007.807 7.070177 6.387858
+#> 2 1022.567 1007.562 6.358570 6.000276
+#> 3 1022.630 1007.624 6.873469 6.151582
+#> 4 1022.695 1007.685 6.219595 5.939985
+#> 5 1022.758 1007.745 6.022555 5.840098
+#> 6 1022.817 1007.804 5.937764 6.120124
 ```
 
 To fit the Langevin diffusion model to observed tracking data, one can
@@ -121,12 +121,12 @@ use the `formatData` and `fitLangevin` functions. For example:
 # unformatDat is example data appropriate for formatData that loads with the package
 head(unformatDat)
 #>   id                date        x        y      smaj      smin       eor x.err
-#> 1  1 2026-05-05 00:00:00 1022.110 1006.222 3.1904213 0.8238468  25.25334    NA
-#> 2  1 2026-05-05 00:00:36 1022.557 1007.536 0.2602149 0.1929297  48.24272    NA
-#> 3  1 2026-05-05 00:01:12 1021.448 1008.586 1.9072127 0.6294832 126.97307    NA
-#> 4  1 2026-05-05 00:01:48 1022.754 1007.629 0.1952989 0.0469546 126.62606    NA
-#> 5  1 2026-05-05 00:02:24 1023.516 1008.080 1.4343749 1.1175133 164.35512    NA
-#> 6  1 2026-05-05 00:03:00 1023.020 1008.433 0.8349596 0.1392169  26.87534    NA
+#> 1  1 2026-07-29 00:00:00 1022.110 1006.222 3.1904213 0.8238468  25.25334    NA
+#> 2  1 2026-07-29 00:00:36 1022.556 1007.537 0.2602149 0.1929297  48.24272    NA
+#> 3  1 2026-07-29 00:01:12 1021.443 1008.587 1.9072127 0.6294832 126.97307    NA
+#> 4  1 2026-07-29 00:01:48 1022.744 1007.630 0.1952989 0.0469546 126.62606    NA
+#> 5  1 2026-07-29 00:02:24 1023.498 1008.079 1.4343749 1.1175133 164.35512    NA
+#> 6  1 2026-07-29 00:03:00 1022.992 1008.429 0.8349596 0.1392169  26.87534    NA
 #>   y.err
 #> 1    NA
 #> 2    NA
@@ -140,12 +140,12 @@ exampleDat <- formatData(unformatDat, time.unit = "hours")
 
 head(exampleDat)
 #>   id                date   dt        x        y   lc      smaj      smin
-#> 1  1 2026-05-05 00:00:00 0.00 1022.110 1006.222 <NA> 3.1904213 0.8238468
-#> 2  1 2026-05-05 00:00:36 0.01 1022.557 1007.536 <NA> 0.2602149 0.1929297
-#> 3  1 2026-05-05 00:01:12 0.01 1021.448 1008.586 <NA> 1.9072127 0.6294832
-#> 4  1 2026-05-05 00:01:48 0.01 1022.754 1007.629 <NA> 0.1952989 0.0469546
-#> 5  1 2026-05-05 00:02:24 0.01 1023.516 1008.080 <NA> 1.4343749 1.1175133
-#> 6  1 2026-05-05 00:03:00 0.01 1023.020 1008.433 <NA> 0.8349596 0.1392169
+#> 1  1 2026-07-29 00:00:00 0.00 1022.110 1006.222 <NA> 3.1904213 0.8238468
+#> 2  1 2026-07-29 00:00:36 0.01 1022.556 1007.537 <NA> 0.2602149 0.1929297
+#> 3  1 2026-07-29 00:01:12 0.01 1021.443 1008.587 <NA> 1.9072127 0.6294832
+#> 4  1 2026-07-29 00:01:48 0.01 1022.744 1007.630 <NA> 0.1952989 0.0469546
+#> 5  1 2026-07-29 00:02:24 0.01 1023.498 1008.079 <NA> 1.4343749 1.1175133
+#> 6  1 2026-07-29 00:03:00 0.01 1022.992 1008.429 <NA> 0.8349596 0.1392169
 #>         eor x.err y.err
 #> 1 0.4407540    NA    NA
 #> 2 0.8419944    NA    NA
@@ -166,17 +166,17 @@ fit_over
 #> =======================================
 #> Model type:        Overdamped 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -2533.968 
-#> Optimization time:  0.36 seconds
+#> Max Log-Likelihood: -2530.959 
+#> Optimization time:  0.32 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>           Estimate Std. Error
-#> beta_cov1  -11.226      6.183
-#> beta_cov2    4.472      6.137
-#> beta_cov3    1.189      5.766
-#> beta_d2c     1.204      1.538
-#> sigma        1.379      0.040
+#> beta_cov1    3.031      6.312
+#> beta_cov2    1.658      6.057
+#> beta_cov3    4.755      5.403
+#> beta_d2c     4.207      1.463
+#> sigma        1.373      0.040
 #> rho_o        0.000      0.000
 #> tau_1        1.000      0.000
 #> tau_2        1.000      0.000
@@ -194,18 +194,18 @@ fit_under
 #> =======================================
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -2056.739 
 #> Optimization time:  0.71 seconds
+#> Max Log-Likelihood: -2059.125 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>           Estimate Std. Error
-#> beta_cov1  -4.4965      1.407
-#> beta_cov2   6.1584      1.733
-#> beta_cov3   5.4965      1.561
-#> beta_d2c   -0.3116      0.234
-#> sigma       4.6220      0.532
-#> gamma       0.4628      0.111
+#> beta_cov1  -3.9330      1.271
+#> beta_cov2   5.6585      1.580
+#> beta_cov3   5.7913      1.591
+#> beta_d2c   -0.2631      0.201
+#> sigma       4.7983      0.572
+#> gamma       0.4455      0.111
 #> rho_o       0.0000      0.000
 #> tau_1       1.0000      0.000
 #> tau_2       1.0000      0.000
@@ -258,19 +258,19 @@ plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
 # fixed effect estimates
 coef(fit_under) 
 #>  beta_cov1  beta_cov2  beta_cov3   beta_d2c      sigma      gamma      rho_o 
-#> -4.4965009  6.1584439  5.4964942 -0.3116450  4.6220487  0.4627646  0.0000000 
+#> -3.9329844  5.6585226  5.7913252 -0.2631432  4.7983181  0.4454611  0.0000000 
 #>      tau_1      tau_2        psi 
 #>  1.0000000  1.0000000  1.0000000
 
 # confidence intervals for fixed effects
 confint(fit_under) 
 #>                2.5 %     97.5 %
-#> beta_cov1 -7.2537135 -1.7392882
-#> beta_cov2  2.7612086  9.5556792
-#> beta_cov3  2.4372607  8.5557277
-#> beta_d2c  -0.7705083  0.1472183
-#> sigma      3.5793405  5.6647569
-#> gamma      0.2445545  0.6809747
+#> beta_cov1 -6.4242881 -1.4416808
+#> beta_cov2  2.5612970  8.7557483
+#> beta_cov3  2.6723027  8.9103478
+#> beta_d2c  -0.6566221  0.1303356
+#> sigma      3.6776716  5.9189646
+#> gamma      0.2274879  0.6634344
 #> rho_o      0.0000000  0.0000000
 #> tau_1      1.0000000  1.0000000
 #> tau_2      1.0000000  1.0000000
@@ -281,20 +281,20 @@ mu_ci <- confint(fit_under, parm= "mu")
 
 head(mu_ci)
 #>   id                date mu.x_2.5% mu.x_97.5% mu.y_2.5% mu.y_97.5%
-#> 1  1 2026-05-05 00:00:00  1022.299   1022.595  1007.434   1007.690
-#> 2  1 2026-05-05 00:00:36  1022.377   1022.636  1007.501   1007.724
-#> 3  1 2026-05-05 00:01:12  1022.454   1022.681  1007.567   1007.763
-#> 4  1 2026-05-05 00:01:48  1022.531   1022.730  1007.631   1007.807
-#> 5  1 2026-05-05 00:02:24  1022.607   1022.784  1007.693   1007.856
-#> 6  1 2026-05-05 00:03:00  1022.683   1022.842  1007.753   1007.908
+#> 1  1 2026-07-29 00:00:00  1022.307   1022.604  1007.432   1007.688
+#> 2  1 2026-07-29 00:00:36  1022.381   1022.642  1007.501   1007.724
+#> 3  1 2026-07-29 00:01:12  1022.453   1022.681  1007.567   1007.764
+#> 4  1 2026-07-29 00:01:48  1022.522   1022.722  1007.631   1007.808
+#> 5  1 2026-07-29 00:02:24  1022.589   1022.766  1007.692   1007.855
+#> 6  1 2026-07-29 00:03:00  1022.653   1022.813  1007.749   1007.906
 
 # AIC for comparing models with different fixed effects
 AIC(fit_under) 
-#> [1] 4125.478
+#> [1] 4130.25
 
 # BIC for comparing models with different fixed effects
 BIC(fit_under) 
-#> [1] 4157.358
+#> [1] 4162.13
 ```
 
 #### One-step-ahead residuals
@@ -376,7 +376,7 @@ p_over$qq_x + p_over$qq_y + p_over$acf_x + p_over$acf_y + plot_layout(ncol=2)
 ``` r
 # calculate similarity of true and estimated UDs using Bhattacharyya's affinity
 rasterOverlap(exp(UD), exp(trueUD))
-#> [1] 0.9074143
+#> [1] 0.9275347
 ```
 
 #### Regional presence probability
@@ -394,15 +394,15 @@ reg_prob <- regionProb(fit_under,
 reg_prob
 #> Regional Probability Estimate
 #> =============================
-#> Point Estimate: 0.4179
+#> Point Estimate: 0.3767
 #> 
 #> Delta Method Approximation:
-#>   Standard Error: 0.1752
-#>   95% CI:         [0.0745, 0.7614]
+#>   Standard Error: 0.1604
+#>   95% CI:         [0.0623, 0.6911]
 #> 
 #> Monte Carlo Simulation:
-#>   Standard Error: 0.2031
-#>   95% CI:         [0.0000, 0.7343]
+#>   Standard Error: 0.1904
+#>   95% CI:         [0.0000, 0.6681]
 #>   (Based on 1000 draws)
 
 plot(reg_prob, log = TRUE)
@@ -416,9 +416,9 @@ To include barriers to movement (e.g., land for marine animals), the
 `prepBarrier` function can be used to create a signed distance field
 (SDF) from a binary raster mask (where 1 indicates allowed movement
 areas and 0 indicates restricted movement areas). When included in
-`spatialCovs` and identified by the `barrier` argument in
-`simLangevin' and`fitLangevin’, the SDF is then included as part of a
-penalty term with strength `lambda`:
+`spatialCovs` and identified by the `barrier` argument in `simLangevin`
+and `fitLangevin`, the SDF is then included as part of a penalty term
+with strength `lambda`:
 
 ``` r
 # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
@@ -464,24 +464,24 @@ fit_barrier
 #> =======================================
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -2059.884 
-#> Optimization time:  0.78 seconds
+#> Max Log-Likelihood: -1937.79 
+#> Optimization time:  0.75 seconds
 #> Barrier penalty:    4.003 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
-#>              Estimate Std. Error
-#> beta_cov1     -4.2551      1.076
-#> beta_cov2      6.7485      1.032
-#> beta_cov3      3.8614      0.913
-#> beta_d2c       0.1454      0.492
-#> beta_d2coast  -0.1375      0.090
-#> sigma          4.9250      0.249
-#> gamma          0.4379      0.068
-#> rho_o          0.0000      0.000
-#> tau_1          1.0000      0.000
-#> tau_2          1.0000      0.000
-#> psi            1.0000      0.000
+#>                Estimate Std. Error
+#> beta_cov1    -2.5911915      0.890
+#> beta_cov2     5.7723272      1.007
+#> beta_cov3     5.5129991      1.111
+#> beta_d2c     -0.0007732      0.695
+#> beta_d2coast -0.0621138      0.085
+#> sigma         4.9807858      0.277
+#> gamma         0.5525815      0.083
+#> rho_o         0.0000000      0.000
+#> tau_1         1.0000000      0.000
+#> tau_2         1.0000000      0.000
+#> psi           1.0000000      0.000
 
 plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,
@@ -503,7 +503,7 @@ fit0 <- fitLangevin(data = simDat_barrier,
 lambda <- suggestLambda(fit0,max_dt = median(simDat_barrier$dt))
 
 lambda
-#> [1] 4.966307
+#> [1] 4.504518
 
 fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
                                   spatialCovs = exampleCovs_barrier,
@@ -515,24 +515,24 @@ fit_barrier_lambda
 #> =======================================
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -2059.575 
-#> Optimization time:  0.92 seconds
-#> Barrier penalty:    4.966 
+#> Max Log-Likelihood: -1938.061 
+#> Optimization time:  0.72 seconds
+#> Barrier penalty:    4.505 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
-#>              Estimate Std. Error
-#> beta_cov1     -5.0249      1.262
-#> beta_cov2      8.0968      1.194
-#> beta_cov3      4.6576      1.074
-#> beta_d2c       0.2684      0.579
-#> beta_d2coast  -0.1780      0.107
-#> sigma          4.5105      0.213
-#> gamma          0.5139      0.075
-#> rho_o          0.0000      0.000
-#> tau_1          1.0000      0.000
-#> tau_2          1.0000      0.000
-#> psi            1.0000      0.000
+#>               Estimate Std. Error
+#> beta_cov1    -2.792086      0.960
+#> beta_cov2     6.298264      1.079
+#> beta_cov3     6.012598      1.196
+#> beta_d2c      0.006108      0.754
+#> beta_d2coast -0.071881      0.092
+#> sigma         4.769155      0.255
+#> gamma         0.597618      0.087
+#> rho_o         0.000000      0.000
+#> tau_1         1.000000      0.000
+#> tau_2         1.000000      0.000
+#> psi           1.000000      0.000
 
 plot(fit_barrier_lambda, data = simDat_barrier,
                          spatialCovs = exampleCovs_barrier,
@@ -548,17 +548,20 @@ If you use `{langevinSSM}` in your research, please cite it as follows:
     To cite package 'langevinSSM' in publications use:
 
       Dupont, F., McClintock, B.T., Fischer, J.-O., Marcoux, M., Hussey,
-      N., and Auger-Méthé, M. (2025). Inferring resource selection and
+      N., and Auger-Méthé, M. (2026). Inferring resource selection and
       utilization distributions from irregular and error-prone animal
-      tracking data.
+      tracking data. arXiv:2606.12566.
 
     A BibTeX entry for LaTeX users is
 
       @Article{,
         title = {Inferring resource selection and utilization distributions from irregular and error-prone animal tracking data},
         author = {Fanny Dupont and Brett T. McClintock and Jan-Ole Fischer and Marianne Marcoux and Nigel Hussey and Marie Auger-Méthé},
-        journal = {TBD},
-        year = {2025},
+        journal = {arXiv},
+        year = {2026},
+        eprint = {2606.12566},
+        primaryclass = {stat.ME},
+        url = {https://arxiv.org/abs/2606.12566},
       }
 
     Additions and modifications to langevinSSM are frequent, to help with

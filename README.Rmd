@@ -180,7 +180,7 @@ plot(reg_prob, log = TRUE)
 
 ### Spatial constraints (i.e., barriers)
 
-To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas). When included in `spatialCovs` and identified by the `barrier` argument in `simLangevin' and `fitLangevin', the SDF is then included as part of a penalty term with strength `lambda`:
+To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas). When included in `spatialCovs` and identified by the `barrier` argument in `simLangevin` and `fitLangevin`, the SDF is then included as part of a penalty term with strength `lambda`:
 ```{r barrier, eval=TRUE, echo=-19}
 # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
 coast_barrier <- exampleCovs[[1]]
@@ -201,7 +201,7 @@ par_barrier <- par
 par_barrier$beta <- c(par_barrier$beta, -0.1)
 
 # simulate the data
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
+set.seed(10,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,

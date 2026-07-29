@@ -8,7 +8,7 @@ library(usethis)
 library(langevinSSM)
 library(patchwork)
 
-set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=10)
+set.seed(kind="Mersenne-Twister",normal.kind="Inversion",seed=1)
 
 # simulate data
 nbAnimals <- 3
@@ -78,7 +78,7 @@ par_barrier <- examplePar
 par_barrier$beta <- c(par_barrier$beta, -0.1)
 
 # simulate the data
-set.seed(1,kind="Mersenne-Twister",normal.kind="Inversion")
+set.seed(10,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
@@ -100,12 +100,19 @@ plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast
 res_barrier <- residuals(fit_barrier,simDat_barrier, exampleCovs_barrier, run_tests = TRUE, ncores=nbAnimals)
 
 
+fit0 <- fitLangevin(data = simDat_barrier,
+                           spatialCovs = exampleCovs_barrier,
+                           lambda = 0,
+                           silent = TRUE)
 
-lambda <- suggestLambda(data = simDat_barrier,
-                        spatialCovs = exampleCovs_barrier,
-                        silent = TRUE)
+lambda <- suggestLambda(fit0,median(simDat_barrier$dt))
 
-plot(fit_barrier_ks,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast = coast_barrier)
+fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
+                    spatialCovs = exampleCovs_barrier,
+                    lambda = lambda,
+                    silent = TRUE)
+
+plot(fit_barrier_lambda,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast = coast_barrier)
 
 
 start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")

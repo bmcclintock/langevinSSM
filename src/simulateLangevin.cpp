@@ -261,7 +261,7 @@ List measurementError_rcpp(DataFrame data,
       M_rand[i] = orig_smaj[i];
       m_rand[i] = orig_smin[i];
       if (!NumericVector::is_na(orig_eor[i])) {
-        c_rand[i] = orig_eor[i] * M_PI / 180.0;
+        c_rand[i] = orig_eor[i];
       } else {
         c_rand[i] = NA_REAL;
       }

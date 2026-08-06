@@ -551,7 +551,7 @@ checkErrorData <- function(data, coord=c("x","y"), measurementError = NULL, know
     if(any(is.na(data$x.err) & !is.na(data$y.err))) stop("When using the x- and y-axis error model, x.err and y.err must both be provided or both be NA.")
     if(any((!is.na(data$smaj) & !is.na(data$smin) & !is.na(data$eor)) & (!is.na(data$x.err) | !is.na(data$y.err)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.err' and 'y.err' must both be NA.\nIf using the x- and y-axis error model, 'x.err' and 'y.err' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
     if(any((!is.na(data$smaj) | !is.na(data$smin) | !is.na(data$eor)) & (!is.na(data$x.err) & !is.na(data$y.err)))) stop("Cannot provide both error ellipse and x- and y-axis error terms.\nIf using the error ellipse, 'smaj', 'smin', and 'eor' must all be provided and 'x.err' and 'y.err' must both be NA.\nIf using the x- and y-axis error model, 'x.err' and 'y.err' must both be provided and 'smaj', 'smin', and 'eor' must all be NA.")
-    if(isTRUE(any(data$eor<0 | data$eor > pi))) stop("Error ellipse orientation (eor) must be between 0 and pi radians.")
+    if(isTRUE(any(data$eor<0 | data$eor > pi, na.rm=TRUE))) stop("Error ellipse orientation (eor) must be between 0 and pi radians.")
   }
   if(!is.null(measurementError)){
     if(knownError) stop("Cannot provide 'measurementError' parameters when the data already contains measurement error information. Please provide either 'measurementError' or appropriate measurement error columns in 'data', but not both.")

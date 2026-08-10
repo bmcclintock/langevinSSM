@@ -9,7 +9,10 @@ maskLeakage(
   maskRast,
   level = 0.999,
   tolerance = 0,
-  coord = c("mu.x", "mu.y")
+  coord = c("mu.x", "mu.y"),
+  psi = 1,
+  tau = c(1, 1),
+  rho_o = 0
 )
 }
 \arguments{
@@ -22,6 +25,12 @@ maskLeakage(
 \item{tolerance}{Numeric. A buffer distance (in the spatial units of the raster). Density falling within this distance of allowed cells is not flagged as a leakage. Default is 0.}
 
 \item{coord}{Character vector of length 2 specifying the names of the coordinate columns in \code{x} (e.g., c("mu.x", "mu.y"), c("x", "y")). Default is c("mu.x", "mu.y").}
+
+\item{psi}{Numeric. Scaling multiplier for the semi-minor axis of Argos error ellipses. Used only when \code{x} is a \code{dataLangevin} object. Default is 1.}
+
+\item{tau}{Numeric vector of length 2. Scaling multipliers for the x- and y-axis standard deviations of LS/GPS observations. Used only when \code{x} is a \code{dataLangevin} object. Default is c(1, 1).}
+
+\item{rho_o}{Numeric between -1 and 1. Correlation between the x- and y-axis errors for LS/GPS observations. Used only when \code{x} is a \code{dataLangevin} object. Default is 0.}
 }
 \value{
 A list containing two data frames:
@@ -47,4 +56,7 @@ A list containing two data frames:
 \description{
 Evaluates the proportion and severity of track locations that cross into restricted spatial boundaries,
 based on the bivariate normal probability density of the observation error or estimated uncertainty for the true locations.
+}
+\details{
+If \code{x} is a \code{fitLangevin} object that was optimized with \code{getJointPrecision = TRUE}, the function extracts the covariance between the latent x and y coordinates by solving the sparse Cholesky factorization of the joint precision matrix.
 }

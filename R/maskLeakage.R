@@ -8,6 +8,13 @@
 #' @param level Numeric between 0 and 1. The proportion of the observation's spatial density that must fall within the restricted area to be considered a leak. Default is 0.999 (meaning 99.9\% of the density must be restricted).
 #' @param tolerance Numeric. A buffer distance (in the spatial units of the raster). Density falling within this distance of allowed cells is not flagged as a leakage. Default is 0.
 #' @param coord Character vector of length 2 specifying the names of the coordinate columns in \code{x} (e.g., c("mu.x", "mu.y"), c("x", "y")). Default is c("mu.x", "mu.y").
+#' @param psi Numeric. Scaling multiplier for the semi-minor axis of Argos error ellipses. Used only when \code{x} is a \code{dataLangevin} object. Default is 1.
+#' @param tau Numeric vector of length 2. Scaling multipliers for the x- and y-axis standard deviations of LS/GPS observations. Used only when \code{x} is a \code{dataLangevin} object. Default is c(1, 1).
+#' @param rho_o Numeric between -1 and 1. Correlation between the x- and y-axis errors for LS/GPS observations. Used only when \code{x} is a \code{dataLangevin} object. Default is 0.
+#'
+#' @details
+#' If \code{x} is a \code{fitLangevin} object that was optimized with \code{getJointPrecision = TRUE}, the function extracts the covariance between the latent x and y coordinates by solving the sparse Cholesky factorization of the joint precision matrix.
+#'
 #' @return A list containing two data frames:
 #' \describe{
 #'   \item{summary}{A single-row data frame containing overall leakage metrics:
@@ -31,7 +38,7 @@
 #' @importFrom terra as.matrix xFromCol yFromRow res extract ifel
 #' @importFrom utils txtProgressBar setTxtProgressBar
 #' @export
-maskLeakage <- function(x, maskRast, level = 0.999, tolerance = 0, coord = c("mu.x", "mu.y")) {
+maskLeakage <- function(x, maskRast, level = 0.999, tolerance = 0, coord = c("mu.x", "mu.y"), psi = 1, tau = c(1, 1), rho_o = 0) {
 
   if (!inherits(x, c("fitLangevin", "simLangevin", "dataLangevin"))) {
     stop("'x' must be a fitLangevin, simLangevin, or dataLangevin object.")
@@ -46,15 +53,50 @@ maskLeakage <- function(x, maskRast, level = 0.999, tolerance = 0, coord = c("mu
   if (!is.numeric(tolerance) || length(tolerance) != 1 || tolerance < 0) {
     stop("'tolerance' must be a single non-negative numeric value.")
   }
+  if (!is.numeric(psi) || length(psi) != 1 || psi <= 0) {
+    stop("'psi' must be a single positive numeric value.")
+  }
+  if (!is.numeric(tau) || length(tau) != 2 || any(tau <= 0)) {
+    stop("'tau' must be a numeric vector of length 2 containing positive values.")
+  }
+  if (!is.numeric(rho_o) || length(rho_o) != 1 || rho_o <= -1 || rho_o >= 1) {
+    stop("'rho_o' must be a single numeric value between -1 and 1.")
+  }
 
   # Extract the coordinates dynamically based on the object class
   if (inherits(x, "fitLangevin")) {
     if(all(coord==c("x", "y"))) stop("'coord' must be the estimated true locations ('mu.x', 'mu.y') for 'fitLangevin' objects.")
     pts_df <- x$estimates$random$mu$est
     se_df <- x$estimates$random$mu$se
+
+    # attempt to extract exact covariances using sparse Cholesky factorization
+    if (!is.null(x$covariance$random$jointPrecision)) {
+      message("   Extracting exact X-Y covariances from sparse precision matrix...")
+      Q <- x$covariance$random$jointPrecision
+      n_pts_total <- nrow(pts_df)
+
+      L <- tryCatch({
+        Matrix::Cholesky(Q, super = TRUE)
+      }, error = function(e) {
+        warning("Could not compute Cholesky factorization. Falling back to independent marginal variances.", call. = FALSE)
+        return(NULL)
+      })
+
+      if (!is.null(L)) {
+
+        y_indices <- seq(2, 2 * n_pts_total, by = 2)
+        E <- Matrix::sparseMatrix(i = y_indices, j = 1:n_pts_total, x = 1, dims = c(nrow(Q), n_pts_total))
+
+        C <- Matrix::solve(L, E)
+
+        x_indices <- seq(1, 2 * n_pts_total - 1, by = 2)
+        cov_xy_vec <- C[cbind(x_indices, 1:n_pts_total)]
+      }
+    }
   } else {
     pts_df <- as.data.frame(x)
   }
+
   if(!all(coord %in% names(pts_df))) stop(sprintf("'coord' columns '%s' not found.", paste(coord, collapse = ", ")))
 
   pts_x <- pts_df[[coord[1]]]
@@ -77,6 +119,9 @@ maskLeakage <- function(x, maskRast, level = 0.999, tolerance = 0, coord = c("mu
   } else {
     maskRast_eval <- maskRast
   }
+
+  pt_ext_all <- terra::extract(maskRast_eval, pts)
+  mask_dist_vals <- pt_ext_all[, ncol(pt_ext_all)]
 
   mask_mat <- terra::as.matrix(maskRast_eval, wide = TRUE)
   x_coords <- terra::xFromCol(maskRast_eval, 1:ncol(maskRast_eval))
@@ -118,28 +163,38 @@ maskLeakage <- function(x, maskRast, level = 0.999, tolerance = 0, coord = c("mu
       if (!is.null(se_df)) {
         var_x <- se_df[[coord[1]]][i]^2
         var_y <- se_df[[coord[2]]][i]^2
+        if (exists("cov_xy_vec")) {
+          cov_xy <- cov_xy_vec[i]
+        }
       }
     } else {
-      if ("x.err" %in% names(pts_df) && !is.na(pts_df$x.err[i]) && !is.na(pts_df$y.err[i])) {
-        var_x <- pts_df$x.err[i]^2
-        var_y <- pts_df$y.err[i]^2
-      } else if ("smaj" %in% names(pts_df) && !is.na(pts_df$smaj[i])) {
-        M2 <- (pts_df$smaj[i] / sqrt(2.0))^2
-        m2 <- (pts_df$smin[i] / sqrt(2.0))^2
-        c_rad <- pts_df$eor[i]
-        s2c <- sin(c_rad)^2
-        c2c <- cos(c_rad)^2
+      # Identify the original observation coordinates
+      orig_coord <- attr(x, "coord")
+      if (is.null(orig_coord)) orig_coord <- c("x", "y")
 
-        var_x <- M2 * s2c + m2 * c2c
-        var_y <- M2 * c2c + m2 * s2c
-        cov_xy <- (M2 - m2) * cos(c_rad) * sin(c_rad)
+      # Only apply measurement error if we are evaluating the original observed coordinates
+      if (identical(coord, orig_coord)) {
+        if ("x.err" %in% names(pts_df) && !is.na(pts_df$x.err[i]) && !is.na(pts_df$y.err[i])) {
+          var_x <- (pts_df$x.err[i] * tau[1])^2
+          var_y <- (pts_df$y.err[i] * tau[2])^2
+          cov_xy <- rho_o * tau[1] * tau[2] * pts_df$x.err[i] * pts_df$y.err[i]
+        } else if ("smaj" %in% names(pts_df) && !is.na(pts_df$smaj[i])) {
+          M2 <- (pts_df$smaj[i] / sqrt(2.0))^2
+          m2 <- (pts_df$smin[i] * psi / sqrt(2.0))^2
+          c_rad <- pts_df$eor[i]
+          s2c <- sin(c_rad)^2
+          c2c <- cos(c_rad)^2
+
+          var_x <- M2 * s2c + m2 * c2c
+          var_y <- M2 * c2c + m2 * s2c
+          cov_xy <- (M2 - m2) * cos(c_rad) * sin(c_rad)
+        }
       }
     }
 
     # handle zero-error (or missing error) locations as discrete points
     if (is.na(var_x) || is.na(var_y) || var_x == 0 || var_y == 0) {
-      pt_ext <- terra::extract(maskRast_eval, matrix(c(pts_x[i], pts_y[i]), ncol = 2))
-      dist_val <- pt_ext[, ncol(pt_ext)]
+      dist_val <- mask_dist_vals[i]
       p_restricted[i] <- ifelse(!is.na(dist_val) && dist_val == 0, 1.0, 0.0)
       utils::setTxtProgressBar(pb, i)
       next

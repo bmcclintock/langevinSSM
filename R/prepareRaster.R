@@ -130,7 +130,15 @@ prepareRaster <- function(spatialCovs, scaleFactor=1, time.unit="hours", data = 
 
     if (prob_xmin < cov_ext["xmin"] || prob_xmax > cov_ext["xmax"] ||
         prob_ymin < cov_ext["ymin"] || prob_ymax > cov_ext["ymax"]) {
-      warning("Some tracking locations are dangerously close to the edge of 'spatialCovs' relative to their measurement error.\n  Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates,\n   the optimizer will likely push these locations outside the raster extent during model fitting.\n  The spatial extent of the rasters should be extended before proceeding.\n", immediate. = TRUE)
+
+      # Determine indices of data rows that trigger the boundary warning
+      danger_idx <- which((data[[coord[1]]] - 3 * err_x) < cov_ext["xmin"] |
+                            (data[[coord[1]]] + 3 * err_x) > cov_ext["xmax"] |
+                            (data[[coord[2]]] - 3 * err_y) < cov_ext["ymin"] |
+                            (data[[coord[2]]] + 3 * err_y) > cov_ext["ymax"])
+
+      warning("Some tracking locations are dangerously close to the edge of 'spatialCovs' relative to their measurement error.\n  Because the Langevin model estimates true locations (mu) that can deviate from observed coordinates,\n   the optimizer will likely push these locations outside the raster extent during model fitting.\n  The spatial extent of the rasters should be extended before proceeding.", immediate. = TRUE)
+      message("Row indices of observations close to the boundary relative to measurement error: ", paste(danger_idx, collapse = ", "),"\n")
     }
   }
 

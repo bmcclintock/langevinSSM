@@ -22,6 +22,7 @@ fitLangevin(
   hessian = FALSE,
   silent = FALSE,
   method = "BFGS",
+  optMethod = c("nlminb", "nloptr"),
   initialInner = TRUE,
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
@@ -64,26 +65,28 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{silent}{Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.}
 
-\item{method}{Outer optimization method. Default: \code{"BFGS"}.}
+\item{method}{Character string indicating the type of algorithm used for the outer optimization (e.g., \code{"BFGS"}). When \code{optMethod = "nloptr"}, \code{"BFGS"} is internally mapped to \code{"NLOPT_LD_LBFGS"} for compatibility. Default: \code{"BFGS"}.}
+
+\item{optMethod}{Character string indicating the optimization function (engine) to use for the outer optimization. Options are \code{"nlminb"} or \code{"nloptr"}. If \code{"nloptr"} is selected, the \code{nloptr} package must be installed. Default: \code{"nlminb"}.}
 
 \item{initialInner}{Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.}
 
 \item{inner.control}{List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.}
 
-\item{control}{A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.}
+\item{control}{A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}.}
 
-\item{polishOptim}{Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization with \code{\link[stats]{nlminb}} has completed. Default: \code{FALSE}.}
+\item{polishOptim}{Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization has completed. Default: \code{FALSE}.}
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:
-\item{par}{See \code{\link[stats]{nlminb}}}
-\item{objective}{See \code{\link[stats]{nlminb}}}
-\item{convergence}{See \code{\link[stats]{nlminb}}}
-\item{message}{See \code{\link[stats]{nlminb}}}
-\item{iterations}{See \code{\link[stats]{nlminb}}}
-\item{evaluations}{See \code{\link[stats]{nlminb}}}
+\item{par}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+\item{objective}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+\item{convergence}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+\item{message}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+\item{iterations}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+\item{evaluations}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
 \item{elapsedTime}{Run time of the optimization}
 \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
 \item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random'')}.

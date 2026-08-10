@@ -16,3 +16,4 @@ tests/testthat/Rplots.pdf
 ^man-roxygen$
 ^presentations$
 ^applications$
+^manuscript$

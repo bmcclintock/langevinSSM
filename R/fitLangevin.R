@@ -207,20 +207,21 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param zetaScale Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). Ignored unless \code{smoothGradient=TRUE}.
 #' @param hessian Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
 #' @param silent Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
-#' @param method Outer optimization method. Default: \code{"BFGS"}.
+#' @param method Character string indicating the type of algorithm used for the outer optimization (e.g., \code{"BFGS"}). When \code{optMethod = "nloptr"}, \code{"BFGS"} is internally mapped to \code{"NLOPT_LD_LBFGS"} for compatibility. Default: \code{"BFGS"}.
+#' @param optMethod Character string indicating the optimization function (engine) to use for the outer optimization. Options are \code{"nlminb"} or \code{"nloptr"}. If \code{"nloptr"} is selected, the \code{nloptr} package must be installed. Default: \code{"nlminb"}.
 #' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
-#' @param control A list of control parameters for outer optimization. See \code{\link[stats]{nlminb}}.
-#' @param polishOptim Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization with \code{\link[stats]{nlminb}} has completed. Default: \code{FALSE}.
+#' @param control A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}.
+#' @param polishOptim Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization has completed. Default: \code{FALSE}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
 #'
 #' @return \code{fitLangevin} object, i.e., a list of:
-#' \item{par}{See \code{\link[stats]{nlminb}}}
-#' \item{objective}{See \code{\link[stats]{nlminb}}}
-#' \item{convergence}{See \code{\link[stats]{nlminb}}}
-#' \item{message}{See \code{\link[stats]{nlminb}}}
-#' \item{iterations}{See \code{\link[stats]{nlminb}}}
-#' \item{evaluations}{See \code{\link[stats]{nlminb}}}
+#' \item{par}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+#' \item{objective}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+#' \item{convergence}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+#' \item{message}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+#' \item{iterations}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
+#' \item{evaluations}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
 #' \item{elapsedTime}{Run time of the optimization}
 #' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
 #' \item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random'')}.
@@ -330,10 +331,15 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   model <- match.arg(model)
+  optMethod <- match.arg(optMethod)
+
+  if (optMethod == "nloptr" && !requireNamespace("nloptr", quietly = TRUE)) {
+    stop("Package 'nloptr' is required when optMethod = 'nloptr'. Please install it using install.packages('nloptr').")
+  }
 
   if(!all(coord %in% colnames(data))) stop("coord not found in data.")
   if(smoothGradient & isFALSE(npoints %in% c(4,8))) stop("npoints must be 4 or 8")
@@ -381,28 +387,29 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
   dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_sdf = barrier_sdf, lambda = lambda)
 
   par <- initialValues(data, model, par, spatialCovs, coord)
+  origprior <- prior
   cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior)
-  par <- cp$par
-  map <- cp$map
+  tmbpar <- cp$par
+  tmbmap <- cp$map
   re <- cp$re
 
   dat <- c(dat, cp$priors)
-  map <- mapDuplicatedTimes(dat, map, par, re)
+  tmbmap <- mapDuplicatedTimes(dat, tmbmap, tmbpar, re)
 
   # scale parameters internally for TMB
-  par$log_sigma <- par$log_sigma - log(scaleFactor)
-  par$mu <- par$mu / scaleFactor
-  par$vel <- par$vel / scaleFactor
-
-  message("   Fitting ",model," Langevin model...")
+  tmbpar$log_sigma <- tmbpar$log_sigma - log(scaleFactor)
+  tmbpar$mu <- tmbpar$mu / scaleFactor
+  tmbpar$vel <- tmbpar$vel / scaleFactor
 
   if(initialInner){
-    map_inner <- lapply(par[names(par)[!names(par) %in% c("mu","vel")]], function(x) factor(rep(NA,length(x))))
-    if(!is.null(map$mu)) map_inner$mu <- map$mu
-    if(!is.null(map$vel)) map_inner$vel <- map$vel
+    map_inner <- lapply(tmbpar[names(tmbpar)[!names(tmbpar) %in% c("mu","vel")]], function(x) factor(rep(NA,length(x))))
+    if(!is.null(tmbmap$mu)) map_inner$mu <- tmbmap$mu
+    if(!is.null(tmbmap$vel)) map_inner$vel <- tmbmap$vel
+
+    message("   Performing initial inner optimization...")
 
     obj1 <- try({
-      TMB::MakeADFun(c(model="langevinSSM",dat), par, map = map_inner, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
+      TMB::MakeADFun(c(model="langevinSSM",dat), tmbpar, map = map_inner, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
     }, silent = TRUE)
 
     if (inherits(obj1, "try-error")) stop("Initial inner optimization (obj1) failed during TMB::MakeADFun. Check parameter initial values or data.\nError details: ", attr(obj1, "condition")$message)
@@ -410,18 +417,22 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     obj1$fn(obj1$par)
     smoothed_pars <- obj1$env$parList()
 
-    if("mu" %in% re) par$mu <- smoothed_pars$mu
-    if("vel" %in% re) par$vel <- smoothed_pars$vel
+    if("mu" %in% re) tmbpar$mu <- smoothed_pars$mu
+    if("vel" %in% re) tmbpar$vel <- smoothed_pars$vel
 
-    if(!is.null(map$mu)) par$mu[is.na(map$mu)] <- (cp$par$mu / scaleFactor)[is.na(map$mu)]
-    if(!is.null(map$vel)) par$vel[is.na(map$vel)] <- (cp$par$vel / scaleFactor)[is.na(map$vel)]
+    if(!is.null(tmbmap$mu)) tmbpar$mu[is.na(tmbmap$mu)] <- (cp$par$mu / scaleFactor)[is.na(tmbmap$mu)]
+    if(!is.null(tmbmap$vel)) tmbpar$vel[is.na(tmbmap$vel)] <- (cp$par$vel / scaleFactor)[is.na(tmbmap$vel)]
   }
 
+  message("   Constructing objective function...")
+
   obj2 <- try({
-    TMB::MakeADFun(c(model="langevinSSM",dat), par, map = map, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
+    TMB::MakeADFun(c(model="langevinSSM",dat), tmbpar, map = tmbmap, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
   }, silent = TRUE)
 
   if (inherits(obj2, "try-error")) stop("TMB::MakeADFun failed to construct the objective function. Check parameter initial values or data constraints.\nError details: ", attr(obj2, "condition")$message)
+
+  message("   Fitting ",model," Langevin model...")
 
   if (length(obj2$par) == 0) {
     start <- proc.time()
@@ -429,23 +440,81 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     fit$elapsedTime <- proc.time() - start
   } else {
     start <- proc.time()
-    fit <- try({
-      do.call(stats::nlminb,args = list(start = obj2$par, objective = obj2$fn, gradient = obj2$gr, control=control))
-    }, silent = TRUE)
 
-    if (inherits(fit, "try-error") || !is.list(fit)) stop("Optimization via stats::nlminb failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
+    if (optMethod == "nlminb") {
+      fit <- try({
+        do.call(stats::nlminb,args = list(start = obj2$par, objective = obj2$fn, gradient = obj2$gr, control=control))
+      }, silent = TRUE)
+    } else if (optMethod == "nloptr") {
+
+      # map standard BFGS to the nloptr equivalent
+      algo <- method
+      if (algo == "BFGS") algo <- "NLOPT_LD_LBFGS"
+
+      # control list for nloptr mapping from the default nlminb list when possible
+      opts <- list(algorithm = algo,
+                   maxeval = if (!is.null(control$eval.max)) control$eval.max else 1000)
+
+      # Overwrite with any user-provided controls mapping directly to nloptr (e.g., control$algorithm = "NLOPT_GD_MLSL")
+      for (n in names(control)) {
+        if (n %in% c("trace", "iter.max", "eval.max", "algorithm")) next # skip standard nlminb arguments and already set algorithms
+        opts[[n]] <- control[[n]]
+      }
+
+      fit_try <- try({
+        nloptr::nloptr(x0 = obj2$par, eval_f = function(x) obj2$fn(x), eval_grad_f = function(x) obj2$gr(x), opts = opts)
+      }, silent = TRUE)
+
+      if (!inherits(fit_try, "try-error")) {
+        # Format nloptr output to match expected nlminb structure
+        fit <- list(
+          par = fit_try$solution,
+          objective = fit_try$objective,
+          convergence = if (fit_try$status < 0) fit_try$status else 0, # Map negative nloptr statuses to an error code
+          message = fit_try$message,
+          iterations = fit_try$iterations,
+          evaluations = c("function" = fit_try$iterations, "gradient" = fit_try$iterations)
+        )
+        names(fit$par) <- names(obj2$par)
+      } else {
+        fit <- fit_try
+      }
+    }
+
+    if (inherits(fit, "try-error") || !is.list(fit)) stop("Outer optimization failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
 
     if(polishOptim==TRUE){
       obj2$fn(fit$par)
-      message("   Polishing optimization with nlminb...")
-      fit_polished <- try({
-        do.call(stats::nlminb, args = list(start = fit$par, objective = obj2$fn, gradient = obj2$gr, control = control))
-      }, silent = TRUE)
+      message("   Polishing optimization ...")
+
+      if (optMethod == "nlminb") {
+        fit_polished <- try({
+          do.call(stats::nlminb, args = list(start = fit$par, objective = obj2$fn, gradient = obj2$gr, control = control))
+        }, silent = TRUE)
+      } else if (optMethod == "nloptr") {
+        fit_polished_try <- try({
+          nloptr::nloptr(x0 = fit$par, eval_f = function(x) obj2$fn(x), eval_grad_f = function(x) obj2$gr(x), opts = opts)
+        }, silent = TRUE)
+        if (!inherits(fit_polished_try, "try-error")) {
+          fit_polished <- list(
+            par = fit_polished_try$solution,
+            objective = fit_polished_try$objective,
+            convergence = if (fit_polished_try$status < 0) fit_polished_try$status else 0,
+            message = fit_polished_try$message,
+            iterations = fit_polished_try$iterations,
+            evaluations = c("function" = fit_polished_try$iterations, "gradient" = fit_polished_try$iterations)
+          )
+          names(fit_polished$par) <- names(fit$par)
+        } else {
+          fit_polished <- fit_polished_try
+        }
+      }
+
       if (!inherits(fit_polished, "try-error") && fit_polished$objective < fit$objective) fit <- fit_polished
     }
 
     fit$elapsedTime <- proc.time() - start
-    if (!is.null(fit$convergence) && fit$convergence != 0) warning("nlminb optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
+    if (!is.null(fit$convergence) && fit$convergence != 0) warning("Optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
   }
 
   message("   Calculating SEs...")
@@ -453,7 +522,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
   }, silent = TRUE)
 
-  extracted <- extract_tmb_estimates(fit, obj2, sdreport_out, re, map, data, scaleFactor, spatialCovs, getJointPrecision)
+  extracted <- extract_tmb_estimates(fit, obj2, sdreport_out, re, tmbmap, data, scaleFactor, spatialCovs, getJointPrecision)
   fit$estimates <- extracted$estimates
   fit$covariance <- extracted$covariance
 
@@ -470,12 +539,12 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
   }
 
-  fit$conditions <- list(hessian = hessian, method = method, silent = silent, initialInner = initialInner, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda)
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda)
 
   boundsWarning(fit)
 
   fit$signatures <- list(data = get_data_signature(data, coord), covs = get_covs_signature(orig_spatialCovs))
-  fit$tmb_setup <- list(parList = obj2$env$parList(fit$par), map = map, random = re, priors = cp$priors)
+  fit$tmb_setup <- list(parList = obj2$env$parList(fit$par), map = tmbmap, random = re, priors = cp$priors)
 
   fit <- class_fitLangevin(fit)
   return(fit)

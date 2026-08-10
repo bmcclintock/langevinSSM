@@ -28,7 +28,7 @@ getPar <- function(fit) {
     par_out$gamma <- exp(parList$log_gamma)
   }
 
-  parNames <- names(fit$conditions$par)
+  parNames <- names(parList)
 
   if ("l_psi" %in% parNames) {
     par_out$psi <- exp(parList$l_psi)

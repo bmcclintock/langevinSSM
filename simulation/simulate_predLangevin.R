@@ -145,7 +145,7 @@ for(isim in 1:nSims){
     )),error=function(e) e)
 
     if(!inherits(fit_miss,"error")){
-      fit_pred <- tryCatch(predLangevin(fit_miss,data=sim_data,spatialCovs=covs,model=model,silent=TRUE,max_iter=25),error=function(e) e)
+      fit_pred <- tryCatch(predLangevin(fit_miss,data=sim_data,spatialCovs=covs,model=model,silent=TRUE),error=function(e) e)
       if(!inherits(fit_pred,"error")){
         predMu <- fitted(fit_pred,parm="mu")
         predCI <- confint(fit_pred,parm="mu")

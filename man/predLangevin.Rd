@@ -4,7 +4,7 @@
 \alias{predLangevin}
 \title{Predict unobserved locations from a fitted Langevin model}
 \usage{
-predLangevin(fit, data, spatialCovs, tol = 0.001, max_iter = 10, ...)
+predLangevin(fit, data, spatialCovs, ...)
 }
 \arguments{
 \item{fit}{A \code{fitLangevin} object.}
@@ -13,30 +13,14 @@ predLangevin(fit, data, spatialCovs, tol = 0.001, max_iter = 10, ...)
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. Must be the exact same list used to fit the model.}
 
-\item{tol}{Numeric. The tolerance for the maximum absolute shift in spatial coordinates between iterations. Optimization stops when the maximum shift is below this value. Default: \code{1e-3}.}
-
-\item{max_iter}{Integer. The maximum number of stabilization iterations allowed. Default: \code{10}.}
-
-\item{...}{Additional arguments passed to \code{\link{fitLangevin}}.}
+\item{...}{Additional arguments passed to \code{\link{fitLangevin}}, e.g., \code{inner.control} to govern the TMB optimizer, \code{par} to supply custom starting values for the locations (\code{par$mu}) and/or velocities (\code{par$vel}), or \code{map} to supply fixed values for the locations (\code{map$mu}) and/or velocities (\code{map$vel}).}
 }
 \value{
-A \code{fitLangevin} object containing the updated, regularized trajectory. The structure is identical to a standard fitted model (with the addition of a \code{predLangevin} class), allowing it to be passed to \code{\link{plot.fitLangevin}} and other downstream functions.
+A \code{fitLangevin} object containing the predicted trajectory. The structure is identical to a standard fitted model (with the addition of a \code{predLangevin} class), allowing it to be passed to \code{\link{plot.fitLangevin}} and other downstream functions.
 }
 \description{
-Generates predicted locations (and velocities, for the underdamped model) along with their standard errors at unobserved times. This function works by freezing the maximum likelihood estimates of the movement and observation parameters from a previously fitted model and running a fast, iterative inner optimization to impute the latent states until convergence.
+Generates predicted locations (and velocities, for the underdamped model) along with their standard errors at unobserved times. This function works by freezing the maximum likelihood estimates of the movement and observation parameters from a previously fitted model and running an inner optimization to predict the latent locations.
 }
 \details{
-This function provides an efficient way to interpolate animal tracks (e.g., along a regular temporal grid) after the primary model has been fitted on unpadded data. The fixed parameters are frozen and \code{TMB} iteratively evaluates the random effects, allowing for rapid imputation of the missing locations.
-
-To achieve this, \code{predLangevin} repeatedly updates the latent locations (and velocities) using an adaptive step size. Because spatial likelihood surfaces can sometimes cause the optimizer to bounce back and forth, the function monitors the direction of the updates. If a bounce is detected, the step size is reduced. If the updates are moving smoothly in the same direction, the step size is gradually increased.
-
-For each iteration \eqn{i}, the starting values for the latent locations (\eqn{\mu}) are updated using the following damped formula:
-
-\deqn{\mu_{i}=\mu_{i-1}+d\times(\mu^*_{i}-\mu_{i-1})}
-
-where \eqn{\mu_{i-1}} is the location from the previous iteration, \eqn{\mu^*_{i}} is the new raw location proposed by the optimizer, and \eqn{d} is an adaptive damping factor.
-
-The iterative process stops, and convergence is reached, when the maximum spatial shift between iterations falls below the user-defined \code{tol}, or if the trajectory stops making meaningful improvements.
-
-Note: If the original dataset used to fit the model contained native \code{NA} coordinates, this function will simultaneously impute those missing values alongside the new \code{predTimes}.
+This function provides an efficient way to interpolate animal tracks (e.g., along a regular temporal grid) after the primary model has been fitted on unpadded data. The fixed parameters are frozen and \code{TMB} optimizes over the random effects, allowing for imputation of the missing locations.
 }

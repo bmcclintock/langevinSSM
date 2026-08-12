@@ -15,6 +15,7 @@
   spatialCovs,
   log = TRUE,
   extent = NULL,
+  normalize = FALSE,
   data = NULL,
   time = NULL,
   compact = TRUE,
@@ -28,6 +29,7 @@
   beta = NULL,
   log = TRUE,
   extent = NULL,
+  normalize = FALSE,
   time = NULL,
   compact = TRUE,
   maskRast = NULL,
@@ -57,7 +59,9 @@ plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 
 \item{log}{Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.}
 
-\item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.}
+\item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data. If \code{extent} is not provided to \code{plot.fitLangevin} or \code{plot.simLangevin}, the UD is not normalized within the extent of the plot (it normalizes globally over the extent of \code{spatialCovs}).}
+
+\item{normalize}{Logical. If \code{TRUE}, the plotted utilization distribution (UD) is renormalized to the extent of the plot (either the provided \code{extent} or the automatically calculated one). If \code{FALSE} (default), the UD is normalized globally over the full extent of the provided \code{spatialCovs} regardless of the plot extent.}
 
 \item{data}{Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.}
 

@@ -483,6 +483,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
     if (inherits(fit, "try-error") || !is.list(fit)) stop("Outer optimization failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
 
+    fit$elapsedTime <- proc.time() - start
+
     if(polishOptim==TRUE){
       message("   Polishing optimization...")
 
@@ -558,7 +560,6 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
       }
     }
 
-    fit$elapsedTime <- proc.time() - start
     if (!is.null(fit$convergence) && fit$convergence != 0) warning("Optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
   }
 

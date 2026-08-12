@@ -13,16 +13,18 @@
 #' @param show_progress Logical. If \code{TRUE}, displays a progress bar for simulations. Default: \code{TRUE}.
 #' @param plot Logical. Plot the resulting UD using \code{\link{plotUD}}? Default: \code{TRUE}.
 #' @param maskRast \code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{NA}) before plotting the UD. Default: \code{NULL} (no mask).
+#' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If provided, the returned UD is cropped to this extent. Default: \code{NULL}.
+#' @param normalize Logical. If \code{TRUE} and \code{extent} is provided, the UD is normalized specifically across the \code{extent} (ignoring cells outside the extent). If \code{FALSE}, the UD is normalized globally over the extent of \code{spatialCovs} before any cropping. Default: \code{FALSE}.
 #' @return A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).
 #' @seealso \code{\link{plotUD}}, \code{\link{regionProb}}.
 #' @examples
 #' # exampleCovs included in package; see ?exampleCovs for details
 #' UD <- getUD(exampleCovs, beta = c(-4, 6, 5, -0.1) )
-#' @importFrom terra global nlyr varnames app setValues compareGeom mask
+#' @importFrom terra global nlyr varnames app setValues compareGeom mask crop ext
 #' @importFrom stats setNames
 #' @importFrom utils setTxtProgressBar txtProgressBar
 #' @export
-getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFactor = 1, log = TRUE, nSims = 0, show_progress = TRUE, plot = TRUE, maskRast = NULL) {
+getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFactor = 1, log = TRUE, nSims = 0, show_progress = TRUE, plot = TRUE, maskRast = NULL, extent = NULL, normalize = FALSE) {
   if((missing(fit) & missing(beta)) | (!missing(fit) & !missing(beta))) stop("Either 'fit' or 'beta' must be provided, but not both.")
   if(!missing(fit)) verify_signatures(fit, spatialCovs = spatialCovs)
 
@@ -78,6 +80,18 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
     mod_beta <- c(mod_beta, 1) # The penalty acts as a fixed covariate with coefficient = 1
   }
 
+  # --- If normalize is TRUE, crop covariates before mathematical calculations ---
+  if (!is.null(extent) && normalize) {
+    crop_ext <- tryCatch(terra::ext(extent), error = function(e) NULL)
+    if (!is.null(crop_ext)) {
+      spatialCovs <- lapply(spatialCovs, function(x) terra::crop(x, crop_ext))
+      mod_spatialCovs <- lapply(mod_spatialCovs, function(x) terra::crop(x, crop_ext))
+      if (!is.null(maskRast)) {
+        maskRast <- terra::crop(maskRast, crop_ext)
+      }
+    }
+  }
+
   # --- Internal Helper: Compute a normalized probability UD ---
   calc_prob_ud_base <- function(b_vec, cov_list, maskRast) {
     ud_rast <- cov_list[[1]] * b_vec[1]
@@ -114,10 +128,18 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
   names(ud_base) <- rep(base_name, terra::nlyr(ud_base))
 
   if (plot) {
-    print(plotUD(ud_base, log = log))
+    print(plotUD(ud_base, log = log, extent = extent))
   }
 
-  if (!can_calc_se && nSims == 0) return(ud_base)
+  # If not calculating uncertainty, crop to extent now if normalize=FALSE
+  if (!can_calc_se && nSims == 0) {
+    out_rast <- ud_base
+    if (!is.null(extent) && !normalize) {
+      crop_ext <- tryCatch(terra::ext(extent), error = function(e) NULL)
+      if (!is.null(crop_ext)) out_rast <- terra::crop(out_rast, crop_ext)
+    }
+    return(out_rast)
+  }
 
   # ==========================================
   # Extract components for uncertainty
@@ -214,6 +236,12 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
     time_vals <- terra::time(spatialCovs[[dyn_idx]])
     num_blocks <- terra::nlyr(out_rast) / n_ud_layers
     terra::time(out_rast) <- rep(time_vals, num_blocks)
+  }
+
+  # --- If normalize is FALSE, crop output now before returning ---
+  if (!is.null(extent) && !normalize) {
+    crop_ext <- tryCatch(terra::ext(extent), error = function(e) NULL)
+    if (!is.null(crop_ext)) out_rast <- terra::crop(out_rast, crop_ext)
   }
 
   return(out_rast)

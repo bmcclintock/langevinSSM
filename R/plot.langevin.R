@@ -14,7 +14,8 @@
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects. Used to compute the UD or plotted as the background.
 #' @param beta Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs} minus the barrier (if present). If provided, plots the UD instead of individual covariates.
 #' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
-#' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data.
+#' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data. If \code{extent} is not provided to \code{plot.fitLangevin} or \code{plot.simLangevin}, the UD is not normalized within the extent of the plot (it normalizes globally over the extent of \code{spatialCovs}).
+#' @param normalize Logical. If \code{TRUE}, the plotted utilization distribution (UD) is renormalized to the extent of the plot (either the provided \code{extent} or the automatically calculated one). If \code{FALSE} (default), the UD is normalized globally over the full extent of the provided \code{spatialCovs} regardless of the plot extent.
 #' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
@@ -31,7 +32,7 @@ NULL
 #' @rdname plot.langevin
 #' @method plot fitLangevin
 #' @export
-plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = NULL, time = NULL, compact = TRUE, maskRast = NULL, ...) {
+plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, normalize = FALSE, data = NULL, time = NULL, compact = TRUE, maskRast = NULL, ...) {
   if (missing(spatialCovs)) stop("'spatialCovs' must be provided.")
   if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
 
@@ -88,7 +89,17 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier=barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor)
+  resolved_extent <- extent
+  if (is.null(resolved_extent) && normalize && nrow(track_df) > 0) {
+    x_range <- max(track_df$x, na.rm = TRUE) - min(track_df$x, na.rm = TRUE)
+    y_range <- max(track_df$y, na.rm = TRUE) - min(track_df$y, na.rm = TRUE)
+    max_range <- max(x_range, y_range, 1)
+    x_mid <- (max(track_df$x, na.rm = TRUE) + min(track_df$x, na.rm = TRUE)) / 2
+    y_mid <- (max(track_df$y, na.rm = TRUE) + min(track_df$y, na.rm = TRUE)) / 2
+    resolved_extent <- c(x_mid - 0.6 * max_range, x_mid + 0.6 * max_range, y_mid - 0.6 * max_range, y_mid + 0.6 * max_range)
+  }
+
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier=barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor, extent = if(normalize) resolved_extent else extent, normalize = normalize)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
@@ -121,7 +132,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, data = N
 #' @rdname plot.langevin
 #' @method plot simLangevin
 #' @export
-plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, time = NULL, compact = TRUE, maskRast = NULL, ...) {
+plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = NULL, normalize = FALSE, time = NULL, compact = TRUE, maskRast = NULL, ...) {
   if (missing(spatialCovs)) stop("You must provide the 'spatialCovs' list.")
 
   if (is.null(beta)){
@@ -170,7 +181,17 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     track_lines <- c("True" = "solid")
   }
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor)
+  resolved_extent <- extent
+  if (is.null(resolved_extent) && normalize && nrow(track_df) > 0) {
+    x_range <- max(track_df$x, na.rm = TRUE) - min(track_df$x, na.rm = TRUE)
+    y_range <- max(track_df$y, na.rm = TRUE) - min(track_df$y, na.rm = TRUE)
+    max_range <- max(x_range, y_range, 1)
+    x_mid <- (max(track_df$x, na.rm = TRUE) + min(track_df$x, na.rm = TRUE)) / 2
+    y_mid <- (max(track_df$y, na.rm = TRUE) + min(track_df$y, na.rm = TRUE)) / 2
+    resolved_extent <- c(x_mid - 0.6 * max_range, x_mid + 0.6 * max_range, y_mid - 0.6 * max_range, y_mid + 0.6 * max_range)
+  }
+
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor, extent = if(normalize) resolved_extent else extent, normalize = normalize)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name

@@ -15,7 +15,9 @@ getUD(
   nSims = 0,
   show_progress = TRUE,
   plot = TRUE,
-  maskRast = NULL
+  maskRast = NULL,
+  extent = NULL,
+  normalize = FALSE
 )
 }
 \arguments{
@@ -40,6 +42,10 @@ getUD(
 \item{plot}{Logical. Plot the resulting UD using \code{\link{plotUD}}? Default: \code{TRUE}.}
 
 \item{maskRast}{\code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{NA}) before plotting the UD. Default: \code{NULL} (no mask).}
+
+\item{extent}{Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If provided, the returned UD is cropped to this extent. Default: \code{NULL}.}
+
+\item{normalize}{Logical. If \code{TRUE} and \code{extent} is provided, the UD is normalized specifically across the \code{extent} (ignoring cells outside the extent). If \code{FALSE}, the UD is normalized globally over the extent of \code{spatialCovs} before any cropping. Default: \code{FALSE}.}
 }
 \value{
 A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).

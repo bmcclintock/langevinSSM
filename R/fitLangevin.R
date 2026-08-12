@@ -484,33 +484,78 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     if (inherits(fit, "try-error") || !is.list(fit)) stop("Outer optimization failed. The model could not be fit.\nError details: ", attr(fit, "condition")$message)
 
     if(polishOptim==TRUE){
+      message("   Polishing optimization...")
+
       obj2$fn(fit$par)
-      message("   Polishing optimization ...")
+      parList_mle <- obj2$env$parList(fit$par)
+      par_mle <- list(
+        beta = parList_mle$beta,
+        sigma = exp(parList_mle$log_sigma) * scaleFactor
+      )
+      if (model == "underdamped") par_mle$gamma <- exp(parList_mle$log_gamma)
 
-      if (optMethod == "nlminb") {
-        fit_polished <- try({
-          do.call(stats::nlminb, args = list(start = fit$par, objective = obj2$fn, gradient = obj2$gr, control = control))
+      parNames <- names(fit$par)
+      if ("l_psi" %in% parNames) par_mle$psi <- exp(parList_mle$l_psi)
+      if ("l_tau" %in% parNames) par_mle$tau <- exp(parList_mle$l_tau)
+      if ("l_rho_o" %in% parNames) par_mle$rho_o <- 2 / (1 + exp(-parList_mle$l_rho_o)) - 1
+
+      par_mle$mu <- t(parList_mle$mu * scaleFactor)
+      if (model == "underdamped") par_mle$vel <- t(parList_mle$vel * scaleFactor)
+
+      map_inner <- list(
+        beta = factor(rep(NA, length(par_mle$beta))),
+        sigma = factor(NA)
+      )
+      if (model == "underdamped") map_inner$gamma <- factor(NA)
+      if ("psi" %in% names(par_mle)) map_inner$psi <- factor(NA)
+      if ("tau" %in% names(par_mle)) map_inner$tau <- factor(rep(NA, length(par_mle$tau)))
+      if ("rho_o" %in% names(par_mle)) map_inner$rho_o <- factor(NA)
+
+      if (!is.null(map[[ "mu" ]])) map_inner$mu <- map[[ "mu" ]]
+      if (!is.null(map[[ "vel" ]])) map_inner$vel <- map[[ "vel" ]]
+
+      inner_fit <- try({
+        suppressMessages(fitLangevin(data = data, model = model, spatialCovs = orig_spatialCovs,
+                                     barrier = barrier, par = par_mle, lambda = lambda,
+                                     prior = origprior, map = map_inner, coord = coord,
+                                     scaleFactor = scaleFactor, smoothGradient = smoothGradient,
+                                     npoints = npoints, curweight = curweight, zetaScale = zetaScale,
+                                     hessian = FALSE, silent = TRUE, method = method,
+                                     optMethod = optMethod, initialInner = FALSE,
+                                     inner.control = inner.control, control = control,
+                                     polishOptim = FALSE, getJointPrecision = FALSE))
+      }, silent = TRUE)
+
+      if (!inherits(inner_fit, "try-error") && !is.null(inner_fit$par)) {
+
+        inner_parList <- inner_fit$tmb_setup$parList
+        par_polished <- par_mle
+        par_polished$mu <- t(inner_parList$mu * scaleFactor)
+        if (model == "underdamped") par_polished$vel <- t(inner_parList$vel * scaleFactor)
+
+        outer_fit <- try({
+          suppressWarnings(suppressMessages(fitLangevin(data = data, model = model, spatialCovs = orig_spatialCovs,
+                                       barrier = barrier, par = par_polished, lambda = lambda,
+                                       prior = origprior, map = map, coord = coord,
+                                       scaleFactor = scaleFactor, smoothGradient = smoothGradient,
+                                       npoints = npoints, curweight = curweight, zetaScale = zetaScale,
+                                       hessian = hessian, silent = silent, method = method,
+                                       optMethod = optMethod, initialInner = FALSE,
+                                       inner.control = inner.control, control = control,
+                                       polishOptim = FALSE, getJointPrecision = getJointPrecision)))
         }, silent = TRUE)
-      } else if (optMethod == "nloptr") {
-        fit_polished_try <- try({
-          nloptr::nloptr(x0 = fit$par, eval_f = function(x) obj2$fn(x), eval_grad_f = function(x) obj2$gr(x), opts = opts)
-        }, silent = TRUE)
-        if (!inherits(fit_polished_try, "try-error")) {
-          fit_polished <- list(
-            par = fit_polished_try$solution,
-            objective = fit_polished_try$objective,
-            convergence = if (fit_polished_try$status < 0) fit_polished_try$status else 0,
-            message = fit_polished_try$message,
-            iterations = fit_polished_try$iterations,
-            evaluations = c("function" = fit_polished_try$iterations, "gradient" = fit_polished_try$iterations)
-          )
-          names(fit_polished$par) <- names(fit$par)
+
+        if (!inherits(outer_fit, "try-error") && !is.null(outer_fit$objective) && outer_fit$objective < fit$objective) {
+          outer_fit$conditions$par <- par
+          outer_fit$conditions$initialInner <- initialInner
+          outer_fit$conditions$polishOptim <- polishOptim
+          return(outer_fit)
         } else {
-          fit_polished <- fit_polished_try
+          message("      Polishing did not improve the log-likelihood. Returning original fit.")
         }
+      } else {
+        message("      Inner optimization for polishing failed, proceeding with original fit.")
       }
-
-      if (!inherits(fit_polished, "try-error") && fit_polished$objective < fit$objective) fit <- fit_polished
     }
 
     fit$elapsedTime <- proc.time() - start
@@ -539,7 +584,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
   }
 
-  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda)
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, polishOptim = polishOptim, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda)
 
   boundsWarning(fit)
 

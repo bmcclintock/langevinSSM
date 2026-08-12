@@ -5,7 +5,7 @@
 #'
 #' @param fit A \code{fitLangevin} object.
 #'
-#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{mu}, \code{vel}, and any observation error parameters like \code{psi}, \code{tau}, or \code{rho_o} if they were included in the model).
+#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{mu}, \code{vel}, and any observation error parameters like \code{psi}, \code{tau}, or \code{rho_o} if they were estimated).
 #' @export
 getPar <- function(fit) {
 
@@ -28,23 +28,22 @@ getPar <- function(fit) {
     par_out$gamma <- exp(parList$log_gamma)
   }
 
-  parNames <- names(parList)
+  # Extract names of actively estimated parameters from the outer optimizer
+  active_pars <- names(fit$par)
 
-  if ("l_psi" %in% parNames) {
+  if ("l_psi" %in% active_pars) {
     par_out$psi <- exp(parList$l_psi)
   }
-  if ("l_tau" %in% parNames) {
+  if ("l_tau" %in% active_pars) {
     par_out$tau <- exp(parList$l_tau)
   }
-  if ("l_rho_o" %in% parNames) {
+  if ("l_rho_o" %in% active_pars) {
     par_out$rho_o <- 2 / (1 + exp(-parList$l_rho_o)) - 1
   }
 
-  if ("mu" %in% names(parList)) {
-    par_out$mu <- unname(as.matrix(t(parList$mu) * scaleFactor))
-  }
+  par_out$mu <- unname(as.matrix(t(parList$mu) * scaleFactor))
 
-  if (model == "underdamped" && "vel" %in% names(parList)) {
+  if (model == "underdamped") {
     par_out$vel <- unname(as.matrix(t(parList$vel) * scaleFactor))
   }
 

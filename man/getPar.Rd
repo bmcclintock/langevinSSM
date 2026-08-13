@@ -10,8 +10,8 @@ getPar(fit)
 \item{fit}{A \code{fitLangevin} object.}
 }
 \value{
-A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{mu}, \code{vel}, and any observation error parameters like \code{psi}, \code{tau}, or \code{rho_o} if they were estimated).
+A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}) that were estimated).
 }
 \description{
-Extracts the fitted fixed and random effect parameter estimates from a \code{fitLangevin} object. The parameters are returned on their natural, unscaled scale in a list format perfectly structured to be supplied to the \code{par} argument of \code{\link{fitLangevin}} for warm-starting or refitting models.
+Extracts the fitted fixed and random effect parameter estimates from a \code{fitLangevin} object. The parameters are returned on their natural scale in the list format required for the \code{par} argument of \code{\link{fitLangevin}}.
 }

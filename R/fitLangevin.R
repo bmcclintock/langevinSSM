@@ -53,8 +53,10 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
   estimates <- list()
   covariance <- list()
 
-  if (inherits(sdreport_out, "try-error")) {
-    warning("TMB::sdreport failed to calculate standard errors. Trajectory and point estimates were recovered from the report, but SEs are unavailable.")
+  if (inherits(sdreport_out, "try-error") || inherits(sdreport_out, "skip_se")) {
+    if (inherits(sdreport_out, "try-error")) {
+      warning("TMB::sdreport failed to calculate standard errors. Trajectory and point estimates were recovered from the report, but SEs are unavailable.")
+    }
 
     # 1. working scale
     working_names <- names(fit$par)
@@ -214,6 +216,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param control A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}.
 #' @param polishOptim Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization has completed. Default: \code{FALSE}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
+#' @param calcSE Logical indicating whether or not to calculate standard errors for the parameter estimates. Default: \code{TRUE}.
 #'
 #' @return \code{fitLangevin} object, i.e., a list of:
 #' \item{par}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
@@ -224,7 +227,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' \item{evaluations}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
 #' \item{elapsedTime}{Run time of the optimization}
 #' \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
-#' \item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random'')}.
+#' \item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random''). If \code{hessian=TRUE}, it also returns the exact \code{hessian} matrix computed via automatic differentiation.}
 #' \item{conditions}{List containing the optimization settings}
 #' \item{signatures}{List containing lightweight fingerprints for \code{data} and \code{spatialCovs} to protect downstream functions}
 #' \item{tmb_setup}{Blueprint for reconstructing TMB objective function}
@@ -331,7 +334,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   model <- match.arg(model)
@@ -525,7 +528,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                                      hessian = FALSE, silent = TRUE, method = method,
                                      optMethod = optMethod, initialInner = FALSE,
                                      inner.control = inner.control, control = control,
-                                     polishOptim = FALSE, getJointPrecision = FALSE))
+                                     polishOptim = FALSE, getJointPrecision = FALSE, calcSE = FALSE))
       }, silent = TRUE)
 
       if (!inherits(inner_fit, "try-error") && !is.null(inner_fit$par)) {
@@ -537,23 +540,26 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
 
         outer_fit <- try({
           suppressWarnings(suppressMessages(fitLangevin(data = data, model = model, spatialCovs = orig_spatialCovs,
-                                       barrier = barrier, par = par_polished, lambda = lambda,
-                                       prior = origprior, map = map, coord = coord,
-                                       scaleFactor = scaleFactor, smoothGradient = smoothGradient,
-                                       npoints = npoints, curweight = curweight, zetaScale = zetaScale,
-                                       hessian = hessian, silent = silent, method = method,
-                                       optMethod = optMethod, initialInner = FALSE,
-                                       inner.control = inner.control, control = control,
-                                       polishOptim = FALSE, getJointPrecision = getJointPrecision)))
+                                                        barrier = barrier, par = par_polished, lambda = lambda,
+                                                        prior = origprior, map = map, coord = coord,
+                                                        scaleFactor = scaleFactor, smoothGradient = smoothGradient,
+                                                        npoints = npoints, curweight = curweight, zetaScale = zetaScale,
+                                                        hessian = hessian, silent = silent, method = method,
+                                                        optMethod = optMethod, initialInner = FALSE,
+                                                        inner.control = inner.control, control = control,
+                                                        polishOptim = FALSE, getJointPrecision = getJointPrecision, calcSE = FALSE)))
         }, silent = TRUE)
 
         if (!inherits(outer_fit, "try-error") && !is.null(outer_fit$objective) && outer_fit$objective < fit$objective) {
-          outer_fit$conditions$par <- par
-          outer_fit$conditions$initialInner <- initialInner
-          outer_fit$conditions$polishOptim <- polishOptim
-          return(outer_fit)
+          fit$par <- outer_fit$par
+          fit$objective <- outer_fit$objective
+          fit$convergence <- outer_fit$convergence
+          fit$message <- outer_fit$message
+          fit$iterations <- outer_fit$iterations
+          fit$evaluations <- outer_fit$evaluations
+          obj2$fn(fit$par)
         } else {
-          message("      Polishing did not improve the log-likelihood. Returning original fit.")
+          message("      Polishing did not improve the log-likelihood. Proceeding with original fit.")
         }
       } else {
         message("      Inner optimization for polishing failed, proceeding with original fit.")
@@ -563,14 +569,26 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     if (!is.null(fit$convergence) && fit$convergence != 0) warning("Optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
   }
 
-  message("   Calculating SEs...")
-  sdreport_out <- try({
-    TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
-  }, silent = TRUE)
+  if (calcSE) {
+    message("   Calculating SEs...")
+    sdreport_out <- try({
+      TMB::sdreport(obj2, getJointPrecision = getJointPrecision)
+    }, silent = TRUE)
+  } else {
+    sdreport_out <- structure(list(), class = "skip_se")
+  }
 
   extracted <- extract_tmb_estimates(fit, obj2, sdreport_out, re, tmbmap, data, scaleFactor, spatialCovs, getJointPrecision)
   fit$estimates <- extracted$estimates
   fit$covariance <- extracted$covariance
+
+  if (hessian) {
+    fit$covariance$hessian <- tryCatch(obj2$he(fit$par), error = function(e) NULL)
+    if (!is.null(fit$covariance$hessian)) {
+      rownames(fit$covariance$hessian) <- names(fit$par)
+      colnames(fit$covariance$hessian) <- names(fit$par)
+    }
+  }
 
   out_of_bounds <- FALSE
   if (!is.null(fit$estimates$random$mu)) {
@@ -585,7 +603,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
   }
 
-  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, polishOptim = polishOptim, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda)
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, polishOptim = polishOptim, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda, calcSE = calcSE)
 
   boundsWarning(fit)
 

@@ -13,7 +13,7 @@ predLangevin(fit, data, spatialCovs, ...)
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. Must be the exact same list used to fit the model.}
 
-\item{...}{Additional arguments passed to \code{\link{fitLangevin}}, e.g., \code{inner.control} to govern the TMB optimizer, \code{par} to supply custom starting values for the locations (\code{par$mu}) and/or velocities (\code{par$vel}), or \code{map} to supply fixed values for the locations (\code{map$mu}) and/or velocities (\code{map$vel}).}
+\item{...}{Additional arguments passed to \code{\link{fitLangevin}}, e.g., \code{calcSE} to toggle standard error calculation, \code{inner.control} to govern the TMB optimizer, \code{par} to supply custom starting values for the locations (\code{par$mu}) and/or velocities (\code{par$vel}), or \code{map} to supply fixed values for the locations (\code{map$mu}) and/or velocities (\code{map$vel}).}
 }
 \value{
 A \code{fitLangevin} object containing the predicted trajectory. The structure is identical to a standard fitted model (with the addition of a \code{predLangevin} class), allowing it to be passed to \code{\link{plot.fitLangevin}} and other downstream functions.

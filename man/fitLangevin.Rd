@@ -27,7 +27,8 @@ fitLangevin(
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
   polishOptim = FALSE,
-  getJointPrecision = FALSE
+  getJointPrecision = FALSE,
+  calcSE = TRUE
 )
 }
 \arguments{
@@ -78,6 +79,8 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{polishOptim}{Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization has completed. Default: \code{FALSE}.}
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
+
+\item{calcSE}{Logical indicating whether or not to calculate standard errors for the parameter estimates. Default: \code{TRUE}.}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:
@@ -89,7 +92,7 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{evaluations}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
 \item{elapsedTime}{Run time of the optimization}
 \item{estimates}{List containing point estimates and standard errors for the natural scale parameters (``natural''), the working scale parameters (``working''), and the random effects (``random''), where ``random'' is itself a list containing point estimates (``est'') and standard errors (``se'') for the true locations (``mu'') and/or the true velocities (``vel'').}
-\item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random'')}.
+\item{covariance}{List containing the covariance matrices for the natural scale parameters (``natural''), the working scale parameters (``working''), and, if \code{getJointPrecision=TRUE}, the joint covariance matrix for the random effects (``random''). If \code{hessian=TRUE}, it also returns the exact \code{hessian} matrix computed via automatic differentiation.}
 \item{conditions}{List containing the optimization settings}
 \item{signatures}{List containing lightweight fingerprints for \code{data} and \code{spatialCovs} to protect downstream functions}
 \item{tmb_setup}{Blueprint for reconstructing TMB objective function}

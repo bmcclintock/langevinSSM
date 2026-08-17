@@ -74,7 +74,7 @@ routeTracks <- function(data, maskRast) {
   x_col <- coord_cols[1]
   y_col <- coord_cols[2]
 
-  message("Extracting restricted areas from raster mask...")
+  message("   Extracting restricted areas from raster mask...")
 
   # Isolate the restricted areas (0) by setting allowed areas (1) to NA.
   nogo_rast <- terra::ifel(maskRast == 0, 1, NA)
@@ -89,26 +89,64 @@ routeTracks <- function(data, maskRast) {
   poly_res <- max(terra::res(maskRast))
   nogo_poly <- sf::st_segmentize(nogo_poly, dfMaxLength = poly_res)
 
-  message("Extracting and formatting observed points...")
+  has_missing <- any(is.na(data[[x_col]])) | any(is.na(data[[y_col]]))
 
-  # Extract only the actual observations to route using base R to prevent dplyr from adding tbl_df classes
-  obs_dat <- as.data.frame(data[!is.na(data[[x_col]]) & !is.na(data[[y_col]]), ])
-  obs_dat <- obs_dat[order(obs_dat$id, obs_dat$date), ]
+  if (has_missing) {
+    message("   Pre-interpolating missing locations to route the entire track...")
+
+    # Interpolate NA coordinates first so they can be pushed through pathroutr alongside observations
+    full_dat <- data %>%
+      dplyr::arrange(id, date) %>%
+      dplyr::group_by(id) %>%
+      dplyr::mutate(
+        temp_x = if (sum(!is.na(.data[[x_col]])) >= 2) stats::approx(x = date, y = .data[[x_col]], xout = date, rule = 2)$y else .data[[x_col]],
+        temp_y = if (sum(!is.na(.data[[y_col]])) >= 2) stats::approx(x = date, y = .data[[y_col]], xout = date, rule = 2)$y else .data[[y_col]]
+      ) %>%
+      dplyr::ungroup() %>%
+      as.data.frame()
+  } else {
+    full_dat <- data
+    full_dat$temp_x <- full_dat[[x_col]]
+    full_dat$temp_y <- full_dat[[y_col]]
+  }
+
+  full_dat <- full_dat[!is.na(full_dat$temp_x) & !is.na(full_dat$temp_y), ]
+  full_dat <- full_dat[order(full_dat$id, full_dat$date), ]
+
+  # Identify which points fall inside the barrier
+  full_sf <- sf::st_as_sf(full_dat, coords = c("temp_x", "temp_y"), crs = sf::st_crs(nogo_poly))
+  in_barrier <- sf::st_intersects(full_sf, nogo_poly, sparse = FALSE)[, 1]
+
+  # Snap ALL points (observed or interpolated) that fall on land to the coastline
+  if (any(in_barrier)) {
+    message("   Snapping land-bound points to the barrier boundary before routing...")
+
+    nogo_boundary <- sf::st_cast(nogo_poly, "MULTILINESTRING")
+    bad_pts <- full_sf[in_barrier, ]
+    nearest_lines <- sf::st_nearest_points(bad_pts, nogo_boundary)
+    nearest_pts <- sf::st_cast(nearest_lines, "POINT")
+    bound_pts <- nearest_pts[seq(2, length(nearest_pts), by = 2)]
+
+    safe_coords_pre <- sf::st_coordinates(bound_pts)
+    full_dat$temp_x[in_barrier] <- safe_coords_pre[, 1]
+    full_dat$temp_y[in_barrier] <- safe_coords_pre[, 2]
+  }
 
   # Build the visibility graph in the water
-  message("Building visibility graph network around the barrier (this may take a moment)...")
+  message("   Building visibility graph network around the barrier (this may take a moment)...")
   vis_graph <- pathroutr::prt_visgraph(barrier = nogo_poly)
 
-  message("Rerouting barrier-crossing segments track-by-track...")
+  message("   Rerouting barrier-crossing segments track-by-track...")
 
-  track_ids <- unique(obs_dat$id)
+  track_ids <- unique(full_dat$id)
 
   routed_list <- lapply(track_ids, function(trk_id) {
-    message(sprintf("   Routing track: %s", trk_id))
+    message(sprintf("      Routing track: %s", trk_id))
 
     # Extract the specific track and explicitly cast to sf to guarantee class retention
-    trk_df <- obs_dat[obs_dat$id == trk_id, ]
-    trk_sf <- sf::st_as_sf(trk_df, coords = c(x_col, y_col), crs = sf::st_crs(nogo_poly))
+    # We map the newly interpolated and snapped coordinates (temp_x, temp_y)
+    trk_df <- full_dat[full_dat$id == trk_id, ]
+    trk_sf <- sf::st_as_sf(trk_df, coords = c("temp_x", "temp_y"), crs = sf::st_crs(nogo_poly))
 
     # TRIM: pathroutr cannot route a track if it begins or ends inside the barrier.
     # We wrap this in try() because prt_trim will crash if the ENTIRE track is on land.
@@ -123,7 +161,7 @@ routeTracks <- function(data, maskRast) {
       # Calculate the shortest path routing
       routes <- pathroutr::prt_reroute(trkpts = trk_sf, barrier = nogo_poly, vis_graph = vis_graph)
 
-      # Overwrite the points with the updated safe geometries (explicitly named arguments!)
+      # Overwrite the points with the updated safe geometries
       if (nrow(routes) > 0) {
         trk_sf <- pathroutr::prt_update_points(rrt_pts = routes, trkpts = trk_sf)
       }
@@ -148,25 +186,23 @@ routeTracks <- function(data, maskRast) {
     mu.y_pr = safe_coords[, 2]
   )
 
-  message("Interpolating latent state matrices for unobserved (NA) times...")
+  message("   Mapping routed points to dataset...")
 
   # Prevent ".x" and ".y" suffix duplication if the user is re-routing already routed data
   if ("mu.x_pr" %in% names(data)) data$mu.x_pr <- NULL
   if ("mu.y_pr" %in% names(data)) data$mu.y_pr <- NULL
 
-  # Join the safe points back to the FULL original dataset (including NA prediction times)
-  # and interpolate the gaps along the new safe path.
+  # Join the safe points back to the FULL original dataset.
+  # Because we snapped points to the boundary before routing, prt_trim should not
+  # have dropped them, but we use the snapped temp_x/temp_y as a fallback just in case.
   data_routed <- data %>%
     dplyr::left_join(obs_routed, by = c("id", "date")) %>%
+    dplyr::left_join(dplyr::select(full_dat, id, date, temp_x, temp_y), by = c("id", "date")) %>%
     dplyr::arrange(id, date) %>%
-    dplyr::group_by(id) %>%
     dplyr::mutate(
-      # We use rule = 2 so any NAs at the absolute beginning or end of a track are carried forward/backward
-      # stats::approx requires at least 2 non-NA points to interpolate, so we wrap it in a safety check.
-      mu.x_pr = if (sum(!is.na(mu.x_pr)) >= 2) stats::approx(x = date, y = mu.x_pr, xout = date, rule = 2)$y else mu.x_pr,
-      mu.y_pr = if (sum(!is.na(mu.y_pr)) >= 2) stats::approx(x = date, y = mu.y_pr, xout = date, rule = 2)$y else mu.y_pr
-    ) %>%
-    dplyr::ungroup()
+      mu.x_pr = ifelse(is.na(mu.x_pr), temp_x, mu.x_pr),
+      mu.y_pr = ifelse(is.na(mu.y_pr), temp_y, mu.y_pr)
+    )
 
   # Fallback to the original raw coordinates for any tracks/endpoints that lacked enough valid points to route
   missing_pr <- is.na(data_routed$mu.x_pr)
@@ -175,13 +211,17 @@ routeTracks <- function(data, maskRast) {
     data_routed$mu.y_pr[missing_pr] <- data_routed[[y_col]][missing_pr]
   }
 
+  # Clean up temporary columns
+  data_routed$temp_x <- NULL
+  data_routed$temp_y <- NULL
+
   # Re-apply the dataLangevin class to ensure downstream compatibility
   data_routed <- as.data.frame(data_routed)
   class(data_routed) <- c("dataLangevin", "data.frame")
   attr(data_routed, "time.unit") <- attr(data, "time.unit")
   attr(data_routed, "coord") <- coord_cols
 
-  message("Done! Appended 'mu.x_pr' and 'mu.y_pr' to the dataset.")
+  message("   Done. Appended 'mu.x_pr' and 'mu.y_pr' to the dataset.")
 
   return(data_routed)
 }

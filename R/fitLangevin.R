@@ -66,7 +66,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
       suffix <- ave(working_names, working_names, FUN = seq_along)
       working_names[is_dup] <- paste0(working_names[is_dup], "_", suffix[is_dup])
     }
-    estimates$working <- data.frame("Estimate" = as.numeric(fit$par), "Std. Error" = NA_real_, check.names = FALSE)
+    estimates$working <- data.frame("Estimate" = as.numeric(fit$par), "Std. Error" = rep(NA_real_, length(fit$par)), check.names = FALSE)
     rownames(estimates$working) <- working_names
 
     # 2. natural scale

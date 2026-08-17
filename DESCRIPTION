@@ -2,7 +2,7 @@ Package: langevinSSM
 Type: Package
 Title: Habitat-Driven Langevin Diffusion with Spatial Uncertainty
 Version: 0.0.1
-Date: 2026-07-29
+Date: 2026-08-17
 Authors@R: person(given = "Brett",
                   family = "McClintock",
                   role = c("aut", "cre"),
@@ -34,6 +34,7 @@ Suggests:
     Matrix,
     nloptr,
     pathroutr,
+    sparseinv,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Encoding: UTF-8

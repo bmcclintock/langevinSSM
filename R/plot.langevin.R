@@ -79,8 +79,12 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, normaliz
     } else if (!has_est && !is.null(data)) {
       track_df$type <- factor(track_df$type, levels = c("Observed"))
       track_colors <- c("Observed" = "black")
-      track_lines <- c("Observed" = "solid")
+      track_lines <- c("Observed" = "dashed")
     }
+  }
+
+  if (nrow(track_df) > 0) {
+    track_df <- track_df[!is.na(track_df$x) & !is.na(track_df$y), ]
   }
 
   barrier <- x$conditions$barrier
@@ -181,6 +185,10 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     track_lines <- c("True" = "solid")
   }
 
+  if (nrow(track_df) > 0) {
+    track_df <- track_df[!is.na(track_df$x) & !is.na(track_df$y), ]
+  }
+
   resolved_extent <- extent
   if (is.null(resolved_extent) && normalize && nrow(track_df) > 0) {
     x_range <- max(track_df$x, na.rm = TRUE) - min(track_df$x, na.rm = TRUE)
@@ -259,6 +267,10 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
     track_df$type <- factor(track_df$type, levels = c("Observed"))
     track_colors <- c("Observed" = "lightgrey")
     track_lines <- c("Observed" = "dashed")
+  }
+
+  if (nrow(track_df) > 0) {
+    track_df <- track_df[!is.na(track_df$x) & !is.na(track_df$y), ]
   }
 
   if (!is.null(time) && all(vapply(spatialCovs, terra::nlyr, numeric(1)) == 1)) {

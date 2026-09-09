@@ -14,6 +14,11 @@ class_dataLangevin <- function(x, time.unit = NULL) {
     stop("Missing required columns for 'dataLangevin': ", paste(missing_cols, collapse = ", "))
   }
 
+  # enforce factor constraint for TMB mapping
+  if (!is.factor(x$id)) {
+    stop("The 'id' column must be a factor. If you modified the IDs manually, please convert them back using as.factor().")
+  }
+
   # validate 'date' flexibility (POSIXt/Date from formatData, or numeric from simLangevin)
   if (!(inherits(x$date, "POSIXt") || inherits(x$date, "Date") || is.numeric(x$date))) {
     stop("The 'date' column must be of class POSIXt, Date, or numeric.")

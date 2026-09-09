@@ -380,30 +380,57 @@ print.resLangevin <- function(x, ...) {
   invisible(x)
 }
 
+#' Print a regLangevin object
+#'
+#' @param x A \code{regLangevin} object returned by \code{\link{regionProb}}.
+#' @param digits Minimal number of significant digits to print. Default: \code{4}.
+#' @param header Logical. Indicates whether to print the main descriptive header. Default: \code{TRUE}.
+#' @param ... Additional arguments passed to \code{print}.
 #' @export
-print.regLangevin <- function(x, digits = 4, ...) {
+print.regLangevin <- function(x, digits = 4, header = TRUE, ...) {
+  # Handle container lists (e.g., when regionProb returns population + individual results)
+  if (!("Point_Estimate" %in% names(x)) && is.list(x) && length(x) > 0) {
+    item_names <- names(x)
+    for (i in seq_along(x)) {
+      nm <- if (!is.null(item_names)) item_names[i] else paste("Item", i)
+      clean_nm <- sub("^ID_", "Individual: ", nm)
+      cat("\n============================================\n")
+      cat("Regional Probability -", clean_nm, "\n")
+      cat("============================================\n")
+      print.regLangevin(x[[i]], digits = digits, header = FALSE, ...)
+    }
+    return(invisible(x))
+  }
+
   n_layers <- length(x$Point_Estimate)
   conf_level <- x$level * 100
 
   if (n_layers == 1) {
-    cat("Regional Probability Estimate\n")
-    cat("=============================\n")
+    if (isTRUE(header)) {
+      cat("Regional Probability Estimate\n")
+      cat("=============================\n")
+    }
     cat(sprintf("Point Estimate: %.*f\n\n", digits, x$Point_Estimate[1]))
 
-    cat("Delta Method Approximation:\n")
-    cat(sprintf("  Standard Error: %.*f\n", digits, x$SE_delta[1]))
-    cat(sprintf("  %.0f%% CI:         [%.*f, %.*f]\n", conf_level, digits, x$CI_delta[1, 1], digits, x$CI_delta[1, 2]))
+    if (!is.null(x$SE_delta) && !all(is.na(x$SE_delta))) {
+      cat("Delta Method Approximation:\n")
+      cat(sprintf("  Standard Error: %.*f\n", digits, x$SE_delta[1]))
+      cat(sprintf("  %.0f%% CI:         [%.*f, %.*f]\n", conf_level, digits, x$CI_delta[1, 1], digits, x$CI_delta[1, 2]))
+      cat("\n")
+    }
 
     if (!is.null(x$SE_sim)) {
-      cat("\nMonte Carlo Simulation:\n")
+      cat("Monte Carlo Simulation:\n")
       cat(sprintf("  Standard Error: %.*f\n", digits, x$SE_sim[1]))
       cat(sprintf("  %.0f%% CI:         [%.*f, %.*f]\n", conf_level, digits, x$CI_sim[1, 1], digits, x$CI_sim[1, 2]))
       cat(sprintf("  (Based on %d draws)\n", nrow(x$simulated_draws)))
     }
 
   } else {
-    cat("Regional Probability Estimates (Multi-Layer)\n")
-    cat("============================================\n")
+    if (isTRUE(header)) {
+      cat("Regional Probability Estimates (Multi-Layer)\n")
+      cat("============================================\n")
+    }
 
     time_vals <- tryCatch(terra::time(x$prob_raster), error = function(e) NULL)
     has_time <- !is.null(time_vals) && !all(is.na(time_vals))
@@ -418,12 +445,14 @@ print.regLangevin <- function(x, digits = 4, ...) {
     print(df_est, row.names = FALSE)
 
     # 2. Delta Method
-    df_delta <- df_base
-    df_delta$SE <- round(x$SE_delta, digits)
-    df_delta$CI <- sprintf(paste0("[%.", digits, "f, %.", digits, "f]"), x$CI_delta[, 1], x$CI_delta[, 2])
-    names(df_delta)[names(df_delta) == "CI"] <- sprintf("%.0f%%_CI", conf_level)
-    cat("\n--- Delta Method Approximation ---\n")
-    print(df_delta, row.names = FALSE)
+    if (!is.null(x$SE_delta) && !all(is.na(x$SE_delta))) {
+      df_delta <- df_base
+      df_delta$SE <- round(x$SE_delta, digits)
+      df_delta$CI <- sprintf(paste0("[%.", digits, "f, %.", digits, "f]"), x$CI_delta[, 1], x$CI_delta[, 2])
+      names(df_delta)[names(df_delta) == "CI"] <- sprintf("%.0f%%_CI", conf_level)
+      cat("\n--- Delta Method Approximation ---\n")
+      print(df_delta, row.names = FALSE)
+    }
 
     # 3. Monte Carlo
     if (!is.null(x$SE_sim)) {
@@ -716,4 +745,282 @@ boundsWarning <- function(fit, as_warning = TRUE) {
     stop("'lambda' must be non-negative.")
   }
   return(invisible(TRUE))
+}
+
+# --- Shared Internal Helpers for getUD & regionProb ---
+
+.extract_langevin_beta_list <- function(fit, beta, individual) {
+  if ((missing(fit) && missing(beta)) || (!missing(fit) && !missing(beta))) {
+    stop("Either 'fit' or 'beta' must be provided, but not both.")
+  }
+
+  is_hierLangevin <- !missing(fit) && inherits(fit, "hierLangevin")
+  hierarchical_logical <- is_hierLangevin || (!missing(fit) && !is.null(fit$conditions$hierarchical) && !isFALSE(fit$conditions$hierarchical))
+
+  if (!missing(beta) && !is.null(individual)) {
+    warning("Argument 'individual' is ignored when 'beta' is provided manually.")
+  }
+
+  beta_list <- list()
+  sd_beta_vec <- NULL
+
+  if (missing(beta)) {
+    rn_nat <- rownames(fit$estimates$natural)
+    rn_work <- rownames(fit$estimates$working)
+
+    if (is_hierLangevin) {
+      beta_idx_mu <- which(grepl("^mu_beta", rn_work))
+      beta_idx_sd <- which(grepl("^sd_beta", rn_work))
+
+      mu_beta_vec <- fit$estimates$working[beta_idx_mu, "Estimate"]
+      sd_beta_vec <- fit$estimates$working[beta_idx_sd, "Estimate"]
+      beta_names <- gsub("^mu_", "", rn_work[beta_idx_mu])
+      names(mu_beta_vec) <- beta_names
+      names(sd_beta_vec) <- beta_names
+
+      beta_list[["Population"]] <- list(type = "hierLangevin_population", mu = mu_beta_vec, sd = sd_beta_vec)
+
+      if (!is.null(individual)) {
+        id_col_name <- names(fit$estimates$random[[beta_names[1]]]$est)[1]
+        ind_ids <- as.character(fit$estimates$random[[beta_names[1]]]$est[[id_col_name]])
+
+        if (length(individual) == 1 && individual == "all") {
+          individual <- ind_ids
+        } else {
+          individual <- as.character(individual)
+          missing_inds <- setdiff(individual, ind_ids)
+          if (length(missing_inds) > 0) {
+            stop("The following individuals were not found in the fitted model: ", paste(missing_inds, collapse = ", "))
+          }
+        }
+
+        for (ind in individual) {
+          b_vec <- numeric(length(beta_names))
+          names(b_vec) <- beta_names
+          for (j in seq_along(beta_names)) {
+            df_est <- fit$estimates$random[[beta_names[j]]]$est
+            b_vec[j] <- df_est[df_est[[id_col_name]] == ind, "est"]
+          }
+          beta_list[[paste0("ID_", ind)]] <- b_vec
+        }
+      }
+    } else if (hierarchical_logical) {
+      beta_idx <- which(grepl("^mu_beta", rn_nat))
+      beta_list[["Population"]] <- fit$estimates$natural[beta_idx, "Estimate"]
+
+      if (!is.null(individual)) {
+        beta_ind_df <- fit$estimates$random$beta_ind$est
+        ind_ids <- as.character(beta_ind_df[[1]])
+
+        if (length(individual) == 1 && individual == "all") {
+          individual <- ind_ids
+        } else {
+          individual <- as.character(individual)
+          missing_inds <- setdiff(individual, ind_ids)
+          if (length(missing_inds) > 0) {
+            stop("The following individuals were not found in the fitted model: ", paste(missing_inds, collapse = ", "))
+          }
+        }
+
+        for (i in 1:nrow(beta_ind_df)) {
+          ind_id <- as.character(beta_ind_df[i, 1])
+          if (ind_id %in% individual) {
+            beta_list[[paste0("ID_", ind_id)]] <- as.numeric(beta_ind_df[i, -1])
+          }
+        }
+      }
+    } else {
+      beta_idx <- which(grepl("^beta", rn_nat))
+      beta_list[["UD"]] <- fit$estimates$natural[beta_idx, "Estimate"]
+    }
+  } else {
+    beta_list[["UD"]] <- as.numeric(beta)
+  }
+
+  list(
+    beta_list = beta_list,
+    is_hierLangevin = is_hierLangevin,
+    hierarchical_logical = hierarchical_logical,
+    sd_beta_vec = sd_beta_vec
+  )
+}
+
+.extract_langevin_cov <- function(fit, is_hierLangevin, hierarchical_logical) {
+  can_calc_se <- !missing(fit) && (!is.null(fit$covariance$natural) || !is.null(fit$covariance$working))
+  beta_cov <- NULL
+  beta_idx_cov <- NULL
+
+  if (can_calc_se) {
+    if (is_hierLangevin) {
+      param_names <- gsub("^mu_", "", rownames(fit$estimates$working)[grepl("^mu_", rownames(fit$estimates$working))])
+      beta_idx_cov <- grep("^beta", param_names)
+      p_total <- length(param_names)
+
+      joint_cov_idx <- c(beta_idx_cov, p_total + beta_idx_cov)
+      beta_cov <- fit$covariance$working[joint_cov_idx, joint_cov_idx, drop = FALSE]
+    } else if (hierarchical_logical) {
+      cov_idx <- which(grepl("^mu_beta", rownames(fit$estimates$natural)))
+      beta_cov <- fit$covariance$natural[cov_idx, cov_idx, drop = FALSE]
+      beta_idx_cov <- cov_idx
+    } else {
+      cov_idx <- which(grepl("^beta", rownames(fit$estimates$natural)))
+      beta_cov <- fit$covariance$natural[cov_idx, cov_idx, drop = FALSE]
+      beta_idx_cov <- cov_idx
+    }
+
+    if (any(!is.finite(beta_cov))) {
+      warning("The model's covariance matrix contains NaN or infinite values for the habitat selection coefficients. Skipping uncertainty calculations.")
+      can_calc_se <- FALSE
+      beta_cov <- NULL
+    }
+  }
+
+  list(
+    beta_cov = beta_cov,
+    beta_idx_cov = beta_idx_cov,
+    can_calc_se = can_calc_se
+  )
+}
+
+.prep_barrier_raster <- function(spatialCovs, barrier, lambda, scaleFactor) {
+  if (is.null(barrier)) {
+    return(list(spatialCovs = spatialCovs, mod_spatialCovs = spatialCovs, barrier_sdf = NULL))
+  }
+
+  if (!(barrier %in% names(spatialCovs))) {
+    stop(sprintf("Barrier raster '%s' not found in spatialCovs.", barrier))
+  }
+
+  barrier_sdf <- spatialCovs[[barrier]]
+  if (!isTRUE(attr(barrier_sdf, "barLangevin"))) {
+    stop("barrier is not a 'barLangevin' object created by prepBarrier.")
+  }
+
+  spatialCovs_clean <- spatialCovs
+  spatialCovs_clean[[barrier]] <- NULL
+
+  if (is.null(lambda)) {
+    stop("To plot a barrier without a fitted model ('fit'), you must manually specify 'lambda'.")
+  }
+  .validate_lambda(lambda)
+
+  penalty_rast <- terra::app(barrier_sdf, fun = function(x) {
+    x_work <- x / scaleFactor
+    ifelse(x_work <= 0, -0.5 * lambda * (x_work^2), 0)
+  })
+  names(penalty_rast) <- "barrier_penalty"
+  mod_spatialCovs <- c(spatialCovs_clean, penalty_rast)
+
+  list(spatialCovs = spatialCovs_clean, mod_spatialCovs = mod_spatialCovs, barrier_sdf = barrier_sdf)
+}
+
+
+.sample_joint_precision_re <- function(fit, is_hierLangevin, beta_idx_cov, nSims) {
+  if (is.null(fit$covariance$random$jointPrecision)) {
+    warning("Joint precision matrix is missing. Skipping individual-level uncertainties.")
+    return(list(has_Q = FALSE))
+  }
+
+  message("     Drawing from joint precision matrix for individual-level uncertainties...")
+  Q <- fit$covariance$random$jointPrecision
+  L <- Matrix::Cholesky(Q, super = TRUE)
+  z <- matrix(stats::rnorm(ncol(Q) * nSims), nrow = ncol(Q), ncol = nSims)
+
+  step <- as.matrix(Matrix::solve(L, Matrix::solve(L, z, system = "Lt"), system = "P"))
+
+  Q_names <- if (!is.null(colnames(Q))) {
+    colnames(Q)
+  } else {
+    rep(names(fit$tmb_setup$parList), lengths(fit$tmb_setup$parList))
+  }
+
+  if (is_hierLangevin) {
+    idx_mu <- which(Q_names == "mu")[beta_idx_cov]
+    idx_u <- which(Q_names == "u")
+
+    step_mu_beta <- step[idx_mu, , drop = FALSE]
+    mu_beta_mle <- fit$par[which(names(fit$par) == "mu")[beta_idx_cov]]
+    mu_beta_draws <- mu_beta_mle + step_mu_beta
+
+    u_mle <- as.vector(fit$tmb_setup$parList$u)
+    step_u <- step[idx_u, , drop = FALSE]
+    u_draws_all <- u_mle + step_u
+
+    list(
+      has_Q = TRUE,
+      mu_beta_draws = mu_beta_draws,
+      u_draws_all = u_draws_all
+    )
+  } else {
+    idx_mu_beta <- which(Q_names == "mu_beta")
+    idx_log_sd_beta <- which(Q_names == "log_sd_beta")
+    idx_beta_re <- which(Q_names == "beta_re")
+
+    step_mu_beta <- step[idx_mu_beta, , drop = FALSE]
+    step_log_sd_beta <- step[idx_log_sd_beta, , drop = FALSE]
+    step_beta_re <- step[idx_beta_re, , drop = FALSE]
+
+    mu_beta_mle <- fit$tmb_setup$parList$mu_beta
+    log_sd_beta_mle <- fit$tmb_setup$parList$log_sd_beta
+    beta_re_mle <- as.vector(fit$tmb_setup$parList$beta_re)
+
+    mu_beta_draws <- mu_beta_mle + step_mu_beta
+    log_sd_beta_draws <- log_sd_beta_mle + step_log_sd_beta
+    beta_re_draws <- beta_re_mle + step_beta_re
+
+    list(
+      has_Q = TRUE,
+      mu_beta_draws = mu_beta_draws,
+      log_sd_beta_draws = log_sd_beta_draws,
+      beta_re_draws = beta_re_draws
+    )
+  }
+}
+
+.get_individual_beta_draws <- function(nm, fit, is_hierLangevin, draw_data, beta_idx_cov, nSims) {
+  ind_id <- sub("^ID_", "", nm)
+
+  if (is_hierLangevin) {
+    ind_idx <- which(fit$conditions$ids == ind_id)
+    n_indiv <- length(fit$conditions$ids)
+
+    my_u_draws <- matrix(0, nrow = length(beta_idx_cov), ncol = nSims)
+    for (c in seq_along(beta_idx_cov)) {
+      flat_idx <- ind_idx + (beta_idx_cov[c] - 1) * n_indiv
+      my_u_draws[c, ] <- draw_data$u_draws_all[flat_idx, ]
+    }
+
+    t(draw_data$mu_beta_draws + my_u_draws)
+  } else {
+    beta_ind_df <- fit$estimates$random$beta_ind$est
+    ind_idx <- which(as.character(beta_ind_df[[1]]) == ind_id)
+    n_indiv <- nrow(beta_ind_df)
+
+    n_covs <- nrow(draw_data$mu_beta_draws)
+    my_beta_re_draws <- matrix(0, nrow = n_covs, ncol = nSims)
+    for (c in seq_len(n_covs)) {
+      flat_idx <- ind_idx + (c - 1) * n_indiv
+      my_beta_re_draws[c, ] <- draw_data$beta_re_draws[flat_idx, ]
+    }
+
+    my_beta_ind_draws <- draw_data$mu_beta_draws + exp(draw_data$log_sd_beta_draws) * my_beta_re_draws
+    t(my_beta_ind_draws)
+  }
+}
+
+#' Print a hierLangevin object
+#'
+#' @param x A \code{hierLangevin} object.
+#' @param ... Ignored.
+#' @export
+print.hierLangevin <- function(x, ...) {
+  cat("Stage II (multistage CIHM) langevinSSM fit\n")
+  cat("Model:", x$conditions$model, " | Individuals:", length(x$conditions$ids), "\n")
+  cat("Convergence:", x$convergence, "-", x$message, "\n")
+  cat("Negative log-likelihood:", round(x$objective, 3), "\n\n")
+  cat("Population-level estimates (working scale):\n")
+  print(x$estimates$working, digits = 4)
+  cat("\nPopulation-level estimates (natural scale):\n")
+  print(x$estimates$natural, digits = 4)
+  invisible(x)
 }

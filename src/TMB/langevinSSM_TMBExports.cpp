@@ -3,12 +3,19 @@
 #define TMB_LIB_INIT R_init_langevinSSM_TMBExports
 #include <TMB.hpp>
 #include "langevinSSM.hpp"
+#include "hierLangevin.hpp"
 
 template<class Type>
 Type objective_function<Type>::operator() () {
   DATA_STRING(model);
+
   if(model == "langevinSSM") {
     return langevinSSM(this);
+
+  } else if(model == "hierLangevin") {
+
+    return hierLangevin(this);
+
   } else {
     Rf_error("Unknown model.");
   }

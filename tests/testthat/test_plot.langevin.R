@@ -44,7 +44,7 @@ get_mock_fit <- function() {
 get_mock_data <- function() {
   # 5 points per track, now strictly including dates
   dat <- data.frame(
-    id = rep(c("A", "B"), each = 5),
+    id = as.factor(rep(c("A", "B"), each = 5)),
     date = mock_dates,
     dt = rep(6, 10),
     x = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),
@@ -59,7 +59,7 @@ get_mock_data <- function() {
 get_mock_sim <- function() {
   # 5 points per track, with dates and latent states
   dat <- data.frame(
-    id = rep(c("A", "B"), each = 5),
+    id = as.factor(rep(c("A", "B"), each = 5)),
     date = mock_dates,
     dt = rep(6, 10),
     x = c(2.0, 2.5, 3.0, 3.5, 4.0, 6.0, 6.5, 7.0, 7.5, 8.0),

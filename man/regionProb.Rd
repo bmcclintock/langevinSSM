@@ -10,27 +10,46 @@ regionProb(
   mask,
   nSims = 0,
   level = 0.95,
+  individual = NULL,
   show_progress = TRUE
 )
 }
 \arguments{
-\item{fit}{A \code{fitLangevin} object to supply the covariance matrix.}
+\item{fit}{A \code{fitLangevin} or \code{hierLangevin} object to supply the covariance matrix.}
 
 \item{spatialCovs}{List of \code{\link[terra]{SpatRaster}} spatial covariates used to fit the model.}
 
 \item{mask}{A \code{\link[terra]{SpatRaster}} with 1s in the region of interest and NAs/0s elsewhere.}
 
-\item{nSims}{Integer. Number of simulations to generate credible intervals. Default: \code{0}.}
+\item{nSims}{Integer. Number of simulations to generate credible intervals. For \code{hierLangevin} objects, this dictates the number of draws from the between-individual MVN distribution used to integrate the marginal population-level probability, and \strong{must} be > 0. Default: \code{0}.}
 
 \item{level}{Numeric. The confidence level for the intervals. Default: \code{0.95}.}
+
+\item{individual}{Optional vector of individual IDs (character or numeric) to calculate individual-level probabilities for hierarchical models. If \code{NULL} (default), only the population-level probability is calculated. Default: \code{NULL}.}
 
 \item{show_progress}{Logical. If \code{TRUE}, displays a progress bar and messages. Default: \code{TRUE}.}
 }
 \value{
-A \code{regLangevin} object (which is a list) containing the point estimate(s), Delta method SE, Monte Carlo SE/CIs, and the underlying spatial rasters (\code{prob_raster} and \code{mask}) used for plotting.
+A \code{regLangevin} object (which is a list) containing the point estimate(s), Delta method SE, Monte Carlo SE/CIs, and the underlying spatial rasters (\code{prob_raster} and \code{mask}) used for plotting. If multiple individuals are requested, a named list of \code{regLangevin} objects is returned.
 }
 \description{
 This function calculates the probability of an animal being in a specified region (defined by a mask) based on the fitted Langevin model. It provides both a point estimate and uncertainty quantification using the Delta method and Monte Carlo simulations. The Delta method is a quick approximation, while the Monte Carlo approach captures the full uncertainty from the covariance matrix. If dynamic (time-varying) covariates are provided, it calculates the regional probability for each temporal layer.
+}
+\details{
+\strong{Calculations for \code{fitLangevin} objects:}
+\itemize{
+  \item \strong{Point Estimate:} Calculated directly from the point estimates of the habitat selection coefficients.
+  \item \strong{Standard Errors (Delta Method):} The analytical gradient of the masked spatial softmax is calculated and multiplied by the Hessian-based covariance matrix.
+  \item \strong{Standard Errors (Monte Carlo):} If \code{nSims > 0}, draws are generated from the multivariate normal distribution of the coefficients \eqn{MVN(\hat{\beta}, \hat{\Sigma}_\beta)}, and the regional probability is computed for each draw to form a credible interval.
+}
+
+\strong{Calculations for \code{hierLangevin} objects:}
+\itemize{
+  \item \strong{Population Probability:} Because spatial selection is non-linear, the regional probability is integrated over the estimated between-individual variance \eqn{\mathrm{N}(\mu_\beta, \sigma^2_\beta)} using Monte Carlo integration (with \code{nSims} draws).
+  \item \strong{Population SE:} Estimated using a nested Monte Carlo approach. Outer draws capture uncertainty in the hyperparameters \eqn{(\mu_\beta, \log \sigma_\beta)} from the Stage II working covariance matrix. For each outer draw, an inner Monte Carlo integration computes the marginal regional probability. The SE is the standard deviation across the outer draws.
+  \item \strong{Individual Probability (BLUP):} Computed using the specific individual's Best Linear Unbiased Predictor (BLUP) for the selection coefficients: \eqn{\beta_i = \mu_\beta + u_i}.
+  \item \strong{Individual SE:} Draws are generated directly from the sparse joint precision matrix of the fixed effects and random effects to properly propagate the conditional uncertainty in the BLUPs.
+}
 }
 \examples{
 \donttest{

@@ -337,6 +337,9 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
+
+  data <- class_dataLangevin(data)
+
   model <- match.arg(model)
   optMethod <- match.arg(optMethod)
 

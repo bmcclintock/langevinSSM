@@ -13,6 +13,7 @@ getUD(
   scaleFactor = 1,
   log = TRUE,
   nSims = 0,
+  individual = NULL,
   show_progress = TRUE,
   plot = TRUE,
   maskRast = NULL,
@@ -23,7 +24,7 @@ getUD(
 \arguments{
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
 
-\item{fit}{A \code{fitLangevin} object return by \code{\link{fitLangevin}}.}
+\item{fit}{A \code{fitLangevin} or \code{hierLangevin} object.}
 
 \item{beta}{Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.}
 
@@ -35,7 +36,9 @@ getUD(
 
 \item{log}{Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.}
 
-\item{nSims}{Integer. Number of draws from the covariance matrix to use for estimating Monte Carlo uncertainty in the UD. If \code{nSims > 0}, the returned raster stack will include additional layers for simulated SE and CV. Default: \code{0}.}
+\item{nSims}{Integer. Number of draws from the covariance matrix to use for estimating Monte Carlo uncertainty in the UD. For \code{hierLangevin} objects, this dictates the number of draws from the between-individual MVN distribution used to integrate the marginal population-level UD, and \strong{must} be > 0. If \code{nSims > 0}, the returned raster stack will include additional layers for simulated SE and CV. Default: \code{0}.}
+
+\item{individual}{Optional vector of individual IDs (character or numeric) to calculate individual-level UDs for hierarchical models. If \code{NULL} (default), only the population-level UD is calculated. For example, \code{individual = c(1,3)}, \code{individual = c("ID1","ID3")}, or \code{individual = "all"}. Default: \code{NULL}.}
 
 \item{show_progress}{Logical. If \code{TRUE}, displays a progress bar for simulations. Default: \code{TRUE}.}
 
@@ -48,10 +51,28 @@ getUD(
 \item{normalize}{Logical. If \code{TRUE} and \code{extent} is provided, the UD is normalized specifically across the \code{extent} (ignoring cells outside the extent). If \code{FALSE}, the UD is normalized globally over the extent of \code{spatialCovs} before any cropping. Default: \code{FALSE}.}
 }
 \value{
-A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).
+A \code{\link[terra]{SpatRaster}} object. It contains the (log) utilization distribution. For hierarchical models, the stack contains the population-level UD and any specified individual-level UDs. It will also contain layers for Delta method standard errors (\code{UD_SE_delta}) and CVs (\code{UD_CV_delta}) if the covariance matrix is available. If \code{nSims > 0}, it adds simulated layers (\code{UD_SE_sim}, \code{UD_CV_sim}).
 }
 \description{
 This function computes the utilization distribution (UD) for a given set of spatial covariates and habitat selection coefficients. It also estimates uncertainty in the UD using the Delta method and Monte Carlo simulations (if \code{nSims>0}). The resulting UD and uncertainty estimates are returned as \code{\link[terra]{SpatRaster-class}} objects, which can be plotted and analyzed further.
+}
+\details{
+\strong{Calculations for \code{fitLangevin} objects:}
+\itemize{
+  \item \strong{UD:} Calculated as the linear predictor: \eqn{\pi(x) = \exp(c(x)\beta) / \sum \exp(c(y)\beta)}.
+  \item \strong{Standard Errors (Delta Method):} The analytical gradient is calculated and multiplied by the Hessian-based covariance matrix of the habitat selection coefficients.
+  \item \strong{Standard Errors (Monte Carlo):} If \code{nSims > 0}, draws are generated from the multivariate normal distribution of the coefficients \eqn{MVN(\hat{\beta}, \hat{\Sigma}_\beta)}, and the empirical standard deviation of the resulting UDs is computed on the fly using Welford's online algorithm.
+  \item \strong{Coefficient of Variation (CV):} Computed as the standard error divided by the mean of the Monte Carlo UD draws (or the point estimate for the Delta method). Using the MC mean prevents inflation in low-probability habitats caused by the heavy upper tails of the log-normal transformation.
+}
+
+\strong{Calculations for \code{hierLangevin} objects:}
+\itemize{
+  \item \strong{Population UD:} Because the UD is a non-linear transformation, the UD of the "average" individual is not equal to the average UD of the population (\eqn{UD(E[\beta]) \neq E[UD(\beta)]}). Therefore, the marginal population UD is integrated over the estimated between-individual variance \eqn{\mathrm{N}(\mu_\beta, \sigma^2_\beta)} using Monte Carlo integration (with \code{nSims} draws).
+  \item \strong{Population SE:} Estimated using a nested Monte Carlo approach. Outer draws capture uncertainty in the hyperparameters \eqn{(\mu_\beta, \log \sigma_\beta)} from the Stage II working covariance matrix. For each outer draw, an inner Monte Carlo integration computes the marginal UD. The SE is the standard deviation of these marginal UDs across the outer draws.
+  \item \strong{Individual UD (BLUP):} Computed using the specific individual's Best Linear Unbiased Predictor (BLUP) for the selection coefficients: \eqn{\beta_i = \mu_\beta + u_i}.
+  \item \strong{Individual SE:} Draws are generated directly from the sparse joint precision matrix of the fixed effects and random effects to propagate the conditional uncertainty in the BLUPs.
+  \item \strong{Coefficient of Variation (CV):} Computed as the standard error divided by the mean of the corresponding Monte Carlo UD draws (for both population and individual levels). As with single-track models, dividing by the MC mean stabilizes the metric in low-probability habitats where the UD point estimate approaches zero.
+}
 }
 \examples{
 # exampleCovs included in package; see ?exampleCovs for details

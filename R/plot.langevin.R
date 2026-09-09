@@ -341,38 +341,26 @@ plot.resLangevin <- function(x, tracks = NULL, ...) {
   }
 }
 
-#' @rdname plot.langevin
-#' @method plot regLangevin
-#' @export
-plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
-  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+# --- Shared Internal Helpers for Regional Probability Plotting ---
 
-  region_prob <- x$prob_raster
+.prep_reg_prob <- function(reg_obj, log = FALSE) {
+  r <- reg_obj$prob_raster
+  if (log) r <- log(r)
+  m_na <- terra::ifel(reg_obj$mask == 1, 1, NA)
+  terra::mask(r, m_na)
+}
 
-  if (log) {
-    region_prob <- log(region_prob)
-    fill_label <- expression(log(pi(x)))
-  } else {
-    fill_label <- expression(pi(x))
-  }
+.build_reg_plot <- function(region_prob, reg_obj, title_prefix = "Regional probability", extent = NULL, log = FALSE, ...) {
+  fill_label <- if (log) expression(log(pi(x))) else expression(pi(x))
 
-  # Filter out everything outside the region of interest
-  m_na <- terra::ifel(x$mask == 1, 1, NA)
-
-  # terra::mask automatically recycles a 1-layer mask across a multi-layer raster
-  region_prob <- terra::mask(region_prob, m_na)
-
-  # Find the true bounding box of the active region
   active_ext <- tryCatch(terra::ext(terra::trim(region_prob)), error = function(e) NULL)
 
   crop_ext <- extent
   if (is.null(crop_ext)) {
     crop_ext <- active_ext
   } else if (!is.null(active_ext)) {
-    # Check if the user's extent crops out any part of the active region
     user_ext <- tryCatch(terra::ext(crop_ext), error = function(e) NULL)
     if (!is.null(user_ext)) {
-      # Vectors from terra::ext() format as: xmin, xmax, ymin, ymax
       if (active_ext[1] < user_ext[1] || active_ext[2] > user_ext[2] ||
           active_ext[3] < user_ext[3] || active_ext[4] > user_ext[4]) {
         warning("The provided 'extent' crops out parts of the region of interest. The visible pixels will not sum to the total regional probability.")
@@ -381,13 +369,8 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
   }
 
   n_layers <- terra::nlyr(region_prob)
-  prob_strings <- sprintf("%.2f%%", x$Point_Estimate * 100)
-
-  if (n_layers == 1) {
-    title_str <- paste("Regional Probability:", prob_strings[1])
-  } else {
-    title_str <- "Regional Probability"
-  }
+  prob_strings <- sprintf("%.2f%%", reg_obj$Point_Estimate * 100)
+  title_str <- if (n_layers == 1) paste0(title_prefix, ": ", prob_strings[1]) else title_prefix
 
   p <- .build_langevin_plot(
     track_df = NULL, pid = "all", raster_obj = region_prob, user_extent = crop_ext, time = NULL,
@@ -395,7 +378,6 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
     ...
   )
 
-  # Intercept and safely overwrite the facet labels created by plotRaster
   if (n_layers > 1) {
     layer_times <- tryCatch(terra::time(region_prob), error = function(e) NULL)
 
@@ -405,13 +387,138 @@ plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
       old_names <- paste0("Layer ", seq_len(n_layers))
     }
 
-    # Map the old names to the new strings containing the probabilities
     new_names <- paste0(old_names, "\n(Prob: ", prob_strings, ")")
     names(new_names) <- old_names
 
     p <- p + ggplot2::facet_wrap(~ layer, labeller = ggplot2::as_labeller(new_names))
   }
 
+  return(p)
+}
+
+#' @rdname plot.langevin
+#' @method plot regLangevin
+#' @export
+plot.regLangevin <- function(x, extent = NULL, log = FALSE, ...) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package \"ggplot2\" needed for plotting. Please install it.", call. = FALSE)
+
+  item_list <- if (!("prob_raster" %in% names(x)) && is.list(x) && all(vapply(x, is.list, logical(1)))) x else list(UD = x)
+
+  plot_list <- list()
+
+  has_pop <- "Population" %in% names(item_list)
+  ind_keys <- names(item_list)[grepl("^ID_", names(item_list))]
+  has_ind <- length(ind_keys) > 0
+
+  # 1. Population-level plot
+  if (has_pop) {
+    pop_obj <- item_list[["Population"]]
+    r_pop <- .prep_reg_prob(pop_obj, log = log)
+    p_pop <- .build_reg_plot(r_pop, pop_obj, title_prefix = "Population-level regional probability", extent = extent, log = log, ...)
+    plot_list[["Population"]] <- p_pop
+  }
+
+  # 2. Individual-level plots (faceted across requested individuals)
+  if (has_ind) {
+    ind_rast_list <- list()
+    label_map <- character()
+    m <- 0
+
+    for (k in seq_along(ind_keys)) {
+      ik <- ind_keys[k]
+      ind_obj <- item_list[[ik]]
+      ind_id <- sub("^ID_", "", ik)
+
+      r_ind <- .prep_reg_prob(ind_obj, log = log)
+
+      n_lyr_i <- terra::nlyr(r_ind)
+      p_vals <- sprintf("%.2f%%", ind_obj$Point_Estimate * 100)
+      time_vals <- tryCatch(terra::time(r_ind), error = function(e) NULL)
+      has_t <- !is.null(time_vals) && !all(is.na(time_vals))
+
+      for (l in seq_len(n_lyr_i)) {
+        m <- m + 1
+        layer_key <- paste0("Layer ", m)
+
+        time_str <- if (has_t) paste0("\nTime: ", time_vals[l]) else if (n_lyr_i > 1) paste0("\nLayer ", l) else ""
+        label_map[layer_key] <- paste0(ind_id, time_str, "\n(Prob: ", p_vals[l], ")")
+      }
+      ind_rast_list[[k]] <- r_ind
+    }
+
+    ind_stack <- do.call(c, ind_rast_list)
+    terra::time(ind_stack) <- NULL
+
+    crop_ext_ind <- extent
+    if (is.null(crop_ext_ind)) {
+      crop_ext_ind <- tryCatch(terra::ext(terra::trim(ind_stack)), error = function(e) NULL)
+    }
+
+    fill_lbl <- if (log) expression(log(pi(x))) else expression(pi(x))
+    p_ind <- .build_langevin_plot(
+      track_df = NULL, pid = "all", raster_obj = ind_stack, user_extent = crop_ext_ind, time = NULL,
+      compact = TRUE, title_text = "Individual-level regional probability", fill_label = fill_lbl,
+      ...
+    ) + ggplot2::facet_wrap(~ layer, labeller = ggplot2::as_labeller(label_map))
+
+    plot_list[["Individuals"]] <- p_ind
+  }
+
+  # 3. Standard single plot (non-hierarchical / single object)
+  if (!has_pop && !has_ind) {
+    single_obj <- item_list[[1]]
+    r_single <- .prep_reg_prob(single_obj, log = log)
+    p_single <- .build_reg_plot(r_single, single_obj, title_prefix = "Regional probability", extent = extent, log = log, ...)
+    plot_list[["Regional_Probability"]] <- p_single
+  }
+
+  if (length(plot_list) == 1) return(plot_list[[1]])
+  return(plot_list)
+}
+
+# --- Internal Helper for Reordering Hierarchical Rasters ---
+.reorder_hierarchical_layers <- function(rast) {
+  nms <- names(rast)
+  if (any(grepl("_(Population|ID_.*)$", nms))) {
+    pop_idx <- grep("_Population$", nms)
+    id_idx <- grep("_ID_", nms)
+
+    if (length(id_idx) > 0) {
+      other_idx <- setdiff(seq_along(nms), c(pop_idx, id_idx))
+      return(rast[[c(pop_idx, id_idx, other_idx)]])
+    }
+  }
+  return(rast)
+}
+
+# --- Internal Helper for Formatting UD Facet Labels ---
+.format_ud_facets <- function(p, rast_obj) {
+  if (!inherits(p$facet, "FacetWrap")) return(p)
+
+  n_layers <- terra::nlyr(rast_obj)
+  if (n_layers > 1) {
+    raw_names <- names(rast_obj)
+    clean_names <- gsub("^.*_(Population|ID_.*)$", "\\1", raw_names)
+    clean_names <- gsub("^ID_", "", clean_names)
+
+    # Fallback mapping for identical generic layer names
+    clean_names[clean_names == raw_names] <- raw_names[clean_names == raw_names]
+
+    layer_times <- tryCatch(terra::time(rast_obj), error = function(e) NULL)
+    if (!is.null(layer_times) && !all(is.na(layer_times))) {
+      old_names <- paste0("Time: ", layer_times)
+      if (any(clean_names != raw_names)) {
+        clean_names <- paste0(clean_names, "\nTime: ", layer_times)
+      } else {
+        clean_names <- old_names
+      }
+    } else {
+      old_names <- paste0("Layer ", seq_len(n_layers))
+    }
+
+    names(clean_names) <- old_names
+    p <- p + ggplot2::facet_wrap(~ layer, labeller = ggplot2::as_labeller(clean_names))
+  }
   return(p)
 }
 
@@ -427,21 +534,53 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   plot_list <- list()
   layer_names <- names(x)
 
-  has_log_ud <- any(grepl("^log_UD$", layer_names))
-  has_ud <- any(grepl("^UD$", layer_names))
+  # Helper for extracting and partitioning hierarchical sub-plots
+  add_plot <- function(plist, rast, title, legend_title, list_name) {
+    has_pop <- any(grepl("_Population$", names(rast)))
+    has_ind <- any(grepl("_ID_", names(rast)))
 
-  ud_name <- if (has_log_ud) "log_UD" else "UD"
-  target_idx <- which(layer_names == ud_name)
-  if(length(target_idx)) {
-    ud_rast <- x[[target_idx]]
-  } else {
-    stop("No UD layer found in the provided SpatRaster. Expected a layer named 'UD' or 'log_UD'.")
+    if (has_pop || has_ind) {
+      if (has_pop) {
+        pop_idx <- grep("_Population$", names(rast))
+        pop_title <- paste0("Population-level ", title)
+        pop_title <- sub("^Population-level Utilization", "Population-level utilization", pop_title)
+
+        p_pop <- plotRaster(rast[[pop_idx]], legend.title = legend_title, extent = extent, time = time, ...) +
+          ggplot2::labs(title = pop_title, fill = legend_title)
+        plist[[paste0(list_name, "_Population")]] <- .format_ud_facets(p_pop, rast[[pop_idx]])
+      }
+
+      if (has_ind) {
+        ind_idx <- grep("_ID_", names(rast))
+        ind_title <- paste0("Individual-level ", title)
+        ind_title <- sub("^Individual-level Utilization", "Individual-level utilization", ind_title)
+
+        p_ind <- plotRaster(rast[[ind_idx]], legend.title = legend_title, extent = extent, time = time, ...) +
+          ggplot2::labs(title = ind_title, fill = legend_title)
+        plist[[paste0(list_name, "_Individuals")]] <- .format_ud_facets(p_ind, rast[[ind_idx]])
+      }
+
+    } else {
+      p_norm <- plotRaster(rast, legend.title = legend_title, extent = extent, time = time, ...) +
+        ggplot2::labs(title = title, fill = legend_title)
+      plist[[list_name]] <- .format_ud_facets(p_norm, rast)
+    }
+    return(plist)
   }
+
+  ud_idx <- which(grepl("^(log_)?UD(_|$)", layer_names) & !grepl("_SE_|_CV_", layer_names))
+  if (length(ud_idx) == 0) {
+    stop("No UD layer found in the provided SpatRaster. Expected a layer starting with 'UD' or 'log_UD'.")
+  }
+
+  ud_rast <- .reorder_hierarchical_layers(x[[ud_idx]])
+  has_log_ud <- any(grepl("^log_UD", layer_names[ud_idx]))
 
   # Actively transform base UD based on log argument regardless of raster origin
   if (log) {
     if (!has_log_ud) {
       ud_rast <- log(ud_rast)
+      names(ud_rast) <- sub("^UD", "log_UD", names(ud_rast))
     }
     ud_title <- "Utilization distribution (log scale)"
     ud_legend <- expression(log(pi(x)))
@@ -457,54 +596,41 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
       for(k in seq_len(terra::nlyr(ud_rast))) {
         ud_rast[[k]] <- ud_rast[[k]] / layer_sums[k]
       }
+      names(ud_rast) <- sub("^log_UD", "UD", names(ud_rast))
     }
     ud_title <- "Utilization distribution"
     ud_legend <- expression(pi(x))
     se_legend <- "SE"
   }
 
-  plot_list[["UD"]] <- plotRaster(ud_rast, legend.title = ud_legend, extent = extent, time = time, ...) +
-    ggplot2::labs(title = ud_title, fill = ud_legend)
+  plot_list <- add_plot(plot_list, ud_rast, ud_title, ud_legend, "UD")
 
   cv_legend <- "CV"
 
-  # plot Delta method uncertainty
-  if ("UD_SE_delta" %in% layer_names && "UD_CV_delta" %in% layer_names) {
-    se_idx <- which(layer_names == "UD_SE_delta")
-    cv_idx <- which(layer_names == "UD_CV_delta")
+  # Helper to aggregate uncertainty metric plots across Delta and Simulated pathways
+  add_uncertainty_plots <- function(plist, prefix, method_label, list_prefix) {
+    se_idx <- which(grepl(paste0("^UD_SE_", prefix), layer_names))
+    cv_idx <- which(grepl(paste0("^UD_CV_", prefix), layer_names))
 
-    se_rast_delta <- x[[se_idx]]
+    if (length(se_idx) > 0 && length(cv_idx) > 0) {
+      se_rast <- .reorder_hierarchical_layers(x[[se_idx]])
+      if (log) {
+        se_rast <- log(se_rast)
+        names(se_rast) <- sub(paste0("^UD_SE_", prefix), paste0("log_UD_SE_", prefix), names(se_rast))
+      }
+      se_title <- if (log) sprintf("UD log standard error (%s)", method_label) else sprintf("UD standard error (%s)", method_label)
+      plist <- add_plot(plist, se_rast, se_title, se_legend, paste0("SE_", list_prefix))
 
-    if (log) {
-      se_rast_delta <- log(se_rast_delta)
-      names(se_rast_delta) <- rep("log_UD_SE_delta", terra::nlyr(se_rast_delta))
+      cv_rast <- .reorder_hierarchical_layers(x[[cv_idx]])
+      cv_title <- sprintf("UD coefficient of variation (%s)", method_label)
+      plist <- add_plot(plist, cv_rast, cv_title, cv_legend, paste0("CV_", list_prefix))
     }
-
-    plot_list[["SE_delta"]] <- plotRaster(se_rast_delta, legend.title = se_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = ifelse(log, "UD log standard error (Delta method)", "UD standard error (Delta method)"), fill = se_legend)
-
-    plot_list[["CV_delta"]] <- plotRaster(x[[cv_idx]], legend.title = cv_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = "UD coefficient of variation (Delta method)", fill = cv_legend)
+    return(plist)
   }
 
-  # plot Monte Carlo uncertainty
-  if ("UD_SE_sim" %in% layer_names && "UD_CV_sim" %in% layer_names) {
-    se_sim_idx <- which(layer_names == "UD_SE_sim")
-    cv_sim_idx <- which(layer_names == "UD_CV_sim")
+  plot_list <- add_uncertainty_plots(plot_list, "delta", "Delta method", "delta")
+  plot_list <- add_uncertainty_plots(plot_list, "sim", "simulated", "sim")
 
-    se_rast_sim <- x[[se_sim_idx]]
-    if (log) {
-      se_rast_sim <- log(se_rast_sim)
-      names(se_rast_sim) <- rep("log_UD_SE_sim", terra::nlyr(se_rast_sim))
-    }
-    plot_list[["SE_sim"]] <- plotRaster(se_rast_sim, legend.title = se_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = ifelse(log, "UD log standard error (simulated)", "UD standard error (simulated)"), fill = se_legend)
-
-    plot_list[["CV_sim"]] <- plotRaster(x[[cv_sim_idx]], legend.title = cv_legend, extent = extent, time = time, ...) +
-      ggplot2::labs(title = "UD coefficient of variation (simulated)", fill = cv_legend)
-  }
-
-  # return single plot if no uncertainty, otherwise return the full list
   if (length(plot_list) == 1) return(plot_list[[1]])
 
   return(plot_list)
@@ -682,7 +808,7 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
         ggplot2::scale_color_manual(name = "Tracks", values = track_colors) +
         ggplot2::scale_linetype_manual(name = "Tracks", values = track_lines) +
         ggplot2::scale_shape_manual(name = "Tracks", values = c(16, 16)) +
-        # FORCE LEGEND ORDER: Pin the discrete Tracks legend to the top (order = 1)
+
         ggplot2::guides(
           color = ggplot2::guide_legend(order = 1),
           linetype = ggplot2::guide_legend(order = 1),

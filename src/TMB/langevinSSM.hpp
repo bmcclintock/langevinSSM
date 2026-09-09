@@ -191,24 +191,29 @@ Type langevinSSM(objective_function<Type>* obj)
       // -----------------------------
 
       if(process_model == 1) {  // Underdamped
-        Type exp_gdt = exp(-gamma * dt_step);
-        Type exp_2gdt = exp(-Type(2.0) * gamma * dt_step);
+        Type gdt = gamma * dt_step;
+        Type exp_gdt = exp(-gdt);
+
+        Type em1_gdt  = expm1(-gdt);
+        Type em1_2gdt = expm1(-Type(2.0) * gdt);
+
+        // (1 - exp(-gdt))/gamma, reused in both means
+        Type term1 = -em1_gdt / gamma;
 
         // Variance terms
-        Type var_x = s2/(gamma*gamma) * (Type(2.0)*gamma*dt_step - Type(3.0) +
-          Type(4.0)*exp_gdt - exp_2gdt);
-        Type var_v = s2 * (Type(1.0) - exp_2gdt);
-        Type cov_xv = s2/gamma * (Type(1.0) - Type(2.0)*exp_gdt + exp_2gdt);
+        Type var_x = s2/(gamma*gamma) * (Type(2.0)*gdt + Type(4.0)*em1_gdt - em1_2gdt);
+        Type var_v = -s2 * em1_2gdt;
+        Type cov_xv = s2/gamma * (em1_gdt * em1_gdt);
 
         for(int i = 0; i < 2; i++) {
           // Position mean
           Type mu_x_pred = mu(i,idx) +
-            vel(i,idx)/gamma * (Type(1.0) - exp_gdt) +
-            s2*h(i)/gamma * (dt_step - (Type(1.0) - exp_gdt)/gamma);
+            vel(i,idx) * term1 +
+            s2*h(i)/gamma * (dt_step - term1);
 
           // Velocity mean
           Type mu_v_pred = vel(i,idx) * exp_gdt +
-            s2*h(i)/gamma * (Type(1.0) - exp_gdt);
+            s2*h(i) * term1;
 
           // Construct variance-covariance matrix
           matrix<Type> Sigma(2,2);

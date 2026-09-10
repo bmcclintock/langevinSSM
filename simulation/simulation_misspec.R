@@ -21,8 +21,8 @@ for(i in 1:n_sims) {
   sim_data <- simLangevin(model = true_model, par = true_par, obsPerAnimal = obsPerAnimal, nbAnimals = nbAnimals, subSample = list(samplingRate = 10),
                           spatialCovs = exampleCovs, measurementError = list(smaj.sd=1.5,smin.sd=0.75))
 
-  fit <- fitLangevin(data = sim_data, model = true_model,
-                           spatialCovs = exampleCovs,silent = TRUE)
+  fit <- suppressMessages(fitLangevin(data = sim_data, model = true_model,
+                           spatialCovs = exampleCovs,silent = TRUE))
 
   fit$residuals <- residuals(fit, data = sim_data, spatialCovs = exampleCovs, ncores = nbAnimals)
 
@@ -33,8 +33,8 @@ for(i in 1:n_sims) {
   }
   misCovs$d2c <- exampleCovs$d2c
 
-  misfit <- fitLangevin(data = sim_data,
-                               spatialCovs = misCovs, silent = TRUE)
+  misfit <- suppressMessages(fitLangevin(data = sim_data,
+                               spatialCovs = misCovs, silent = TRUE))
 
   misfit$residuals <- residuals(misfit, data = sim_data, spatialCovs = misCovs, ncores = nbAnimals)
 

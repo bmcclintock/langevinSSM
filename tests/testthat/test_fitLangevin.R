@@ -99,19 +99,19 @@ test_that("fitLangevin validates parameter lengths and map structures", {
   # beta length mismatch (provided 2 coefficients for 1 covariate)
   p_bad_beta <- p
   p_bad_beta$beta <- c(0.5, -0.2)
-  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_beta),
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p_bad_beta)),
                "beta")
 
   # tau length mismatch (provided a single scalar instead of a 2-vector)
   p_bad_tau <- p
   p_bad_tau$tau <- 1.5
-  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_tau),
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p_bad_tau)),
                "tau")
 
   # rho_o bounds check (correlation must theoretically be bounded, though TMB maps it)
   p_bad_rho <- p
   p_bad_rho$rho_o <- 1.5
-  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p_bad_rho),
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p_bad_rho)),
                "rho_o")
 
   nonsense_p <- list(beta=0,gamma=0.5,sigma=1, nonsense=123)
@@ -121,12 +121,12 @@ test_that("fitLangevin validates parameter lengths and map structures", {
   # map mismatch
   # If a user tries to map out tau (which is intrinsically length 2) but only provides a length-1 factor
   bad_map <- list(tau = as.factor(1))
-  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p, map = bad_map),
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, map = bad_map)),
                "map")
 
   # If a user tries to map out nonsense
   nonsense_map <- list(nonsense = as.factor(1))
-  expect_error(fitLangevin(data = dat, spatialCovs = r, par = p, map = nonsense_map),
+  expect_error(suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p, map = nonsense_map)),
                "map")
 })
 
@@ -867,3 +867,4 @@ test_that("fitLangevin prevents C++ crashes on degenerate data", {
   # 4. Verify nlminb aborted the flat likelihood surface (Code 1 = false convergence)
   expect_equal(fit$convergence, 1)
 })
+

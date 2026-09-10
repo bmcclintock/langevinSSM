@@ -74,7 +74,7 @@ test_that("initialValues generates correct defaults for underdamped model", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- initialValues(data = dat, model = "underdamped", spatialCovs = covs)
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs))
 
   # Check parameter existence unique to underdamped
   expect_true(!is.null(par_init$gamma))
@@ -106,7 +106,7 @@ test_that("User-provided par values override empirical estimates", {
     rho_o = 0.5
   )
 
-  par_init <- initialValues(data = dat, model = "underdamped", par = user_par, spatialCovs = covs)
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", par = user_par, spatialCovs = covs))
 
   # Ensure overrides worked
   expect_equal(par_init$sigma, 99.9)
@@ -119,7 +119,7 @@ test_that("Missing coordinates in mu are linearly interpolated correctly", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- initialValues(data = dat, model = "underdamped", spatialCovs = covs)
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs))
   mu <- par_init$mu
 
   # Check no NAs remain
@@ -142,7 +142,7 @@ test_that("Empirical sigma and gamma accurately calculate across NA gaps", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- initialValues(data = dat, model = "underdamped", spatialCovs = covs)
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs))
 
   # Mathematical manual check of the valid jumps in get_mock_dataLangevin():
   # Jump 1 (Track A): t=0 to t=2 (dt=2, dx=4, dy=0) -> R^2 = 16. Sigma^2_1 = 16 / (2*2) = 4
@@ -165,12 +165,12 @@ test_that("initialValues validates user-provided par$mu", {
 
   # wrong Dimensions (Too few rows)
   bad_mu_dim <- matrix(0, nrow = nrow(dat) - 1, ncol = 2)
-  expect_error(initialValues(data = dat, par = list(mu = bad_mu_dim), spatialCovs = covs),
+  expect_error(suppressMessages(initialValues(data = dat, par = list(mu = bad_mu_dim), spatialCovs = covs)),
                "must be a matrix with the same number of rows as 'data' and 2 columns")
 
   # wrong Format (Vector instead of Matrix)
   bad_mu_vec <- rep(0, nrow(dat) * 2)
-  expect_error(initialValues(data = dat, par = list(mu = bad_mu_vec), spatialCovs = covs),
+  expect_error(suppressMessages(initialValues(data = dat, par = list(mu = bad_mu_vec), spatialCovs = covs)),
                "must be a matrix")
 })
 
@@ -201,7 +201,7 @@ test_that("User-provided par$mu and par$vel override empirical estimates", {
 
   user_par <- list(mu = custom_mu, vel = custom_vel)
 
-  par_init <- initialValues(data = dat, model = "underdamped", par = user_par, spatialCovs = covs)
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", par = user_par, spatialCovs = covs))
 
   # Ensure the custom matrices bypassed the NA-interpolation and zero-filling
   expect_equal(par_init$mu, custom_mu)

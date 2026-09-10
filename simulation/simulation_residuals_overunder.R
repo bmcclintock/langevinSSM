@@ -21,13 +21,13 @@ for(i in 1:n_sims) {
   sim_data <- simLangevin(model = true_model, par = true_par, obsPerAnimal = obsPerAnimal, nbAnimals = nbAnimals, subSample = list(samplingRate = 10),
                          spatialCovs = exampleCovs, measurementError = list(smaj.sd=1.5,smin.sd=0.75))
 
-  fit_under <- fitLangevin(data = sim_data,
-                          spatialCovs = exampleCovs, silent = TRUE)
+  fit_under <- suppressMessages(fitLangevin(data = sim_data,
+                          spatialCovs = exampleCovs, silent = TRUE))
 
   fit_under$residuals <- residuals(fit_under, data = sim_data, spatialCovs = exampleCovs, ncores = nbAnimals)
 
-  fit_over <- fitLangevin(data = sim_data, model = "overdamped",
-                     spatialCovs = exampleCovs, silent = TRUE)
+  fit_over <- suppressMessages(fitLangevin(data = sim_data, model = "overdamped",
+                     spatialCovs = exampleCovs, silent = TRUE))
 
   fit_over$residuals <- residuals(fit_over, data = sim_data, spatialCovs = exampleCovs, ncores = nbAnimals)
 

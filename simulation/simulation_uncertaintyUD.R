@@ -51,9 +51,9 @@ for(isim in 1:n_sims) {
   sim_data <- simLangevin(par = list(beta=beta, sigma=sigma, gamma=gamma), obsPerAnimal = 5000, nbAnimals = 3, subSample = list(samplingRate = 10),
                           spatialCovs = spatialCovs[[isim]], measurementError = measurementError)
 
-  fit <- fitLangevin(data = sim_data,
+  fit <- suppressMessages(fitLangevin(data = sim_data,
                            spatialCovs = spatialCovs[[isim]],
-                           silent = TRUE)
+                           silent = TRUE))
 
   ud_stack <- getUD(spatialCovs[[isim]], fit, nSims = 4000, plot = FALSE, log = FALSE)
 

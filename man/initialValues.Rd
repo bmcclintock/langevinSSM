@@ -9,7 +9,8 @@ initialValues(
   model = c("underdamped", "overdamped"),
   par,
   spatialCovs,
-  coord = c("x", "y")
+  coord = c("x", "y"),
+  type = c("empirical", "neutral")
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ initialValues(
 \item{spatialCovs}{A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.}
 
 \item{coord}{Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").}
+
+\item{type}{Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "empirical" (default) or "neutral". See Details.}
 }
 \value{
 A list of initial parameter values, with names corresponding to the parameters used in the model. The list will include the following parameters:
@@ -43,8 +46,8 @@ This function generates initial parameter values for fitting the Langevin moveme
 If not provided in \code{par}, the initial values for the movement process parameters are generated as follows:
 \itemize{
  \item \code{beta}: Initialized as a vector of zeros with length equal to the number of spatial covariates.
- \item \code{sigma}: Initialized as a ``neutral'' empirical estimate of the diffusion (or speed) parameter, calculated as \eqn{\sqrt{\text{mean}(R^2 / (2 * \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step between those observations.
- \item \code{gamma} (``underdamped'' model only): Initialized as a ``neutral'' empirical estimate of the friction parameter, calculated as \eqn{1 / \text{median}(\Delta)}, where \eqn{\Delta} is the time step between consecutive non-missing observations.
+ \item \code{sigma}: Under \code{type="empirical"}, for the underdamped model, it is initialized using a Method-of-Moments estimator based on the stationary variance of the OU process. Under \code{type="neutral"}, it is initialized using a heuristic assuming standard diffusive scaling: \eqn{\sqrt{\text{mean}(R^2 / (2 * \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step.
+ \item \code{gamma} (``underdamped'' model only): Under \code{type="empirical"}, it is initialized based on the lag-1 autocorrelation of the finite-differenced velocities. Under \code{type="neutral"}, initialized as \eqn{1 / \text{median}(\Delta)}.
  \item \code{mu}: Initialized at the locations in \code{data} as a matrix with 2 columns corresponding to the x and y coordinates. If there are missing values (\code{NA}) in \code{data[,coord]}, these are filled in using linear interpolation separately for each track (see \code{\link[stats]{approx}}).
  \item \code{vel} (``underdamped'' model only): Initialized as a matrix of zeros with the same number of rows as \code{data} and 2 columns corresponding to the x and y velocity components.
 }

@@ -7,6 +7,7 @@
 #' @param par A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.
 #' @param spatialCovs A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.
 #' @param coord Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").
+#' @param type Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "empirical" (default) or "neutral". See Details.
 #' @return A list of initial parameter values, with names corresponding to the parameters used in the model. The list will include the following parameters:
 #' \item{beta}{Numeric vector of initial values for the coefficients of the spatial covariates. Length should match the number of spatial covariates.}
 #' \item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
@@ -22,8 +23,8 @@
 #' If not provided in \code{par}, the initial values for the movement process parameters are generated as follows:
 #' \itemize{
 #'  \item \code{beta}: Initialized as a vector of zeros with length equal to the number of spatial covariates.
-#'  \item \code{sigma}: Initialized as a ``neutral'' empirical estimate of the diffusion (or speed) parameter, calculated as \eqn{\sqrt{\text{mean}(R^2 / (2 * \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step between those observations.
-#'  \item \code{gamma} (``underdamped'' model only): Initialized as a ``neutral'' empirical estimate of the friction parameter, calculated as \eqn{1 / \text{median}(\Delta)}, where \eqn{\Delta} is the time step between consecutive non-missing observations.
+#'  \item \code{sigma}: Under \code{type="empirical"}, for the underdamped model, it is initialized using a Method-of-Moments estimator based on the stationary variance of the OU process. Under \code{type="neutral"}, it is initialized using a heuristic assuming standard diffusive scaling: \eqn{\sqrt{\text{mean}(R^2 / (2 * \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step.
+#'  \item \code{gamma} (``underdamped'' model only): Under \code{type="empirical"}, it is initialized based on the lag-1 autocorrelation of the finite-differenced velocities. Under \code{type="neutral"}, initialized as \eqn{1 / \text{median}(\Delta)}.
 #'  \item \code{mu}: Initialized at the locations in \code{data} as a matrix with 2 columns corresponding to the x and y coordinates. If there are missing values (\code{NA}) in \code{data[,coord]}, these are filled in using linear interpolation separately for each track (see \code{\link[stats]{approx}}).
 #'  \item \code{vel} (``underdamped'' model only): Initialized as a matrix of zeros with the same number of rows as \code{data} and 2 columns corresponding to the x and y velocity components.
 #' }
@@ -34,11 +35,12 @@
 #'  \item \code{tau}: Initialized to c(1, 1), which means no scaling of the x and y standard deviations.
 #'  \item \code{rho_o}: Initialized to 0, which means no correlation between the x and y errors.
 #' }
-#' @importFrom stats median approx ave
+#' @importFrom stats median approx ave cor
 #' @export
-initialValues <- function(data, model=c("underdamped","overdamped"), par, spatialCovs, coord = c("x","y")){
+initialValues <- function(data, model=c("underdamped","overdamped"), par, spatialCovs, coord = c("x","y"), type = c("empirical", "neutral")){
 
   model <- match.arg(model)
+  type <- match.arg(type)
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   if(!missing(par)){
@@ -70,18 +72,65 @@ initialValues <- function(data, model=c("underdamped","overdamped"), par, spatia
   valid_y <- data[[coord[2]]][valid_idx]
   valid_t <- abs_time[valid_idx]
 
-  # guess for sigma: sqrt(R_squared/(2*dt))
   dx <- diff(valid_x)
   dy <- diff(valid_y)
   dt_valid <- diff(valid_t)
   R_squared <- dx^2 + dy^2
 
-  # guess for gamma: inverse of the median time step
   # Only keep steps within the same track with positive time differences
   idx_keep <- which((valid_id[-1] == valid_id[-length(valid_id)]) & dt_valid > 0)
 
+  # Baseline ("neutral") heuristic guesses
   empirical_sigma <- sqrt(mean(R_squared[idx_keep] / (2 * dt_valid[idx_keep])))
   empirical_gamma <- 1 / stats::median(dt_valid[idx_keep], na.rm = TRUE)
+
+  # ---------------------------------------------------------------------
+  # Method-of-moments (MoM) refinement of empirical_sigma/empirical_gamma
+  # for the underdamped model when type == "empirical".
+  # ---------------------------------------------------------------------
+  if (type == "empirical" && model == "underdamped" && (is.null(par$sigma) || is.null(par$gamma))) {
+    empirical_sigma_success <- FALSE
+    empirical_gamma_success <- FALSE
+
+    if (length(idx_keep) > 20) {
+      vx <- dx / dt_valid
+      vy <- dy / dt_valid
+
+      same_pair <- (valid_id[-1] == valid_id[-length(valid_id)]) & dt_valid > 0
+      pair_idx <- which(same_pair[-length(same_pair)] & same_pair[-1])
+
+      if (length(pair_idx) > 20) {
+        v1 <- c(vx[pair_idx], vy[pair_idx])
+        v2 <- c(vx[pair_idx + 1], vy[pair_idx + 1])
+        rho_v <- suppressWarnings(stats::cor(v1, v2))
+        dt_pair <- stats::median(dt_valid[pair_idx], na.rm = TRUE)
+
+        if (is.finite(rho_v) && rho_v > 1e-4 && rho_v < 1 - 1e-8 &&
+            is.finite(dt_pair) && dt_pair > 0) {
+          gamma_mom <- -log(rho_v) / dt_pair
+          empirical_gamma <- gamma_mom
+          empirical_gamma_success <- TRUE
+
+          gdt <- gamma_mom * dt_valid[idx_keep]
+          g_gdt <- 2 * gdt + 4 * expm1(-gdt) - expm1(-2 * gdt)
+          Kfac <- g_gdt / gamma_mom^2 + (expm1(-gdt))^2 / (2 * gamma_mom^3)
+          s2_mom <- stats::median(R_squared[idx_keep] / (2 * Kfac), na.rm = TRUE)
+
+          if (is.finite(s2_mom) && s2_mom > 0) {
+            empirical_sigma <- sqrt(s2_mom)
+            empirical_sigma_success <- TRUE
+          }
+        }
+      }
+    }
+
+    failed_sigma <- is.null(par$sigma) && !empirical_sigma_success
+    failed_gamma <- is.null(par$gamma) && !empirical_gamma_success
+
+    if (failed_sigma || failed_gamma) {
+      message("   Empirical initialization failed (e.g., due to sparse data or high measurement noise). Reverting to 'neutral' initialization.")
+    }
+  }
 
   if(is.null(par$beta)) par$beta <- rep(0,length(spatialCovs))
 

@@ -109,20 +109,20 @@ for(isim in 1:nSims){
 
   lambda_max <- suggestLambda(fit0,max(sim_data$dt))
 
-  fit <- tryCatch(fitLangevin(
+  fit <- tryCatch(suppressMessages(fitLangevin(
     data = sim_data,
     model = model,
     spatialCovs = covs,
     lambda = lambda_max,
     silent = TRUE
-  ),error=function(e) e)
+  )),error=function(e) e)
 
-  fit_true <- tryCatch(fitLangevin(
+  fit_true <- tryCatch(suppressMessages(fitLangevin(
     data = sim_data,
     model = model,
     spatialCovs = covs,
     silent = TRUE
-  ),error=function(e) e)
+  )),error=function(e) e)
 
   if(!inherits(fit, "error")){
     estUD <- suppressMessages(getUD(covs, fit=fit, log=TRUE, plot=FALSE))
@@ -139,7 +139,7 @@ for(isim in 1:nSims){
     parMat_true[isim, "lambda"] <- fit_true$conditions$lambda
   }
 
-  message(" Iterative lambda ")
+  message(" Suggested lambda ")
   print(paste0("            ",paste0(colnames(parMat),collapse="    ")))
   print(paste0("current ",paste0(round(parMat[isim,],6),collapse=" ")))
   print(paste0("overall ", paste0(round(apply(parMat[1:isim,,drop=FALSE], 2, mean, na.rm=TRUE), 6), collapse=" ")))

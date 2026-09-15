@@ -3,8 +3,9 @@ CXX_STD = CXX17
 # Enables large object compilation for Windows
 CXX17FLAGS += -Wa,-mbig-obj
 
-# Disable vectorization completely on Windows builds
-PKG_CXXFLAGS = -DNDEBUG -DEIGEN_NO_DEBUG -DEIGEN_DONT_VECTORIZE -Wa,-mbig-obj
+PKG_CXXFLAGS = -DNDEBUG -DEIGEN_NO_DEBUG
+
+# Explicitly link BLAS and LAPACK for RcppArmadillo
 PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 
 .PHONY: all compile_tmb clean
@@ -14,7 +15,7 @@ all: $(SHLIB)
 $(SHLIB): compile_tmb
 
 compile_tmb:
-	(cd TMB; "$(R_HOME)/bin/Rscript" --no-save --no-restore compile.R "$(PKG_CXXFLAGS)")
+	(cd TMB; "$(R_HOME)/bin/Rscript" --no-save --no-restore compile.R '$(PKG_CXXFLAGS)')
 
 clean:
 	rm -f $(SHLIB) $(OBJECTS)

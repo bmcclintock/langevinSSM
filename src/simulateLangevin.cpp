@@ -1,4 +1,10 @@
 #include <cmath>
+
+// Disable Armadillo SIMD vectorization ONLY on Windows to bypass GCC 14 emmintrin.h bug
+#ifdef _WIN32
+#define ARMA_NO_SIMD
+#endif
+
 // [[Rcpp::depends(RcppArmadillo)]]
 #include <RcppArmadillo.h>
 

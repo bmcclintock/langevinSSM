@@ -2,9 +2,9 @@
 
 #define TMB_LIB_INIT R_init_langevinSSM_TMBExports
 
-// Disable Eigen SIMD vectorization ONLY on Windows to bypass GCC 14 emmintrin.h bug
-#ifdef _WIN32
-#define EIGEN_DONT_VECTORIZE
+// Force GCC SIMD intrinsics to load FIRST only on Windows/x86 architectures
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
 #endif
 
 #include <TMB.hpp>

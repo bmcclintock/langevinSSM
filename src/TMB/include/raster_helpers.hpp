@@ -1,6 +1,11 @@
 #ifndef RASTER_HELPERS_HPP
 #define RASTER_HELPERS_HPP
 
+// Prevent Apple Silicon / ARM64 from choking on x86 intrinsic headers
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
 // --- TYPE MAPPING ---
 #ifdef IS_RCPP_BUILD
 #define TEMPLATE_HEADER inline

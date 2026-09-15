@@ -64,7 +64,12 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
   MATRIX grad_values(2, n_covs);
   SET_ZERO(grad_values);
 
-  if(c0 < 0 || c0 >= (n_cols-1) || r0 < 0 || r0 >= (n_rows-1)) return grad_values;
+  // Clamp indices to valid range to prevent out-of-bounds access
+  // This ensures compiler can prove no overflow in subsequent operations
+  if(c0 < 0) c0 = 0;
+  if(c0 >= n_cols - 1) c0 = n_cols - 2;
+  if(r0 < 0) r0 = 0;
+  if(r0 >= n_rows - 1) r0 = n_rows - 2;
 
   TYPE dx = col_raw - TYPE(c0);
   TYPE dy = row_raw - TYPE(r0);
@@ -93,6 +98,7 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
       }
     }
 
+    // Compute linear index with validated c0, r0 (now guaranteed in valid range)
     int idx1 = (offset + z_idx1) * (n_rows * n_cols) + r0 * n_cols + c0;
     TYPE f1_00 = GET_VAL(raster_vals, idx1);
     TYPE f1_10 = GET_VAL(raster_vals, idx1 + 1);
@@ -199,16 +205,22 @@ TYPE get_bilinear_val(TYPE x, TYPE y, const MATRIX &grid, const VECTOR &ext, con
   int c0 = static_cast<int>(floor(AS_DOUBLE(col_raw)));
   int r0 = static_cast<int>(floor(AS_DOUBLE(row_raw)));
 
-  if (c0 < 0) c0 = 0; if (c0 >= n_cols - 1) c0 = n_cols - 2;
-  if (r0 < 0) r0 = 0; if (r0 >= n_rows - 1) r0 = n_rows - 2;
+  // Clamp to valid range to guarantee safe index access
+  if (c0 < 0) c0 = 0; 
+  if (c0 >= n_cols - 1) c0 = n_cols - 2;
+  if (r0 < 0) r0 = 0; 
+  if (r0 >= n_rows - 1) r0 = n_rows - 2;
+  
   int c1 = c0 + 1;
   int r1 = r0 + 1;
 
   TYPE dx = col_raw - TYPE(c0);
   TYPE dy = row_raw - TYPE(r0);
 
-  if(dx < TYPE(0.0)) dx = TYPE(0.0); if(dx > TYPE(1.0)) dx = TYPE(1.0);
-  if(dy < TYPE(0.0)) dy = TYPE(0.0); if(dy > TYPE(1.0)) dy = TYPE(1.0);
+  if(dx < TYPE(0.0)) dx = TYPE(0.0); 
+  if(dx > TYPE(1.0)) dx = TYPE(1.0);
+  if(dy < TYPE(0.0)) dy = TYPE(0.0); 
+  if(dy > TYPE(1.0)) dy = TYPE(1.0);
 
   TYPE val = grid(r0, c0) * (TYPE(1.0) - dx) * (TYPE(1.0) - dy) +
     grid(r0, c1) * dx * (TYPE(1.0) - dy) +
@@ -243,15 +255,22 @@ void apply_barrier_penalty(TYPE x, TYPE y,
     int c0 = static_cast<int>(floor(AS_DOUBLE(col_raw)));
     int r0 = static_cast<int>(floor(AS_DOUBLE(row_raw)));
 
-    if (c0 < 0) c0 = 0; if (c0 >= n_cols - 1) c0 = n_cols - 2;
-    if (r0 < 0) r0 = 0; if (r0 >= n_rows - 1) r0 = n_rows - 2;
+    // Clamp to valid range to guarantee safe index access
+    if (c0 < 0) c0 = 0; 
+    if (c0 >= n_cols - 1) c0 = n_cols - 2;
+    if (r0 < 0) r0 = 0; 
+    if (r0 >= n_rows - 1) r0 = n_rows - 2;
+    
     int c1 = c0 + 1;
     int r1 = r0 + 1;
 
     TYPE dx = col_raw - TYPE(c0);
     TYPE dy = row_raw - TYPE(r0);
-    if(dx < TYPE(0.0)) dx = TYPE(0.0); if(dx > TYPE(1.0)) dx = TYPE(1.0);
-    if(dy < TYPE(0.0)) dy = TYPE(0.0); if(dy > TYPE(1.0)) dy = TYPE(1.0);
+    
+    if(dx < TYPE(0.0)) dx = TYPE(0.0); 
+    if(dx > TYPE(1.0)) dx = TYPE(1.0);
+    if(dy < TYPE(0.0)) dy = TYPE(0.0); 
+    if(dy > TYPE(1.0)) dy = TYPE(1.0);
 
     TYPE f00 = barrier_dist(r0, c0);
     TYPE f10 = barrier_dist(r0, c1);

@@ -1,6 +1,6 @@
 CXX_STD = CXX17
 
-# Append to CXX17FLAGS so it evaluates AFTER R's default -Wall
+# Appending to CXX17FLAGS ensures it evaluates AFTER R's default -Wall
 CXX17FLAGS += -Wa,-mbig-obj -Wno-array-bounds
 
 PKG_CXXFLAGS = -DNDEBUG -DEIGEN_NO_DEBUG -Wa,-mbig-obj

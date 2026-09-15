@@ -10,18 +10,23 @@ if(file.exists(paste0(tmb_name, ".cpp"))) {
 
   tmb_flags <- paste(tmb_flags, "-g0")
 
-  # Force append suppression flag to CXX17FLAGS on Windows only.
-  # This ensures it evaluates AFTER R's default -Wall, successfully silencing the GCC bug.
-  if (.Platform$OS.type == "windows") {
-    cxx17 <- Sys.getenv("CXX17FLAGS")
-    Sys.setenv(CXX17FLAGS = paste(cxx17, "-Wno-array-bounds"))
-  }
-
   options(tmb.ad.framework = "TMBad")
+
+  # TMB::compile uses R CMD SHLIB, which reads Makeconf (-Wall) *after* PKG_CXXFLAGS.
+  # To prevent -Wall from re-enabling the array-bounds warning, we must append our
+  # suppression directly to CXX17FLAGS using a local Makevars.win file.
+  if (.Platform$OS.type == "windows") {
+    writeLines("CXX17FLAGS += -Wno-array-bounds\n", "Makevars.win")
+  }
 
   TMB::compile(file = paste0(tmb_name, ".cpp"),
                PKG_CXXFLAGS = tmb_flags,
                safebounds = FALSE, safeunload = FALSE)
+
+  # Cleanup
+  if (.Platform$OS.type == "windows" && file.exists("Makevars.win")) {
+    file.remove("Makevars.win")
+  }
 
   file.copy(from = paste0(tmb_name, .Platform$dynlib.ext),
             to = "..", overwrite = TRUE)

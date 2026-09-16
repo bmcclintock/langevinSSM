@@ -2,11 +2,6 @@
 
 #define TMB_LIB_INIT R_init_langevinSSM_TMBExports
 
-// Disable Eigen SIMD vectorization ONLY on Windows to bypass GCC 14 emmintrin.h bug
-#ifdef _WIN32
-#define EIGEN_DONT_VECTORIZE
-#endif
-
 #include <TMB.hpp>
 #include "langevinSSM.hpp"
 #include "hierLangevin.hpp"

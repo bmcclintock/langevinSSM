@@ -13,27 +13,26 @@
 #define MATRIX arma::mat
 #define VECTOR Rcpp::NumericVector
 #define INT_VECTOR Rcpp::IntegerVector
-#define RASTER_TYPE Rcpp::NumericVector // Renamed to avoid TMB macro collision
+#define RASTER_TYPE Rcpp::NumericVector
 #define AS_DOUBLE(x) (x)
 #define PI_VAL M_PI
 #define SET_ZERO(x) x.zeros()
-// Rcpp uses standard bracket indexing
 #define GET_VAL(arr, idx) arr[idx]
 #define VEC_ELT(v, i) v[i]
+#define GET_SIZE(arr) arr.size()
 #else
 #define TEMPLATE_HEADER template<class Type>
 #define TYPE Type
 #define MATRIX matrix<Type>
 #define VECTOR vector<Type>
 #define INT_VECTOR vector<int>
-#define RASTER_TYPE array<Type> // Renamed to avoid TMB macro collision
-// asDouble explicitly strips AD tracking to safely evaluate integer indices
+#define RASTER_TYPE array<Type>
 #define AS_DOUBLE(x) asDouble(x)
 #define PI_VAL Type(M_PI)
 #define SET_ZERO(x) x.setZero()
-// TMB (Eigen) uses parentheses for array/vector indexing
 #define GET_VAL(arr, idx) arr(idx)
 #define VEC_ELT(v, i) v(i)
+#define GET_SIZE(arr) arr.size()
 #endif
 
 
@@ -71,6 +70,9 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
 
   if(c0 < 0 || c0 >= (n_cols-1) || r0 < 0 || r0 >= (n_rows-1)) return grad_values;
 
+  // Extract total allocated memory layout size safely across both Rcpp and TMB paradigms
+  int max_size = static_cast<int>(GET_SIZE(raster_vals));
+
   TYPE dx = col_raw - TYPE(c0);
   TYPE dy = row_raw - TYPE(r0);
 
@@ -100,7 +102,8 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
 
     int idx1 = (offset + z_idx1) * (n_rows * n_cols) + r0 * n_cols + c0;
 
-    if (idx1 < 0 || idx1 + n_cols + 1 >= raster_vals.size()) {
+    // Explicit logical proof for GCC 14's optimizer loop layout
+    if (idx1 < 0 || (idx1 + n_cols + 1) >= max_size) {
       return grad_values;
     }
 
@@ -117,7 +120,8 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
 
       int idx2 = (offset + z_idx2) * (n_rows * n_cols) + r0 * n_cols + c0;
 
-      if (idx2 < 0 || idx2 + n_cols + 1 >= raster_vals.size()) {
+      // Duplicate the guard proof step for the secondary layer indices
+      if (idx2 < 0 || (idx2 + n_cols + 1) >= max_size) {
         return grad_values;
       }
 

@@ -155,6 +155,11 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
       stop(sprintf("scaleFactor argument for individual '%s' does not match individual '%s'. All individuals must be fitted with the same scaleFactor.", ids[i], ids[1]))
     }
 
+    sigma_idx <- which(rownames(est_i) == "log_sigma")
+    if (length(sigma_idx) == 1 && sf_i != 1) {
+      est_i[sigma_idx, "Estimate"] <- est_i[sigma_idx, "Estimate"] + log(sf_i)
+    }
+
     theta_hat[i, ] <- est_i$Estimate
 
     cov_i <- fit_list[[i]]$covariance$working
@@ -193,12 +198,11 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
 
   # Determine which columns are log-scale movement parameters (sigma/gamma)
   col_type <- as.integer(param_names %in% c("log_sigma", "log_gamma"))
-  col_shift <- rep(0, p)
 
   # data_list matches the TMB template exactly
   data_list <- list(theta_hat = theta_hat, Shat = Shat,
                     use_mpl = use_mpl, mpl_alpha = mpl_alpha,
-                    col_type = col_type, col_shift = col_shift)
+                    col_type = col_type)
 
   par_list <- list(
     mu = as.numeric(colMeans(theta_hat)),

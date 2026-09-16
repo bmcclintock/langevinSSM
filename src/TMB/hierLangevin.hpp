@@ -24,10 +24,8 @@ Type hierLangevin(objective_function<Type>* obj)
   // its natural/additive scale (e.g. a habitat-selection coefficient beta);
   // col_type(j) = 1 means parameter j is a log-scale movement parameter
   // (e.g. log_sigma, log_gamma) whose natural-scale population mean and
-  // individual-level predictions require exponentiation (with an optional
-  // additive shift col_shift(j), used for log_sigma's log(scaleFactor) term).
+  // individual-level predictions require exponentiation.
   DATA_IVECTOR(col_type);      // length p, 0 = identity, 1 = exponential
-  DATA_VECTOR(col_shift);      // length p, additive shift applied before exp() for type==1
 
   PARAMETER_VECTOR(mu);        // p population-level means (working scale)
   PARAMETER_VECTOR(log_sd);    // p population-level log SDs (diagonal between-individual D)
@@ -83,14 +81,14 @@ Type hierLangevin(objective_function<Type>* obj)
   matrix<Type> ind_nat(n, p);
   for (int j = 0; j < p; j++) {
     if (col_type(j) == 1) {
-      mu_nat(j) = exp(mu(j) + col_shift(j));
+      mu_nat(j) = exp(mu(j));
     } else {
       mu_nat(j) = mu(j);
     }
     for (int i = 0; i < n; i++) {
       Type ind_working = mu(j) + u(i, j);
       if (col_type(j) == 1) {
-        ind_nat(i, j) = exp(ind_working + col_shift(j));
+        ind_nat(i, j) = exp(ind_working);
       } else {
         ind_nat(i, j) = ind_working;
       }

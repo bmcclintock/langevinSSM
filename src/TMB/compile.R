@@ -6,6 +6,13 @@ if(file.exists(paste0(tmb_name, ".cpp"))) {
 
   tmb_flags <- paste(tmb_flags, "-g0")
 
+  # ON WINDOWS ONLY: Force the compilation flag to -O2
+  # This stops GCC 14's hyper-aggressive array boundary warnings
+  # while keeping SIMD vectorization fully functional.
+  if (.Platform$OS.type == "windows") {
+    tmb_flags <- paste(tmb_flags, "-O2")
+  }
+
   options(tmb.ad.framework = "TMBad")
 
   TMB::compile(file = paste0(tmb_name, ".cpp"),
@@ -15,5 +22,3 @@ if(file.exists(paste0(tmb_name, ".cpp"))) {
   file.copy(from = paste0(tmb_name, .Platform$dynlib.ext),
             to = "..", overwrite = TRUE)
 }
-
-# cleanup done in ../Makevars[.win]

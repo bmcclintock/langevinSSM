@@ -63,7 +63,10 @@ Type hierLangevin(objective_function<Type>* obj)
     matrix<Type> Sigma_i(p, p);
     for (int a = 0; a < p; a++) {
       for (int b = 0; b < p; b++) {
-        Sigma_i(a, b) = Shat(a, b, i);
+        // Manually calculate 1D index to prevent Eigen from vectorizing TMB's 3D array lookup.
+        // This bypasses the GCC 14.3 array-bounds false positive without disabling SIMD.
+        int idx = a + (b * p) + (i * p * p);
+        Sigma_i(a, b) = Shat[idx];
       }
     }
     vector<Type> resid(p);

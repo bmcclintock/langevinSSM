@@ -99,6 +99,11 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
     }
 
     int idx1 = (offset + z_idx1) * (n_rows * n_cols) + r0 * n_cols + c0;
+
+    if (idx1 < 0 || idx1 + n_cols + 1 >= raster_vals.size()) {
+      return grad_values;
+    }
+
     TYPE f1_00 = GET_VAL(raster_vals, idx1);
     TYPE f1_10 = GET_VAL(raster_vals, idx1 + 1);
     TYPE f1_01 = GET_VAL(raster_vals, idx1 + n_cols);
@@ -111,6 +116,11 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
     if (layers > 1 && z_idx1 != z_idx2) {
 
       int idx2 = (offset + z_idx2) * (n_rows * n_cols) + r0 * n_cols + c0;
+
+      if (idx2 < 0 || idx2 + n_cols + 1 >= raster_vals.size()) {
+        return grad_values;
+      }
+
       TYPE f2_00 = GET_VAL(raster_vals, idx2);
       TYPE f2_10 = GET_VAL(raster_vals, idx2 + 1);
       TYPE f2_01 = GET_VAL(raster_vals, idx2 + n_cols);

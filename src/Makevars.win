@@ -3,7 +3,11 @@ CXX_STD = CXX17
 # Enables large object compilation for Windows
 CXX17FLAGS += -Wa,-mbig-obj
 
+# Pure, standardized CRAN-compliant package flags
 PKG_CXXFLAGS = -DNDEBUG -DEIGEN_NO_DEBUG
+
+# Pre-include immintrin.h to guarantee pristine C++ linkage for SIMD wrappers
+PKG_CXXFLAGS += -include immintrin.h
 
 # Explicitly link BLAS and LAPACK for RcppArmadillo
 PKG_LIBS = $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
@@ -14,9 +18,14 @@ all: $(SHLIB)
 
 $(SHLIB): compile_tmb
 
+# Targeted compilation rule to override global -O3 flag to -O2 on Windows GCC 14
+# This prevents the emmintrin.h false-positive warning while keeping SIMD vectorization fully alive.
+TMB/langevinSSM_TMBExports.o: TMB/langevinSSM_TMBExports.cpp
+	$(CXX) $(ALL_CPPFLAGS) $(ALL_CXXFLAGS) -O2 -c $< -o $@
+
 compile_tmb:
-  (cd TMB; "$(R_HOME)/bin/Rscript" --no-save --no-restore compile.R '$(PKG_CXXFLAGS)')
+	(cd TMB; "$(R_HOME)/bin/Rscript" --no-save --no-restore compile.R '$(PKG_CXXFLAGS)')
 
 clean:
-  rm -f $(SHLIB) $(OBJECTS)
-rm -f TMB/*.o TMB/*.so TMB/*.dll
+	rm -f $(SHLIB) $(OBJECTS)
+	rm -f TMB/*.o TMB/*.so TMB/*.dll

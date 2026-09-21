@@ -39,13 +39,13 @@ jobs:
           r-version: ${{ matrix.config.r }}
           http-user-agent: ${{ matrix.config.http-user-agent }}
           use-public-rspm: true
-          remove-openmp-macos: false
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |
             any::rcmdcheck
             jmlondon/pathroutr
+            TMB=?source
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2

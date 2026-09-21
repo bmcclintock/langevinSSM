@@ -45,7 +45,7 @@ jobs:
           extra-packages: |
             any::rcmdcheck
             jmlondon/pathroutr
-            TMB=?source
+            TMB=?ignore-url=https://packagemanager.posit.co
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2

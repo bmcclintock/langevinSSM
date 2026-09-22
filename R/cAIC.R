@@ -69,6 +69,14 @@ cAIC <- function(fit, data, spatialCovs, nSims = 200) {
 
   dat_joint <- c(dat_joint, fit$tmb_setup$priors)
 
+  # Prevent invalid use of cAIC on data without measurement error
+  valid_obs_counts <- sapply(unique(dat_joint$ID), function(id) sum(dat_joint$isd[dat_joint$ID == id] == 1))
+  has_measurement_error <- max(valid_obs_counts) > 1
+
+  if (!has_measurement_error) {
+    stop("cAIC is not valid for datasets without measurement error (i.e., known locations). Please use the standard marginal AIC() for this dataset.")
+  }
+
   parList_mle <- fit$tmb_setup$parList
   tmbmap <- fit$tmb_setup$map
   re <- fit$tmb_setup$random

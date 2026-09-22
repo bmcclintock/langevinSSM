@@ -22,13 +22,13 @@
 
 \item{spatialCovs}{The list of \code{SpatRaster} objects originally used to fit the model.}
 
-\item{method}{Character string specifying the OSA method. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.}
+\item{method}{Character string specifying the OSA method for noisy data. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.}
 
 \item{trace}{Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.}
 
-\item{run_tests}{Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}.}
+\item{run_tests}{Logical; calculate quantitative goodness-of-fit tests? Default: \code{TRUE}.}
 
-\item{ncores}{Integer; Number of cores to use for parallel processing of the independent tracks in \code{data}. Default is \code{1} (sequential).}
+\item{ncores}{Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.}
 
 \item{...}{Additional arguments passed to \code{\link[TMB]{oneStepPredict}}.}
 }
@@ -37,6 +37,19 @@ A \code{resLangevin} data frame containing the OSA residuals. If \code{run_tests
 }
 \description{
 Reconstructs the TMB objective function from a fitted model to calculate OSA residuals using user-specified methods, without needing to refit the model.
+}
+\details{
+The function automatically selects the appropriate residual calculation method based on the data:
+
+\strong{Data with Measurement Error:}
+Calculates standard One-Step-Ahead (OSA) observation residuals using TMB's \code{\link[TMB]{oneStepPredict}}.
+These residuals evaluate the joint process and observation model by predicting the raw observation
+\eqn{Y_t} conditioned on all previous observations \eqn{Y_{1:t-1}}.
+
+\strong{Data without Measurement Error (Known Locations):}
+Adds true locations (\code{mu}) to the random effects vector and injects a
+negligible pseudo-observation error (\eqn{10^{-4} \times \sigma \sqrt{\text{median}(\Delta t)}}) to the observations.
+TMB's OSA algorithm is then used to perform one-step-ahead prediction.
 }
 \examples{
 par <- list(beta = c(-4, 6, 5, -0.1), sigma = 5, gamma = 0.5)

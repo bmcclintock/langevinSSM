@@ -2,13 +2,26 @@
 #'
 #' Reconstructs the TMB objective function from a fitted model to calculate OSA residuals using user-specified methods, without needing to refit the model.
 #'
+#' @details
+#' The function automatically selects the appropriate residual calculation method based on the data:
+#'
+#' \strong{Data with Measurement Error:}
+#' Calculates standard One-Step-Ahead (OSA) observation residuals using TMB's \code{\link[TMB]{oneStepPredict}}.
+#' These residuals evaluate the joint process and observation model by predicting the raw observation
+#' \eqn{Y_t} conditioned on all previous observations \eqn{Y_{1:t-1}}.
+#'
+#' \strong{Data without Measurement Error (Known Locations):}
+#' Adds true locations (\code{mu}) to the random effects vector and injects a
+#' negligible pseudo-observation error (\eqn{10^{-4} \times \sigma \sqrt{\text{median}(\Delta t)}}) to the observations.
+#' TMB's OSA algorithm is then used to perform one-step-ahead prediction.
+#'
 #' @param object A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
 #' @param data The \code{dataLangevin} object originally used to fit the model.
 #' @param spatialCovs The list of \code{SpatRaster} objects originally used to fit the model.
-#' @param method Character string specifying the OSA method. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.
+#' @param method Character string specifying the OSA method for noisy data. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.
 #' @param trace Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.
-#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}.
-#' @param ncores Integer; Number of cores to use for parallel processing of the independent tracks in \code{data}. Default is \code{1} (sequential).
+#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? Default: \code{TRUE}.
+#' @param ncores Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.
 #' @param ... Additional arguments passed to \code{\link[TMB]{oneStepPredict}}.
 #' @return A \code{resLangevin} data frame containing the OSA residuals. If \code{run_tests = TRUE}, the data frame will have an attribute \code{"tests"} containing a data frame of goodness-of-fit statistics and p-values.
 #' @examples
@@ -33,7 +46,7 @@
 #' print(res)
 #'
 #' @importFrom TMB MakeADFun oneStepPredict
-#' @importFrom stats ks.test Box.test residuals
+#' @importFrom stats ks.test Box.test residuals median
 #' @export
 residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGaussianOffMode", trace = FALSE, run_tests = TRUE, ncores = 1, ...) {
 
@@ -60,14 +73,63 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     barrier_sdf <- NULL
   }
 
-  # Now passing barrier and lambda so OSA residuals account for coastal bounces
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, cond$scaleFactor,
                         cond$smoothGradient, cond$npoints, cond$curweight,
                         cond$zetaScale, barrier_sdf = barrier_sdf, lambda = cond$lambda)
 
-  # Re-attach priors from the blueprint
   dat <- c(dat, object$tmb_setup$priors)
 
+  # Check for valid measurement error observations
+  valid_obs_counts <- sapply(unique(dat$ID), function(id) sum(dat$isd[dat$ID == id] == 1))
+  has_measurement_error <- max(valid_obs_counts) > 1
+
+  tmb_pars <- object$tmb_setup$parList
+  tmb_map  <- object$tmb_setup$map
+  par_to_pass <- object$par
+  random_effs <- object$tmb_setup$random
+
+  if (!has_measurement_error) {
+    message("   No measurement error detected. Restoring latent states for process OSA residuals...")
+
+    # Force known locations to be treated as valid observations
+    valid_locs <- !is.na(dat$Y[1, ]) & !is.nan(dat$Y[1, ])
+    dat$isd[valid_locs] <- 1L
+    dat$obs_mod[valid_locs] <- 0L
+
+    dat$K <- matrix(1.0, nrow = length(dat$ID), ncol = 2)
+
+    # Scale pseudo-error to typical step's process standard deviation
+    sigma_est <- unname(exp(object$par["log_sigma"]))
+    median_dt <- median(dat$dt[dat$dt > 0], na.rm = TRUE)
+    typical_process_sd <- sigma_est * sqrt(median_dt)
+    pseudo_err <- typical_process_sd * 1e-4
+
+    tmb_pars$l_tau <- c(log(pseudo_err), log(pseudo_err))
+    tmb_pars$l_rho_o <- 0
+
+    if (is.null(tmb_map)) tmb_map <- list()
+    tmb_map$l_tau <- factor(c(NA, NA))
+    tmb_map$l_rho_o <- factor(NA)
+
+    # Unlock mu and vel to act as dynamic random effects for forward filtering
+    tmb_map$mu <- NULL
+    if (!"mu" %in% random_effs) {
+      random_effs <- c(random_effs, "mu")
+    }
+
+    if (cond$model == "underdamped") {
+      tmb_map$vel <- NULL
+      if (!"vel" %in% random_effs) {
+        random_effs <- c(random_effs, "vel")
+      }
+    }
+
+    par_to_pass <- object$par[!(names(object$par) %in% c("l_tau", "l_rho_o"))]
+  }
+
+  # =========================================================================
+  # ONE-STEP-AHEAD RESIDUAL CALCULATION (SUBSETTED BY TRACK)
+  # =========================================================================
   subset_track_data <- function(dat, parList, mapList, uid, model_type) {
     track_idx <- which(dat$ID == uid)
 
@@ -85,8 +147,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     t_dat$ID <- t_dat$ID[track_idx]
     t_dat$nbObs <- t_dat$nbObs[track_idx]
 
-    # --- Re-index Sparse Priors for the Subsetted Track ---
-    global_cols <- track_idx - 1L # 0-based global columns
+    global_cols <- track_idx - 1L
 
     if (t_dat$has_prior_mu == 1L) {
       c_global_mu <- t_dat$prior_idx_mu %/% 2L
@@ -121,7 +182,6 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
         t_dat$prior_sd_vel_val <- numeric(0)
       }
     }
-    # ------------------------------------------------------
 
     t_pars <- parList
     t_pars$mu <- t_pars$mu[, track_idx, drop = FALSE]
@@ -155,7 +215,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
   results_list <- foreach::foreach(uid = unique_ids, .packages = c("TMB", "langevinSSM"), .errorhandling = "pass") %loop% {
 
-    sub_info <- subset_track_data(dat, object$tmb_setup$parList, object$tmb_setup$map, uid, cond$model)
+    sub_info <- subset_track_data(dat, tmb_pars, tmb_map, uid, cond$model)
 
     valid_cols <- which(sub_info$dat$isd == 1)
 
@@ -174,7 +234,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
         data = c(model = "langevinSSM", sub_info$dat),
         par = sub_info$pars,
         map = sub_info$map,
-        random = object$tmb_setup$random,
+        random = random_effs,
         DLL = "langevinSSM_TMBExports",
         silent = TRUE
       )
@@ -182,7 +242,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
     if (inherits(obj_track, "try-error")) return(list(uid = uid, error = paste("MakeADFun failed:", attr(obj_track, "condition")$message)))
 
-    obj_track$fn(object$par)
+    obj_track$fn(par_to_pass)
 
     message("      Processing track ID: ", uid, "...")
     track_res <- try({

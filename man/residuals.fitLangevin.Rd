@@ -26,7 +26,7 @@
 
 \item{trace}{Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.}
 
-\item{run_tests}{Logical; calculate quantitative goodness-of-fit tests? Default: \code{TRUE}.}
+\item{run_tests}{Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}.}
 
 \item{ncores}{Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.}
 

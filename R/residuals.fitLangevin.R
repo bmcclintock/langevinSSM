@@ -20,7 +20,7 @@
 #' @param spatialCovs The list of \code{SpatRaster} objects originally used to fit the model.
 #' @param method Character string specifying the OSA method for noisy data. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.
 #' @param trace Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.
-#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? Default: \code{TRUE}.
+#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}.
 #' @param ncores Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.
 #' @param ... Additional arguments passed to \code{\link[TMB]{oneStepPredict}}.
 #' @return A \code{resLangevin} data frame containing the OSA residuals. If \code{run_tests = TRUE}, the data frame will have an attribute \code{"tests"} containing a data frame of goodness-of-fit statistics and p-values.

@@ -17,6 +17,7 @@ nsims <- 100 # number of simulations
 nbAnimals <- 5 # number of tracks
 obsPerAnimal <- 5000 # number of simulated locations per track
 timeStep <- 0.01 # time scale of simulation (should be small to help prevent discretization error)
+scaleFactor <- 1
 
 beta <- c(-4, 6, 5, -0.1) # resource selection coefficients for the spatial covariates (cov_1, cov_2, ... cov_ncov, d2c)
 ncov <- length(beta) - 1 # number of spatial covariates to be generated using simCov
@@ -57,7 +58,7 @@ if(model=="overdamped"){
   colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","BA")
 } else colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","gamma","BA")
 
-dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_sca",sca,"_covRange",paste0(covRange,collapse="_"),
+dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_sca",sca,"_scaleFactor",scaleFactor,"_covRange",paste0(covRange,collapse="_"),
                    ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
 
 set.seed(1,kind="Mersenne-Twister",normal.kind = "Inversion")
@@ -198,7 +199,7 @@ for(isim in 1:nsims){
 
   langFit[[isim]] <- suppressMessages(fitLangevin(subDat[[isim]],model=model,par=par,spatialCovs=spatialCovs[[isim]],
                                  map=map,
-                                 smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale,
+                                 smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale, scaleFactor = scaleFactor,
                                  silent=TRUE, control=list(trace=0),initialInner=initialInner))
 
   parMat[isim,1:(5+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
@@ -233,4 +234,4 @@ for(isim in 1:nsims){
 }
 
 if(!dir.exists("simulation/results")) dir.create("simulation/results")
-save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,covTimes,file=paste0("simulation/results/",dataName,"_psi",psi,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,covTimes,scaleFactor,file=paste0("simulation/results/",dataName,"_psi",psi,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))

@@ -177,34 +177,50 @@ routeTracks <- function(data, maskRast) {
   }
 
   # Extract the safely routed coordinates from the spatial object.
-  # Doing this here prevents column-mismatch crashes since prt_trim dropped rows.
   safe_coords <- sf::st_coordinates(track_routed_sf)
   obs_routed <- data.frame(
     id = track_routed_sf$id,
     date = track_routed_sf$date,
     mu.x_pr = safe_coords[, 1],
-    mu.y_pr = safe_coords[, 2]
+    mu.y_pr = safe_coords[, 2],
+    pr_idx = 1:nrow(track_routed_sf) # Keep sequence to track inserted waypoints
   )
 
   message("   Mapping routed points to dataset...")
 
-  # Prevent ".x" and ".y" suffix duplication if the user is re-routing already routed data
+  # Prevent suffix duplication if the user is re-routing already routed data
   if ("mu.x_pr" %in% names(data)) data$mu.x_pr <- NULL
   if ("mu.y_pr" %in% names(data)) data$mu.y_pr <- NULL
 
-  # Join the safe points back to the FULL original dataset.
-  # Because we snapped points to the boundary before routing, prt_trim should not
-  # have dropped them, but we use the snapped temp_x/temp_y as a fallback just in case.
+  # Join original data to obs_routed using full_join to retain pathroutr's inserted rows
   data_routed <- data %>%
-    dplyr::left_join(obs_routed, by = c("id", "date")) %>%
+    dplyr::full_join(obs_routed, by = c("id", "date")) %>%
+    dplyr::arrange(id, date, pr_idx)
+
+  # Flag inserted waypoints. pathroutr duplicates the attributes of the segment's starting node.
+  # For any given id & date block, the first row is the original node; subsequent rows are inserted.
+  data_routed <- data_routed %>%
+    dplyr::group_by(id, date) %>%
+    dplyr::mutate(is_inserted = dplyr::row_number() > 1) %>%
+    dplyr::ungroup()
+
+  # Wipe out observation data for inserted waypoints (they are latent padding locations, not observations)
+  cols_to_na <- setdiff(names(data), c("id", "date", "dt"))
+  for(col in cols_to_na) {
+    if(col %in% names(data_routed)) {
+      data_routed[data_routed$is_inserted, col] <- NA
+    }
+  }
+
+  # Bring in temp_x and temp_y as fallback for mu.x_pr / mu.y_pr
+  data_routed <- data_routed %>%
     dplyr::left_join(dplyr::select(full_dat, id, date, temp_x, temp_y), by = c("id", "date")) %>%
-    dplyr::arrange(id, date) %>%
     dplyr::mutate(
       mu.x_pr = ifelse(is.na(mu.x_pr), temp_x, mu.x_pr),
       mu.y_pr = ifelse(is.na(mu.y_pr), temp_y, mu.y_pr)
     )
 
-  # Fallback to the original raw coordinates for any tracks/endpoints that lacked enough valid points to route
+  # Fallback to the original raw coordinates for endpoints that lacked valid points to route
   missing_pr <- is.na(data_routed$mu.x_pr)
   if (any(missing_pr)) {
     data_routed$mu.x_pr[missing_pr] <- data_routed[[x_col]][missing_pr]
@@ -214,11 +230,52 @@ routeTracks <- function(data, maskRast) {
   # Clean up temporary columns
   data_routed$temp_x <- NULL
   data_routed$temp_y <- NULL
+  data_routed$pr_idx <- NULL
+
+  # Interpolate timestamps for inserted waypoints
+  data_routed$date_num <- as.numeric(data_routed$date)
+  data_routed$date_num[data_routed$is_inserted] <- NA
+
+  data_routed <- data_routed %>%
+    dplyr::group_by(id) %>%
+    dplyr::mutate(
+      date_num = stats::approx(x = 1:dplyr::n(), y = date_num, xout = 1:dplyr::n(), rule = 2)$y
+    ) %>%
+    dplyr::ungroup()
+
+  # Restore date format
+  if (inherits(data$date, "POSIXt")) {
+    tz_attr <- attr(data$date, "tzone")
+    if (is.null(tz_attr)) tz_attr <- "UTC"
+    data_routed$date <- as.POSIXct(data_routed$date_num, origin = "1970-01-01", tz = tz_attr)
+  } else if (inherits(data$date, "Date")) {
+    data_routed$date <- as.Date(data_routed$date_num, origin = "1970-01-01")
+  } else {
+    data_routed$date <- data_routed$date_num
+  }
+
+  data_routed$date_num <- NULL
+  data_routed$is_inserted <- NULL
+
+  # Recalculate dt
+  time.unit <- attr(data, "time.unit")
+  is_numeric_date <- is.numeric(data_routed$date)
+
+  data_routed <- data_routed %>%
+    dplyr::group_by(id) %>%
+    dplyr::mutate(
+      dt = if (is_numeric_date) {
+        c(0, as.numeric(diff(date)))
+      } else {
+        c(0, as.numeric(difftime(date[-1], date[-dplyr::n()], units = time.unit)))
+      }
+    ) %>%
+    dplyr::ungroup()
 
   # Re-apply the dataLangevin class to ensure downstream compatibility
   data_routed <- as.data.frame(data_routed)
   class(data_routed) <- c("dataLangevin", "data.frame")
-  attr(data_routed, "time.unit") <- attr(data, "time.unit")
+  attr(data_routed, "time.unit") <- time.unit
   attr(data_routed, "coord") <- coord_cols
 
   message("   Done. Appended 'mu.x_pr' and 'mu.y_pr' to the dataset.")

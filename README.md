@@ -158,7 +158,7 @@ head(exampleDat)
 fit_over <- fitLangevin(model = "overdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE)  
+                   getJointPrecision = TRUE)  
 
 fit_over
 #> 
@@ -186,7 +186,7 @@ fit_over
 fit_under <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE)  
+                   getJointPrecision = TRUE)  
 
 fit_under
 #> 
@@ -265,12 +265,12 @@ coef(fit_under)
 # confidence intervals for fixed effects
 confint(fit_under) 
 #>                2.5 %     97.5 %
-#> beta_cov1 -6.4242881 -1.4416808
-#> beta_cov2  2.5612970  8.7557483
-#> beta_cov3  2.6723027  8.9103478
-#> beta_d2c  -0.6566221  0.1303356
-#> sigma      3.6776716  5.9189646
-#> gamma      0.2274879  0.6634344
+#> beta_cov1 -6.4243270 -1.4416418
+#> beta_cov2  2.5614194  8.7556258
+#> beta_cov3  2.6723663  8.9102842
+#> beta_d2c  -0.6566207  0.1303342
+#> sigma      3.6777000  5.9189362
+#> gamma      0.2274934  0.6634288
 #> rho_o      0.0000000  0.0000000
 #> tau_1      1.0000000  1.0000000
 #> tau_2      1.0000000  1.0000000
@@ -371,6 +371,35 @@ p_over$qq_x + p_over$qq_y + p_over$acf_x + p_over$acf_y + plot_layout(ncol=2)
 
 ![](man/figures/README-osa-2.png)<!-- -->
 
+#### Conditional AIC
+
+``` r
+# calculate conditional AIC of Zheng et al. (2024)
+cAIC(fit_under, data = exampleDat, spatialCovs = exampleCovs, nSims = 1000)
+#> 
+#> Conditional Akaike Information Criterion (cAIC)
+#> ===============================================
+#> cAIC:                  3544.24
+#> Conditional NLL:       1573.89
+#> -----------------------------------------------
+#> Effective DF (EDF):    192.23
+#> Trace Penalty:         5807.77
+#> Fixed Effects (p):     6
+#> Random Effects (q):    6000
+
+cAIC(fit_over, data = exampleDat, spatialCovs = exampleCovs, nSims = 1000)
+#> 
+#> Conditional Akaike Information Criterion (cAIC)
+#> ===============================================
+#> cAIC:                  4298.24
+#> Conditional NLL:       1458.07
+#> -----------------------------------------------
+#> Effective DF (EDF):    686.05
+#> Trace Penalty:         2313.95
+#> Fixed Effects (p):     5
+#> Random Effects (q):    3000
+```
+
 #### Bhattacharyya’s affinity
 
 ``` r
@@ -431,6 +460,7 @@ names(coast_barrier) <- "coast_barrier"
 # maskBuffer adds 1 cell buffer to barrier
 exampleCovs_barrier <- exampleCovs
 maskBuff <- maskBuffer(coast_barrier,bufferCells=1)
+#> Warning: [distance] unknown CRS. Results can be wrong
 exampleCovs_barrier$coast_barrier <- prepBarrier(maskBuff)
 exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier
 
@@ -456,8 +486,7 @@ attr(simDat_barrier,"lambda")
 # fitLangevin will automatically detect and use the exact barrier penalty (lambda) 
 # that generated the data
 fit_barrier <- fitLangevin(data = simDat_barrier,
-                           spatialCovs = exampleCovs_barrier,
-                           silent = TRUE)
+                           spatialCovs = exampleCovs_barrier)
 fit_barrier
 #> 
 #> Habitat-Driven Langevin Diffusion Model
@@ -465,7 +494,7 @@ fit_barrier
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -1937.79 
-#> Optimization time:  0.75 seconds
+#> Optimization time:  0.73 seconds
 #> Barrier penalty:    4.003 
 #> 
 #> Parameter Estimates (Natural Scale):
@@ -497,8 +526,7 @@ plot(fit_barrier, data = simDat_barrier,
 # first fit baseline model with no barrier penalty
 fit0 <- fitLangevin(data = simDat_barrier,
                     spatialCovs = exampleCovs_barrier,
-                    lambda = 0,
-                    silent = TRUE)
+                    lambda = 0)
 
 lambda <- suggestLambda(fit0,max_dt = median(simDat_barrier$dt))
 
@@ -507,8 +535,7 @@ lambda
 
 fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
                                   spatialCovs = exampleCovs_barrier,
-                                  lambda = lambda,
-                                  silent = TRUE)
+                                  lambda = lambda)
 fit_barrier_lambda
 #> 
 #> Habitat-Driven Langevin Diffusion Model
@@ -516,14 +543,14 @@ fit_barrier_lambda
 #> Model type:        Underdamped 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -1938.061 
-#> Optimization time:  0.72 seconds
+#> Optimization time:  0.76 seconds
 #> Barrier penalty:    4.505 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>               Estimate Std. Error
-#> beta_cov1    -2.792086      0.960
-#> beta_cov2     6.298264      1.079
+#> beta_cov1    -2.792085      0.960
+#> beta_cov2     6.298263      1.079
 #> beta_cov3     6.012598      1.196
 #> beta_d2c      0.006108      0.754
 #> beta_d2coast -0.071881      0.092

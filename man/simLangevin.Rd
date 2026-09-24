@@ -141,8 +141,7 @@ simDat_lc <- simLangevin(par = par,
 \dontrun{
 # simulate from fitted model
 fit <- fitLangevin(data = exampleDat,
-                   spatialCovs = exampleCovs,
-                   silent = TRUE)
+                   spatialCovs = exampleCovs)
 
 # unconditional
 simFit <- simLangevin(fit,

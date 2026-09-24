@@ -63,6 +63,12 @@ plotRaster <- function(rast, legend.title = NULL, extent = NULL, time = NULL, ma
   if (!is.null(maskRast)) {
 
     if(!inherits(maskRast, "SpatRaster")) stop("'maskRast' must be a SpatRaster")
+
+    if(!is.null(crop_ext)){
+      maskRast <- tryCatch({ terra::crop(maskRast, crop_ext) },
+                       error = function(e) { warning("terra::crop failed. Ignoring extent."); return(maskRast) })
+    }
+
     if (!terra::compareGeom(rast, maskRast, stopOnError = FALSE)) stop("The 'maskRast' raster must share the same projection (CRS), extent, and resolution as the rasters in 'spatialCovs'.")
 
     maskRast_eval <- tryCatch({

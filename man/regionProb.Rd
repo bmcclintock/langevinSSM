@@ -55,8 +55,7 @@ This function calculates the probability of an animal being in a specified regio
 \donttest{
 # fit the underdamped Langevin model
 fit <- fitLangevin(data = exampleDat,
-                   spatialCovs = exampleCovs,
-                   silent = TRUE)
+                   spatialCovs = exampleCovs)
 
 # create a spatial mask for the region of interest
 d2c <- exampleCovs$d2c < 2.5

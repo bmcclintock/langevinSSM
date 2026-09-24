@@ -10,7 +10,7 @@ initialValues(
   par,
   spatialCovs,
   coord = c("x", "y"),
-  type = c("empirical", "neutral")
+  type = c("neutral", "empirical")
 )
 }
 \arguments{
@@ -24,7 +24,7 @@ initialValues(
 
 \item{coord}{Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").}
 
-\item{type}{Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "empirical" (default) or "neutral". See Details.}
+\item{type}{Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "neutral" (default) or "empirical". See Details.}
 }
 \value{
 A list of initial parameter values, with names corresponding to the parameters used in the model. The list will include the following parameters:

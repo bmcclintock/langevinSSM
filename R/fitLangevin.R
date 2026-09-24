@@ -208,7 +208,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param curweight Smoothing weight of current cell location (\code{0 <= curweight < 1}). Ignored unless \code{smoothGradient=TRUE}.
 #' @param zetaScale Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). Ignored unless \code{smoothGradient=TRUE}.
 #' @param hessian Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
-#' @param silent Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
+#' @param silent Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{TRUE}.
 #' @param method Character string indicating the type of algorithm used for the outer optimization (e.g., \code{"BFGS"}). When \code{optMethod = "nloptr"}, \code{"BFGS"} is internally mapped to \code{"NLOPT_LD_LBFGS"} for compatibility. Default: \code{"BFGS"}.
 #' @param optMethod Character string indicating the optimization function (engine) to use for the outer optimization. Options are \code{"nlminb"} or \code{"nloptr"}. If \code{"nloptr"} is selected, the \code{nloptr} package must be installed. Default: \code{"nlminb"}.
 #' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.
@@ -278,14 +278,12 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' # exampleDat included in package; see ?exampleDat for details
 #' # exampleCovs included in package; see ?exampleCovs for details
 #' fit <- fitLangevin(data = exampleDat,
-#'                    spatialCovs = exampleCovs,
-#'                    silent = TRUE)
+#'                    spatialCovs = exampleCovs)
 #'
 #' # fit overdamped model with measurement error
 #' fit_od <- fitLangevin(data = exampleDat,
 #'                       model = "overdamped",
-#'                       spatialCovs = exampleCovs,
-#'                       silent = TRUE)
+#'                       spatialCovs = exampleCovs)
 #'
 #' \dontrun{
 #' # simulating with a barrier and passing the penalty to fitLangevin
@@ -322,8 +320,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' # Because simDat_barrier is a simLangevin object, fitLangevin will automatically
 #' # detect and use the exact barrier penalty (lambda) that generated the data
 #' fit_barrier <- fitLangevin(data = simDat_barrier,
-#'                            spatialCovs = exampleCovs_barrier,
-#'                            silent = TRUE)
+#'                            spatialCovs = exampleCovs_barrier)
 #'
 #' plot(fit_barrier, data = simDat_barrier,
 #'                   spatialCovs = exampleCovs_barrier,
@@ -334,7 +331,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=FALSE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 

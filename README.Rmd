@@ -87,7 +87,7 @@ head(exampleDat)
 fit_over <- fitLangevin(model = "overdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE)  
+                   getJointPrecision = TRUE)  
 
 fit_over
 
@@ -95,7 +95,7 @@ fit_over
 fit_under <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE)  
+                   getJointPrecision = TRUE)  
 
 fit_under
 ```
@@ -155,6 +155,14 @@ res_over
 
 p_over <- plot(res_over)
 p_over$qq_x + p_over$qq_y + p_over$acf_x + p_over$acf_y + plot_layout(ncol=2)
+```
+
+#### Conditional AIC
+```{r caic,eval=TRUE,cache=TRUE}
+# calculate conditional AIC of Zheng et al. (2024)
+cAIC(fit_under, data = exampleDat, spatialCovs = exampleCovs, nSims = 1000)
+
+cAIC(fit_over, data = exampleDat, spatialCovs = exampleCovs, nSims = 1000)
 ```
 
 #### Bhattacharyya's affinity
@@ -217,8 +225,7 @@ attr(simDat_barrier,"lambda")
 # fitLangevin will automatically detect and use the exact barrier penalty (lambda) 
 # that generated the data
 fit_barrier <- fitLangevin(data = simDat_barrier,
-                           spatialCovs = exampleCovs_barrier,
-                           silent = TRUE)
+                           spatialCovs = exampleCovs_barrier)
 fit_barrier
 
 plot(fit_barrier, data = simDat_barrier,
@@ -230,8 +237,7 @@ plot(fit_barrier, data = simDat_barrier,
 # first fit baseline model with no barrier penalty
 fit0 <- fitLangevin(data = simDat_barrier,
                     spatialCovs = exampleCovs_barrier,
-                    lambda = 0,
-                    silent = TRUE)
+                    lambda = 0)
 
 lambda <- suggestLambda(fit0,max_dt = median(simDat_barrier$dt))
 
@@ -239,8 +245,7 @@ lambda
 
 fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
                                   spatialCovs = exampleCovs_barrier,
-                                  lambda = lambda,
-                                  silent = TRUE)
+                                  lambda = lambda)
 fit_barrier_lambda
 
 plot(fit_barrier_lambda, data = simDat_barrier,

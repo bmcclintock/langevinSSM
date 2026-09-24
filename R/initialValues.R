@@ -7,7 +7,7 @@
 #' @param par A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.
 #' @param spatialCovs A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.
 #' @param coord Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").
-#' @param type Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "empirical" (default) or "neutral". See Details.
+#' @param type Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "neutral" (default) or "empirical". See Details.
 #' @return A list of initial parameter values, with names corresponding to the parameters used in the model. The list will include the following parameters:
 #' \item{beta}{Numeric vector of initial values for the coefficients of the spatial covariates. Length should match the number of spatial covariates.}
 #' \item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
@@ -37,7 +37,7 @@
 #' }
 #' @importFrom stats median approx ave cor
 #' @export
-initialValues <- function(data, model=c("underdamped","overdamped"), par, spatialCovs, coord = c("x","y"), type = c("empirical", "neutral")){
+initialValues <- function(data, model=c("underdamped","overdamped"), par, spatialCovs, coord = c("x","y"), type = c("neutral", "empirical")){
 
   model <- match.arg(model)
   type <- match.arg(type)

@@ -66,7 +66,6 @@ smallDat <- simLangevin(par = par,
 fit <- fitLangevin(model = "underdamped",
                    data = smallDat,
                    spatialCovs = exampleCovs,
-                   silent = TRUE,
                    control = list(trace = 1))
 
 res <- residuals(fit, data = smallDat, spatialCovs = exampleCovs)

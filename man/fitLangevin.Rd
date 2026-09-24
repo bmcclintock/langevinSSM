@@ -20,7 +20,7 @@ fitLangevin(
   curweight = 0.5,
   zetaScale = 1,
   hessian = FALSE,
-  silent = FALSE,
+  silent = TRUE,
   method = "BFGS",
   optMethod = c("nlminb", "nloptr"),
   initialInner = TRUE,
@@ -64,7 +64,7 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{hessian}{Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.}
 
-\item{silent}{Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.}
+\item{silent}{Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{TRUE}.}
 
 \item{method}{Character string indicating the type of algorithm used for the outer optimization (e.g., \code{"BFGS"}). When \code{optMethod = "nloptr"}, \code{"BFGS"} is internally mapped to \code{"NLOPT_LD_LBFGS"} for compatibility. Default: \code{"BFGS"}.}
 
@@ -146,14 +146,12 @@ The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher 
 # exampleDat included in package; see ?exampleDat for details
 # exampleCovs included in package; see ?exampleCovs for details
 fit <- fitLangevin(data = exampleDat,
-                   spatialCovs = exampleCovs,
-                   silent = TRUE)
+                   spatialCovs = exampleCovs)
 
 # fit overdamped model with measurement error
 fit_od <- fitLangevin(data = exampleDat,
                       model = "overdamped",
-                      spatialCovs = exampleCovs,
-                      silent = TRUE)
+                      spatialCovs = exampleCovs)
 
 \dontrun{
 # simulating with a barrier and passing the penalty to fitLangevin
@@ -190,8 +188,7 @@ simDat_barrier <- simLangevin(par = par_barrier,
 # Because simDat_barrier is a simLangevin object, fitLangevin will automatically
 # detect and use the exact barrier penalty (lambda) that generated the data
 fit_barrier <- fitLangevin(data = simDat_barrier,
-                           spatialCovs = exampleCovs_barrier,
-                           silent = TRUE)
+                           spatialCovs = exampleCovs_barrier)
 
 plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,

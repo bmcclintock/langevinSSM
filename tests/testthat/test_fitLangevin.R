@@ -165,7 +165,7 @@ test_that("mapDuplicatedTimes correctly maps duplicate states and preserves user
   dat <- list(
     ID = c("A", "A", "A", "B", "B"),
     Y = matrix(NA, nrow=2, ncol=5),
-    dt = c(0, 1, 0, 0, 1) # Note: dt[3] is a duplicate for A
+    delta_t = c(0, 1, 0, 0, 1) # Note: delta_t[3] is a duplicate for A
   )
 
   # mock parameters (5 locations = 10 elements)
@@ -191,12 +191,12 @@ test_that("mapDuplicatedTimes correctly maps duplicate states and preserves user
   expect_true(is.na(mu_map_chr[1]) && is.na(mu_map_chr[2]))
 
   # duplicated Time Mapping (A)
-  # dat$dt[3] == 0, so location 3 (elements 5,6) should map to location 2 (elements 3,4)
+  # dat$delta_t[3] == 0, so location 3 (elements 5,6) should map to location 2 (elements 3,4)
   expect_equal(mu_map_chr[5], mu_map_chr[3])
   expect_equal(mu_map_chr[6], mu_map_chr[4])
 
   # track boundary protection (B)
-  # dat$dt[4] == 0, but this is the FIRST observation of track B.
+  # dat$delta_t[4] == 0, but this is the FIRST observation of track B.
   # It should NOT map to the last observation of track A (elements 5,6).
   expect_true(mu_map_chr[7] != mu_map_chr[5])
 
@@ -212,7 +212,7 @@ test_that("mapDuplicatedTimes generates strict sequential TMB factors (lexicogra
   dat <- list(
     ID = rep("A", 12),
     Y = matrix(NA, nrow=2, ncol=12),
-    dt = c(0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1) # duplicates at indices 6 and 11
+    delta_t = c(0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1) # duplicates at indices 6 and 11
   )
   par <- list(
     mu = matrix(0, nrow=2, ncol=12),
@@ -245,7 +245,7 @@ test_that("mapDuplicatedTimes generates strict sequential TMB factors (lexicogra
   expect_equal(first_appearances, 1:length(first_appearances))
 
   # 5. Check specific duplicate mapping
-  # dt[6] == 0, so location 6 (elements 11, 12) maps to location 5 (elements 9, 10)
+  # delta_t[6] == 0, so location 6 (elements 11, 12) maps to location 5 (elements 9, 10)
   expect_equal(mu_int[11], mu_int[9])
   expect_equal(mu_int[12], mu_int[10])
 })
@@ -866,5 +866,61 @@ test_that("fitLangevin prevents C++ crashes on degenerate data", {
 
   # 4. Verify nlminb aborted the flat likelihood surface (Code 1 = false convergence)
   expect_equal(fit$convergence, 1)
+})
+
+test_that("fitLangevin accurately fits and extracts obs_dist = 't' models", {
+  r <- list(habitat = get_valid_raster())
+  dat <- get_valid_dataLangevin()
+
+  # Add slight noise to prevent singular convergence
+  set.seed(123)
+  dat$x <- dat$x + rnorm(5, 0, 0.5)
+  dat$y <- dat$y + rnorm(5, 0, 0.5)
+
+  p <- get_valid_par()
+  p$df <- 3 # Define degrees of freedom for the t-distribution
+
+  # Fit the model specifying the t-distribution
+  suppressWarnings(suppressMessages({
+    fit <- fitLangevin(data = dat, spatialCovs = r, par = p, obs_dist = "t", silent = TRUE)
+  }))
+
+  expect_s3_class(fit, "fitLangevin")
+
+  # Verify the condition was successfully stored for downstream inheritance
+  expect_equal(fit$conditions$obs_dist, "t")
+
+  # Verify df was accurately extracted into the natural parameters list
+  expect_true("df" %in% rownames(fit$estimates$natural))
+})
+
+test_that("fitLangevin catches common user mistakes with obs_dist = 't' and df parameter", {
+  r <- list(habitat = get_valid_raster())
+  dat <- get_valid_dataLangevin()
+  p <- get_valid_par()
+
+  # Mistake 1: Setting a negative or invalid df value
+  p_bad_df <- p
+  p_bad_df$df <- -2
+
+  expect_error(
+    suppressMessages(fitLangevin(data = dat, spatialCovs = r, par = p_bad_df, obs_dist = "t")),
+    "df"
+  )
+
+  # Mistake 2: Missing df entirely in par when obs_dist = "t"
+  # This should not error; it should gracefully default to df = 3 and fix it via map
+  p_no_df <- p
+
+  suppressWarnings(suppressMessages({
+    fit_default_df <- fitLangevin(data = dat, spatialCovs = r, par = p_no_df, obs_dist = "t", silent = TRUE)
+  }))
+
+  # Verify df is present in the natural estimates and defaulted to exactly 3
+  expect_true("df" %in% rownames(fit_default_df$estimates$natural))
+  expect_equal(fit_default_df$estimates$natural["df", "Estimate"], 5)
+
+  # Verify it was mapped out (fixed) during optimization
+  expect_true(is.na(fit_default_df$tmb_setup$map$l_df))
 })
 

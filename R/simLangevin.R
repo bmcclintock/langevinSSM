@@ -7,10 +7,11 @@
 #' @param model Can be either a character string specifying the model to simulate from scratch (\code{"underdamped"} or \code{"overdamped"}), or a fitted Langevin model object of class \code{fitLangevin} (as returned by \code{\link{fitLangevin}}).
 #' @param ... Additional arguments passed to the specific methods.
 #'
+#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #'
-#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. See \code{\link{fitLangevin}}.
+#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. See \code{\link{fitLangevin}}.
 #' @param lambda Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.
 #' @param timeStep Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.
 #' @param nbAnimals Number of animals to simulate. Default: 1.
@@ -26,6 +27,14 @@
 #' @details
 #' \strong{Simulating from Scratch (Default Method):}
 #' When \code{model} is a character string (\code{"underdamped"} or \code{"overdamped"}), the function generates a completely new dataset. This requires specifying the movement parameters (\code{par}), the number of animals, and the desired measurement error structure.
+#'
+#' \strong{Measurement Error Models:}
+#' When simulating observation error, the function can generate noisy locations using either a bivariate Gaussian distribution (\code{obs_dist = "Gaussian"}):
+#' \deqn{(x,y) \sim N((\mu_x,\mu_y), \Sigma),}
+#' or a heavy-tailed bivariate Student's t-distribution (\code{obs_dist = "t"}):
+#' \deqn{(x,y) \sim t_{\nu}((\mu_x,\mu_y), \Sigma),}
+#' where \eqn{(x,y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, \eqn{\Sigma} is the observation error covariance matrix, and \eqn{\nu} represents the degrees of freedom (\code{df} parameter).
+#' The construction of \eqn{\Sigma} depends on the provided \code{measurementError} arguments (e.g., Argos error ellipses or standard deviations). See \code{\link{fitLangevin}}.
 #'
 #' \strong{Simulating from a Fitted Model (fitLangevin Method):}
 #' When \code{model} is a \code{fitLangevin} object, the function behaves as a diagnostic and simulation tool.
@@ -146,6 +155,7 @@ simLangevin <- function(model, ...) {
 #' @rdname simLangevin
 #' @export
 simLangevin.default <- function(model = c("underdamped", "overdamped"),
+                                obs_dist = c("Gaussian", "t"),
                                 spatialCovs,
                                 barrier = NULL,
                                 par,
@@ -161,6 +171,42 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   model <- match.arg(model)
   .validate_lambda(lambda)
   orig_spatialCovs <- spatialCovs
+  obs_dist <- match.arg(obs_dist)
+
+  # --- 1. Pre-Validate Observation Error Parameters vs Measurement Error Structure ---
+  if (!is.null(measurementError)) {
+    if (is.data.frame(measurementError)) {
+      # Data frame implies Location Quality Classes (EMF), which maps to LS
+      if ("psi" %in% names(par)) {
+        stop("Cannot specify 'psi' in 'par' because 'measurementError' is a data frame configured for EMF, which generates LS/GPS observations, not error ellipses.")
+      }
+    } else if (is.list(measurementError)) {
+      has_KF_sim <- all(c("smaj.sd", "smin.sd") %in% names(measurementError))
+      has_LS_sim <- all(c("x.sd", "y.sd") %in% names(measurementError))
+
+      if (has_KF_sim && has_LS_sim) {
+        stop("Cannot provide both Argos KF (smaj.sd, smin.sd) and LS/GPS (x.sd, y.sd) error parameters in 'measurementError'.")
+      }
+
+      if (has_LS_sim && ("psi" %in% names(par))) {
+        stop("Cannot specify 'psi' in 'par' because the 'measurementError' list is configured for LS/GPS observations (x.sd, y.sd), not error ellipses.")
+      }
+
+      if (has_KF_sim && any(c("tau", "rho_o") %in% names(par))) {
+        stop("Cannot specify 'tau' or 'rho_o' in 'par' because the 'measurementError' list is configured for error ellipses (smaj.sd, smin.sd), not LS/GPS observations.")
+      }
+    }
+  } else {
+    # If measurementError is NULL, no errors will be generated.
+    if (any(c("psi", "tau", "rho_o") %in% names(par))) {
+      stop("Cannot specify observation error parameters ('psi', 'tau', 'rho_o') in 'par' when 'measurementError = NULL'.")
+    }
+  }
+
+  if (obs_dist == "Gaussian" && "df" %in% names(par)) {
+    stop("Cannot specify 'df' in 'par' because the observation distribution is `Gaussian'.")
+  }
+  # ---------------------------------------------------------------------------------
 
   if (!is.null(barrier)) {
     if(!is.character(barrier)) stop("'barrier' must be a character string indicating the spatRaster in 'covs' containing the barrier layer.")
@@ -256,7 +302,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   class(out) <- c("dataLangevin", class(out))
 
   if(!is.null(measurementError)) {
-    out <- addMeasurementError(out, par, measurementError = measurementError)
+    out <- addMeasurementError(out, par, measurementError = measurementError, obs_dist = obs_dist)
   } else {
     out <- out %>% dplyr::mutate(x = mu.x, y = mu.y, smaj = NA, smin = NA, eor = NA, x.err = NA, y.err = NA)
   }
@@ -343,6 +389,7 @@ simLangevin.fitLangevin <- function(model,
   coord <- cond$coord
   scaleFactor <- cond$scaleFactor
   lambda <- cond$lambda
+  obs_dist <- ifelse(is.null(cond$obs_dist), "Gaussian", cond$obs_dist)
 
   if(!is.null(lambda)){
 
@@ -364,7 +411,7 @@ simLangevin.fitLangevin <- function(model,
 
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
                         cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
-                        barrier_sdf = barrier_sdf, lambda = lambda)
+                        obs_dist, barrier_sdf = barrier_sdf, lambda = lambda)
 
   dat <- c(dat, fit$tmb_setup$priors)
 
@@ -454,7 +501,8 @@ simLangevin.fitLangevin <- function(model,
       out$vel.y <- vel_working[, 2] * scaleFactor
     }
 
-    out <- addMeasurementError(out, nat_par)
+    out <- addMeasurementError(out, nat_par, obs_dist = obs_dist)
+
   } else {
     out_list <- vector("list", length(unique(data$id)))
     names(out_list) <- unique(data$id)
@@ -528,7 +576,7 @@ simLangevin.fitLangevin <- function(model,
 
     class(out) <- c("dataLangevin", class(out))
 
-    out <- addMeasurementError(out, nat_par)
+    out <- addMeasurementError(out, nat_par, obs_dist = obs_dist)
   }
 
   out$id <- as.factor(out$id)

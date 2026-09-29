@@ -318,9 +318,11 @@ plot.resLangevin <- function(x, tracks = NULL, ...) {
   }
 
   resids <- x
+  obs_dist <- attr(resids, "obs_dist")
+  if (is.null(obs_dist)) obs_dist <- "Gaussian" # Fallback
 
   if (is.null(tracks)) {
-    return(.generate_res_plots(resids))
+    return(.generate_res_plots(resids, obs_dist = obs_dist))
   } else {
     if (length(tracks) == 1 && tracks[1] == "all") {
       tracks_to_plot <- unique(resids$id)
@@ -332,7 +334,7 @@ plot.resLangevin <- function(x, tracks = NULL, ...) {
     for (trk in tracks_to_plot) {
       sub_data <- resids[resids$id == trk, ]
       if (nrow(sub_data) > 0) {
-        out_list[[as.character(trk)]] <- .generate_res_plots(sub_data, paste0(" - ID: ", trk))
+        out_list[[as.character(trk)]] <- .generate_res_plots(sub_data, paste0(" - ID: ", trk), obs_dist = obs_dist)
       } else {
         warning("No data found for track ID: ", trk, ". Skipping this track.")
       }
@@ -717,19 +719,26 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
     ggplot2::theme(legend.position = "none")
 }
 
-.generate_res_plots <- function(data_subset, title_suffix = "") {
+.generate_res_plots <- function(data_subset, title_suffix = "", obs_dist = "Gaussian") {
   res_x_full <- data_subset$residual.x[!is.na(data_subset$residual.x)]
   res_y_full <- data_subset$residual.y[!is.na(data_subset$residual.y)]
-
-  valid_idx <- which(!is.na(data_subset$residual.x) & !is.na(data_subset$residual.y))
-  res_x_pair <- data_subset$residual.x[valid_idx]
-  res_y_pair <- data_subset$residual.y[valid_idx]
-  D2 <- res_x_pair^2 + res_y_pair^2
 
   p_qq_x <- .make_qq_norm(res_x_full, paste0("Normal Q-Q Plot: x residuals", title_suffix))
   p_qq_y <- .make_qq_norm(res_y_full, paste0("Normal Q-Q Plot: y residuals", title_suffix))
   p_acf_x <- .make_acf_plot(res_x_full, paste0("ACF: x residuals", title_suffix))
   p_acf_y <- .make_acf_plot(res_y_full, paste0("ACF: y residuals", title_suffix))
+
+  if (obs_dist == "t") {
+    return(list(
+      qq_x = p_qq_x, qq_y = p_qq_y,
+      acf_x = p_acf_x, acf_y = p_acf_y
+    ))
+  }
+
+  valid_idx <- which(!is.na(data_subset$residual.x) & !is.na(data_subset$residual.y))
+  res_x_pair <- data_subset$residual.x[valid_idx]
+  res_y_pair <- data_subset$residual.y[valid_idx]
+  D2 <- res_x_pair^2 + res_y_pair^2
 
   p_qq_mah <- .make_qq_chisq(D2, paste0("Mahalanobis Q-Q Plot", title_suffix))
   p_acf_mah <- .make_acf_plot(D2, paste0("ACF: Mahalanobis Distance", title_suffix))

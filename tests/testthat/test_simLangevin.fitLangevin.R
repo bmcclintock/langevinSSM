@@ -204,3 +204,35 @@ test_that("simLangevin.fitLangevin handles error ellipse (KF) measurement errors
   expect_equal(res_ee$eor, dat_ee$eor)
   expect_false(isTRUE(all.equal(res_ee$x, res_ee$mu.x)))
 })
+
+test_that("simLangevin.fitLangevin correctly inherits obs_dist = 't' from a fitted model", {
+  # Setup mock data with heavy-tailed noise
+  set.seed(42)
+  df <- data.frame(
+    id = factor(1),
+    date = seq(0, 1, 0.1),
+    dt = c(0, rep(0.1, 10)),
+    x = 250 + rt(11, df = 3),
+    y = 250 + rt(11, df = 3),
+    x.err = 1, y.err = 1, smaj = NA_real_, smin = NA_real_, eor = NA_real_
+  )
+  exDat <- class_dataLangevin(df)
+
+  # Fit a model strictly specifying the t-distribution
+  fit_t <- suppressWarnings(suppressMessages(
+    fitLangevin(data = exDat, spatialCovs = exCovs, par = list(sigma = 1, df = 3), obs_dist = "t", silent = TRUE, calcSE = FALSE)
+  ))
+
+  # Simulate from the fitted model unconditionally
+  res_t <- suppressWarnings(suppressMessages(
+    simLangevin(fit_t, data = exDat, spatialCovs = exCovs, conditional = FALSE)
+  ))
+
+  expect_s3_class(res_t, "dataLangevin")
+
+  # Confirm the simulation correctly inherited the t-distribution setting
+  # from the fit object's conditions
+  expect_equal(fit_t$conditions$obs_dist, "t")
+  expect_false(isTRUE(all.equal(res_t$x, res_t$mu.x)))
+})
+

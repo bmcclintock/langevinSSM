@@ -1,6 +1,4 @@
-# --- Helper: Build TMB Data List ---
-build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_sdf = NULL, lambda = NULL) {
-
+build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = NULL, lambda = NULL) {
   if (!is.null(barrier_sdf)) {
     barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE) / scaleFactor
     barrier_pen <- lambda
@@ -20,12 +18,13 @@ build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothG
 
   dat <- list(
     process_model = ifelse(model == "underdamped", 1, 0),
+    obs_dist = ifelse(obs_dist == "t", 1, 0),
     Y = t(data[, coord]) / scaleFactor,
     times = track_times,
-    dt = data$dt
+    delta_t = data$dt
   )
 
-  dat$skip_step <- as.integer(dat$dt < 1.e-6)
+  dat$skip_step <- as.integer(dat$delta_t < 1.e-6)
   dat$smaj <- data$smaj / scaleFactor
   dat$smin <- data$smin / scaleFactor
   dat$eor <- data$eor
@@ -71,7 +70,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 
     # 2. natural scale
     rep_vals <- obj$report()
-    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi")
+    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi","df")
     existing_names <- nat_names[nat_names %in% names(rep_vals)]
     nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
     names(nat_list) <- existing_names
@@ -182,7 +181,6 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
       rownames(estimates[[est_type]]) <- rn
     }
   }
-
   return(list(estimates = estimates, covariance = covariance))
 }
 
@@ -193,11 +191,12 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'
 #' @param data \code{dataLangevin} object. See \code{\link{formatData}}.
 #' @param model Character string indicating which Langevin diffusion model to fit (``underdamped'', or ``overdamped''). Default: ``underdamped''.
+#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma'').
-#' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). All parameter are specified on their natural scale and are converted to working scale internally.
-#' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, and ``rho_o'' = 0) via \code{map}. See Details.
+#' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). All parameters are specified on their natural scale and are converted to working scale internally.
+#' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, ``rho_o'' = 0, and ``df'' = 5) via \code{map}. See Details.
 #' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{suggestLambda}} for a strategy to determine the optimal penalty.
 #' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).
 #' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
@@ -234,22 +233,27 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'
 #' @details
 #' \strong{Measurement Error Models:}
-#' The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information:
+#' The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information. The observations can be modeled using either a bivariate Gaussian distribution (\code{obs_dist = "Gaussian"}):
 #' \deqn{(x,y) \sim N((\mu_x,\mu_y), \Sigma),}
-#' where \eqn{(x.y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, and \eqn{\Sigma} is the observation error covariance matrix.
+#' or a bivariate Student's t-distribution (\code{obs_dist = "t"}) to better handle heavy-tailed observation outliers:
+#' \deqn{(x,y) \sim t_{\nu}((\mu_x,\mu_y), \Sigma),}
+#' where \eqn{(x,y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, \eqn{\Sigma} is the observation error covariance matrix, and \eqn{\nu} represents the degrees of freedom (\code{df} parameter).
 #' \itemize{
 #'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} This model is used when error ellipse data (\code{smaj}, \code{smin}, and \code{eor}) are present for an observation. The (optional) observation process parameter \code{psi} acts as a scaling multiplier specifically on the semi-minor axis (\code{smin}) to account for uncertainty in the error ellipse.
-#'   For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015), with \code{psi} scaling the semi-minor axis.
+#'   For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015), with \eqn{\psi} (\code{psi}) scaling the semi-minor axis:
+#'   \deqn{\Sigma = \begin{bmatrix} (M/\sqrt{2})^2 \sin^2(c) + (\psi m/\sqrt{2})^2 \cos^2(c) & \frac{1}{2}\left(M^2 - (\psi m)^2\right) \cos(c) \sin(c) \\ \frac{1}{2}\left(M^2 - (\psi m)^2\right) \cos(c) \sin(c) & (M/\sqrt{2})^2 \cos^2(c) + (\psi m/\sqrt{2})^2 \sin^2(c) \end{bmatrix}}
+#'   where \eqn{M} is the semi-major axis (\code{smaj}), \eqn{m} is the semi-minor axis (\code{smin}), and \eqn{c} is the ellipse orientation in radians from north (\code{eor}).
 #'   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.err} and \code{y.err}) are present for an observation. The (optional) observation parameter \code{tau} (a 2-vector) scales the \code{x.err} and \code{y.err}, respectively, to account for uncertainty in the x- and y-axis standard deviations, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis standard deviations.
-#'   For the standard deviation model, \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix},}
+#'   For the standard deviation model:
+#'   \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix}}
 #'   with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.err}=\sigma_x,\text{y.err}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for the correlation between the x- and y-axis errors.
 #' }
 #' Whenever a coordinate is \code{NA} (either present in the original dataset or introduced via the \code{predTimes} argument in \code{\link{formatData}}), \code{fitLangevin} skips the evaluation of the observation error model for that time step. Instead, it relies solely on the Langevin diffusion state process model to predict the true (latent) location.
 #'
-#' \strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}):}
+#' \strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}, \code{df}):}
 #' These parameters control the scaling and correlation of measurement errors and can be specified via \code{par} and \code{map}:
 #' \itemize{
-#'   \item \strong{1. Fixed at defaults:} If observation process parameters are omitted from \code{par}, the model automatically fixes them to neutral values: \code{psi = 1} (no scaling semi-minor axis), \code{tau = c(1, 1)} (no scaling of \code{x.err} or \code{y.err}), and \code{rho_o = 0} (no correlation between x- and y-axis errors).
+#'   \item \strong{1. Fixed at defaults:} If observation process parameters are omitted from \code{par}, the model automatically fixes them to neutral values: \code{psi = 1} (no scaling semi-minor axis), \code{tau = c(1, 1)} (no scaling of \code{x.err} or \code{y.err}), and \code{rho_o = 0} (no correlation between x- and y-axis errors). When \code{obs_dist="t"}, the default is a robust, heavy-tailed \code{df = 5}.
 #'   \item \strong{2. Estimated from data:} To estimate one or more of these parameters, include them in \code{par} with an initial starting value (e.g., \code{par = list(psi = 1.2)}).
 #'   \item \strong{3. Fixed to custom values:} To fix a parameter to a specific value other than the default, include the custom value in \code{par} and explicitly map it to \code{NA} in \code{map} (e.g., \code{par = list(psi = 1.5), map = list(psi = factor(NA))}).
 #' }
@@ -331,13 +335,14 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = c("Gaussian", "t"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
   data <- class_dataLangevin(data)
 
   model <- match.arg(model)
+  obs_dist <- match.arg(obs_dist)
   optMethod <- match.arg(optMethod)
 
   if (optMethod == "nloptr" && !requireNamespace("nloptr", quietly = TRUE)) {
@@ -387,9 +392,9 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     stop("At least one habitat covariate must remain in spatialCovs after isolating the barrier constraint.")
   }
 
-  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, barrier_sdf = barrier_sdf, lambda = lambda)
+  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = barrier_sdf, lambda = lambda)
 
-  par <- initialValues(data, model, par, spatialCovs, coord)
+  par <- initialValues(data, model, obs_dist, par, spatialCovs, coord)
   origprior <- prior
   cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior)
   tmbpar <- cp$par
@@ -567,6 +572,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
     }
 
     if (!is.null(fit$convergence) && fit$convergence != 0) warning("Optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
+
   }
 
   if (calcSE) {
@@ -603,12 +609,13 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), spatialCovs
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
   }
 
-  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, polishOptim = polishOptim, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda, calcSE = calcSE)
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, polishOptim = polishOptim, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda, calcSE = calcSE)
 
   boundsWarning(fit)
 
   fit$signatures <- list(data = get_data_signature(data, coord), covs = get_covs_signature(orig_spatialCovs))
   fit$tmb_setup <- list(parList = obj2$env$parList(fit$par), map = tmbmap, random = re, priors = cp$priors)
+
 
   fit <- class_fitLangevin(fit)
   return(fit)

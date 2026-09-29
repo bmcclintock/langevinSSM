@@ -45,6 +45,9 @@ getPar <- function(fit) {
   if ("l_rho_o" %in% active_pars) {
     par_out$rho_o <- 2 / (1 + exp(-parList$l_rho_o)) - 1
   }
+  if ("l_df" %in% active_pars) {
+    par_out$df <- exp(parList$l_df)
+  }
 
   par_out$mu <- unname(as.matrix(t(parList$mu) * scaleFactor))
 

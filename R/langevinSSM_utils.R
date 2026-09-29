@@ -95,6 +95,10 @@ print.fitLangevin <- function(x, ...) {
   model_type <- ifelse("vel" %in% names(x$estimates$random), "Underdamped", "Overdamped")
   cat("Model type:       ", model_type, "\n")
 
+  # Determine observation distribution
+  obs_type <- x$conditions$obs_dist
+  cat("Observation model:", obs_type, "\n")
+
   # Convergence status
   conv_text <- ifelse(x$convergence == 0, "Successful", paste("Failed (Code", x$convergence, ")"))
   cat("Convergence:      ", conv_text, "\n")
@@ -598,16 +602,16 @@ checkErrorData <- function(data, coord=c("x","y"), measurementError = NULL, know
 }
 
 mapDuplicatedTimes <- function(dat, map, par, re) {
-  if (any(dat$dt < 1.e-6)) {
+  if (any(dat$delta_t < 1.e-6)) {
     # extract current maps (or initialize 1:N if NULL)
     mu_map <- if(is.null(map$mu)) 1:length(par$mu) else as.character(map$mu)
     vel_map <- if(is.null(map$vel)) 1:length(par$vel) else as.character(map$vel)
 
     for(i in 2:ncol(dat$Y)) {
       # if same track and dt is near 0, map current state to previous state
-      if(dat$ID[i] == dat$ID[i-1] && dat$dt[i] < 1.e-6) {
+      if(dat$ID[i] == dat$ID[i-1] && dat$delta_t[i] < 1.e-6) {
 
-        if(dat$dt[i] > 0){
+        if(dat$delta_t[i] > 0){
           warning("Extremely small (0 < dt < 1.e-6) time step detected. Mapping states together (i.e. no change in location or velocity) to prevent numerical instability.")
         }
 

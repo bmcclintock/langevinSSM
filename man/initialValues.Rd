@@ -7,6 +7,7 @@
 initialValues(
   data,
   model = c("underdamped", "overdamped"),
+  obs_dist = c("Gaussian", "t"),
   par,
   spatialCovs,
   coord = c("x", "y"),
@@ -17,6 +18,8 @@ initialValues(
 \item{data}{A data frame of class \code{dataLangevin} containing the formatted tracking data. See \code{\link{formatData}}.}
 
 \item{model}{Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".}
+
+\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.}
 
 \item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
 
@@ -37,6 +40,7 @@ And, if provided in \code{par}, the following observation process parameters:
 \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
 \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}
 \item{rho_o}{Numeric value for the correlation parameter in the LS/GPS error model. Must be >=0 and <1.}
+\item{df}{Numeric values for the degrees of freedom parameter for the t-distributed measurement error observation model.}
 }
 \description{
 This function generates initial parameter values for fitting the Langevin movement model. It uses empirical estimates from the data to provide reasonable starting values for the optimization algorithm. The user can also specify initial values for any parameters, which will override the empirical estimates.
@@ -57,5 +61,6 @@ If not provided in \code{par}, the initial values for the observation process pa
  \item \code{psi}: Initialized to 1, which means no scaling of the error ellipse.
  \item \code{tau}: Initialized to c(1, 1), which means no scaling of the x and y standard deviations.
  \item \code{rho_o}: Initialized to 0, which means no correlation between the x and y errors.
+ \item \code{df}: Initialized to 5, which provides a robust, heavy-tailed default.
 }
 }

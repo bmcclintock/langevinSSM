@@ -14,9 +14,10 @@ template<class Type>
 Type langevinSSM(objective_function<Type>* obj)
 {
   DATA_INTEGER(process_model);      // 0 = overdamped, 1 = underdamped
+  DATA_INTEGER(obs_dist);           // 0 = Gaussian, 1 = t-distribution
   DATA_ARRAY(Y);           // Array of observed locations
   DATA_ARRAY_INDICATOR(keep, Y); // used for TMB oneStepPredict bivariate decomposition
-  DATA_VECTOR(dt);          // Time steps
+  DATA_VECTOR(delta_t);          // Time steps
   DATA_IVECTOR(isd);        // indexes observations vs. interpolation points
   DATA_IVECTOR(obs_mod);    // indicates which obs error model to be used
   DATA_IVECTOR(ID);         // Track IDs
@@ -63,6 +64,7 @@ Type langevinSSM(objective_function<Type>* obj)
   // for LS/GPS OBS MODEL
   PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale)
   PARAMETER(l_rho_o);           // measurement error correlation b/w x,y
+  PARAMETER(l_df);       // Log degrees of freedom for t-distribution
 
   // PRIOR INPUTS
   DATA_INTEGER(has_prior_beta);
@@ -89,6 +91,10 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_VECTOR(prior_mean_l_rho_o);
   DATA_VECTOR(prior_sd_l_rho_o);
 
+  DATA_INTEGER(has_prior_l_df);
+  DATA_VECTOR(prior_mean_l_df);
+  DATA_VECTOR(prior_sd_l_df);
+
   DATA_INTEGER(has_prior_mu);
   DATA_IVECTOR(prior_idx_mu);
   DATA_VECTOR(prior_mean_mu_val);
@@ -102,6 +108,7 @@ Type langevinSSM(objective_function<Type>* obj)
   Type psi = exp(l_psi);
   vector<Type> tau = exp(l_tau);
   Type rho_o = Type(2.0) / (Type(1.0) + exp(-l_rho_o)) - Type(1.0);
+  Type df = exp(l_df);
 
   Type nll = 0.0;
 
@@ -112,7 +119,7 @@ Type langevinSSM(objective_function<Type>* obj)
   vector<int> track_lengths(1);
   track_starts(0) = 0;
 
-  int timeSteps = dt.size();
+  int timeSteps = delta_t.size();
 
   // Find track starts and lengths
   for(int i = 1; i < timeSteps; i++) {
@@ -150,7 +157,7 @@ Type langevinSSM(objective_function<Type>* obj)
     for(int t = 0; t < (track_length-1); t++) {
 
       int idx = start_idx + t;
-      Type dt_step = dt(idx+1);
+      Type dt_step = delta_t(idx+1);
 
       if(skip_step(idx+1) == 1) continue;
 
@@ -291,6 +298,11 @@ Type langevinSSM(objective_function<Type>* obj)
     }
   }
 
+  // l_df
+  if (has_prior_l_df == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_df(0)))) nll -= dnorm(l_df, prior_mean_l_df(0), prior_sd_l_df(0), true);
+  }
+
   // mu
   if (has_prior_mu == 1) {
     for(int k=0; k < prior_idx_mu.size(); k++){
@@ -325,6 +337,7 @@ Type langevinSSM(objective_function<Type>* obj)
         cov_obs(0,0) = s * s;
         cov_obs(1,1) = q * q;
         cov_obs(0,1) = s * q * rho_o;
+        cov_obs(1,0) = cov_obs(0,1);
       } else if(obs_mod(i) == 1) {
         // Argos Kalman Filter observations
         Type z = sqrt(Type(2.0));
@@ -335,6 +348,7 @@ Type langevinSSM(objective_function<Type>* obj)
         cov_obs(0,0) = (M2 * s2c + m2 * c2c);
         cov_obs(1,1) = (M2 * c2c + m2 * s2c);
         cov_obs(0,1) = (0.5 * (smaj(i) * smaj(i) - (smin(i) * psi * smin(i) * psi))) * cos(eor(i)) * sin(eor(i));
+        cov_obs(1,0) = cov_obs(0,1);
       }
 
       // TMB oneStepPredict Bivariate Decomposition
@@ -343,6 +357,7 @@ Type langevinSSM(objective_function<Type>* obj)
       Type covXY = cov_obs(0,1);
 
       Type sdX = sqrt(varX);
+      Type sdY = sqrt(varY);
 
       Type x_obs = Y(0,i);
       Type y_obs = Y(1,i);
@@ -352,14 +367,27 @@ Type langevinSSM(objective_function<Type>* obj)
       Type kX = keep(0,i);
       Type kY = keep(1,i);
 
-      // 1. Marginal Likelihood of X
-      nll -= kX * dnorm(x_obs, mu_x, sdX, true);
-
-      // 2. Conditional Likelihood of Y
-      Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
-      Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
-
-      nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);
+      if (obs_dist == 0) {
+        // Gaussian Model
+        nll -= kX * dnorm(x_obs, mu_x, sdX, true);
+        Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
+        Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
+        nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);
+      } else if (obs_dist == 1) {
+        // t-distribution Model
+        if (kX == Type(1.0) && kY == Type(1.0)) {
+          Type dx = x_obs - mu_x;
+          Type dy = y_obs - mu_y;
+          Type det = varX * varY - covXY * covXY;
+          Type D = (dx*dx*varY + dy*dy*varX - Type(2.0)*dx*dy*covXY) / det;
+          Type log_dens = lgamma((df + Type(2.0))/Type(2.0)) - lgamma(df/Type(2.0)) - log(df) - log(M_PI) - Type(0.5)*log(det) - ((df + Type(2.0))/Type(2.0)) * log(Type(1.0) + D/df);
+          nll -= log_dens;
+        } else if (kX == Type(1.0) && kY == Type(0.0)) {
+          nll -= dt((x_obs - mu_x)/sdX, df, true) - log(sdX);
+        } else if (kX == Type(0.0) && kY == Type(1.0)) {
+          nll -= dt((y_obs - mu_y)/sdY, df, true) - log(sdY);
+        }
+      }
     }
   }
 
@@ -369,6 +397,7 @@ Type langevinSSM(objective_function<Type>* obj)
   ADREPORT(rho_o);
   ADREPORT(tau);
   ADREPORT(psi);
+  if(obs_dist == 1) ADREPORT(df);
 
   // Backup in case sdreport fails
   REPORT(beta);
@@ -377,6 +406,7 @@ Type langevinSSM(objective_function<Type>* obj)
   REPORT(rho_o);
   REPORT(tau);
   REPORT(psi);
+  if(obs_dist == 1) REPORT(df);
   REPORT(mu);
   if(process_model == 1) REPORT(vel);
 

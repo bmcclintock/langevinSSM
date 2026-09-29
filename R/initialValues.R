@@ -4,6 +4,7 @@
 #'
 #' @param data A data frame of class \code{dataLangevin} containing the formatted tracking data. See \code{\link{formatData}}.
 #' @param model Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".
+#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.
 #' @param par A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.
 #' @param spatialCovs A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.
 #' @param coord Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").
@@ -18,6 +19,7 @@
 #' \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
 #' \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}
 #' \item{rho_o}{Numeric value for the correlation parameter in the LS/GPS error model. Must be >=0 and <1.}
+#' \item{df}{Numeric values for the degrees of freedom parameter for the t-distributed measurement error observation model.}
 #' @details
 #' \strong{Movement Process Parameters:}
 #' If not provided in \code{par}, the initial values for the movement process parameters are generated as follows:
@@ -34,18 +36,20 @@
 #'  \item \code{psi}: Initialized to 1, which means no scaling of the error ellipse.
 #'  \item \code{tau}: Initialized to c(1, 1), which means no scaling of the x and y standard deviations.
 #'  \item \code{rho_o}: Initialized to 0, which means no correlation between the x and y errors.
+#'  \item \code{df}: Initialized to 5, which provides a robust, heavy-tailed default.
 #' }
 #' @importFrom stats median approx ave cor
 #' @export
-initialValues <- function(data, model=c("underdamped","overdamped"), par, spatialCovs, coord = c("x","y"), type = c("neutral", "empirical")){
+initialValues <- function(data, model=c("underdamped","overdamped"), obs_dist = c("Gaussian", "t"), par, spatialCovs, coord = c("x","y"), type = c("neutral", "empirical")){
 
   model <- match.arg(model)
+  obs_dist <- match.arg(obs_dist)
   type <- match.arg(type)
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   if(!missing(par)){
     if(!is.list(par)) stop("par must be a list.")
-    else if(!all(names(par) %in% c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"))) stop("names(par) is limited to c('beta','sigma','gamma','mu','vel','psi','tau','rho_o')")
+    else if(!all(names(par) %in% c("beta","sigma","gamma","mu","vel","psi","tau","rho_o","df"))) stop("names(par) is limited to c('beta','sigma','gamma','mu','vel','psi','tau','rho_o','df')")
 
     has_ee <- any(!is.na(data$smaj))
     has_ls <- any(!is.na(data$x.err))
@@ -58,6 +62,9 @@ initialValues <- function(data, model=c("underdamped","overdamped"), par, spatia
     }
     if (model == "overdamped" && any(c("gamma", "vel") %in% names(par))) {
       stop("Cannot specify par$gamma or par$vel when model = 'overdamped'.")
+    }
+    if (obs_dist=="Gaussian" && (("df" %in% names(par)))) {
+      stop("Cannot specify 'df' in 'par' because the observation distribution is `Gaussian'.")
     }
   } else par <- list()
 

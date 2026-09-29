@@ -10,6 +10,7 @@ simLangevin(model, ...)
 
 \method{simLangevin}{default}(
   model = c("underdamped", "overdamped"),
+  obs_dist = c("Gaussian", "t"),
   spatialCovs,
   barrier = NULL,
   par,
@@ -38,11 +39,13 @@ simLangevin(model, ...)
 
 \item{...}{Additional arguments passed to the specific methods.}
 
+\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.}
+
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
 
 \item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).}
 
-\item{par}{List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. See \code{\link{fitLangevin}}.}
+\item{par}{List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. See \code{\link{fitLangevin}}.}
 
 \item{lambda}{Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.}
 
@@ -75,6 +78,14 @@ This function acts as a generic interface for simulating from the Langevin diffu
 \details{
 \strong{Simulating from Scratch (Default Method):}
 When \code{model} is a character string (\code{"underdamped"} or \code{"overdamped"}), the function generates a completely new dataset. This requires specifying the movement parameters (\code{par}), the number of animals, and the desired measurement error structure.
+
+\strong{Measurement Error Models:}
+When simulating observation error, the function can generate noisy locations using either a bivariate Gaussian distribution (\code{obs_dist = "Gaussian"}):
+\deqn{(x,y) \sim N((\mu_x,\mu_y), \Sigma),}
+or a heavy-tailed bivariate Student's t-distribution (\code{obs_dist = "t"}):
+\deqn{(x,y) \sim t_{\nu}((\mu_x,\mu_y), \Sigma),}
+where \eqn{(x,y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, \eqn{\Sigma} is the observation error covariance matrix, and \eqn{\nu} represents the degrees of freedom (\code{df} parameter).
+The construction of \eqn{\Sigma} depends on the provided \code{measurementError} arguments (e.g., Argos error ellipses or standard deviations). See \code{\link{fitLangevin}}.
 
 \strong{Simulating from a Fitted Model (fitLangevin Method):}
 When \code{model} is a \code{fitLangevin} object, the function behaves as a diagnostic and simulation tool.

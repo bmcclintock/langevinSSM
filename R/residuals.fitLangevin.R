@@ -74,7 +74,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, cond$scaleFactor,
                         cond$smoothGradient, cond$npoints, cond$curweight,
-                        cond$zetaScale, barrier_sdf = barrier_sdf, lambda = cond$lambda)
+                        cond$zetaScale, obs_dist = cond$obs_dist, barrier_sdf = barrier_sdf, lambda = cond$lambda)
 
   dat <- c(dat, object$tmb_setup$priors)
 
@@ -99,7 +99,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
     # Scale pseudo-error to typical step's process standard deviation
     sigma_est <- unname(exp(object$par["log_sigma"]))
-    median_dt <- median(dat$dt[dat$dt > 0], na.rm = TRUE)
+    median_dt <- median(dat$delta_t[dat$delta_t > 0], na.rm = TRUE)
     typical_process_sd <- sigma_est * sqrt(median_dt)
     pseudo_err <- typical_process_sd * 1e-4
 
@@ -135,7 +135,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     t_dat <- dat
     t_dat$Y <- t_dat$Y[, track_idx, drop = FALSE]
     t_dat$times <- t_dat$times[track_idx]
-    t_dat$dt <- t_dat$dt[track_idx]
+    t_dat$delta_t <- t_dat$delta_t[track_idx]
     t_dat$skip_step <- t_dat$skip_step[track_idx]
     t_dat$smaj <- t_dat$smaj[track_idx]
     t_dat$smin <- t_dat$smin[track_idx]
@@ -294,9 +294,16 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
   )
 
   class(res_df) <- c("resLangevin", "data.frame")
+  attr(res_df, "obs_dist") <- cond$obs_dist
 
   if(run_tests) {
     tests_df <- gof_tests(res_df)
+
+    # Exclude Mahalanobis distance tests when using a t-distribution
+    if (!is.null(cond$obs_dist) && cond$obs_dist == "t") {
+      tests_df <- tests_df[!grepl("mah", tests_df$metric, ignore.case = TRUE), ]
+    }
+
     attr(res_df,"tests") <- tests_df
   }
 

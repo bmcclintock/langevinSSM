@@ -45,6 +45,7 @@ cAIC <- function(fit, data, spatialCovs, nSims = 200) {
   npoints <- fit$conditions$npoints
   curweight <- fit$conditions$curweight
   zetaScale <- fit$conditions$zetaScale
+  obs_dist <- fit$conditions$obs_dist
 
   spatialCovs_copy <- spatialCovs
   barrier_sdf <- NULL
@@ -63,6 +64,7 @@ cAIC <- function(fit, data, spatialCovs, nSims = 200) {
     npoints = npoints,
     curweight = curweight,
     zetaScale = zetaScale,
+    obs_dist = obs_dist,
     barrier_sdf = barrier_sdf,
     lambda = lambda
   )

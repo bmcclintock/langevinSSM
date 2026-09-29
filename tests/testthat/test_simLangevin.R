@@ -185,3 +185,105 @@ test_that("simLangevin correctly applies EMF dataframe probabilities to tracks",
   expect_false(any(is.na(res$x.err)))
   expect_false(any(is.na(res$y.err)))
 })
+
+test_that("simLangevin.default accurately simulates data using obs_dist = 't'", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+  p$df <- 3
+
+  # Simulate from scratch
+  set.seed(42)
+  res <- suppressMessages(simLangevin(
+    model = "underdamped",
+    par = p,
+    spatialCovs = r,
+    nbAnimals = 1,
+    obsPerAnimal = 50,
+    timeStep = 0.1,
+    initialPosition = c(50, 50),
+    obs_dist = "t",
+    measurementError = list(x.sd = 1.5, y.sd = 1.5)
+  ))
+
+  expect_s3_class(res, "dataLangevin")
+  expect_true(all(c("x", "y", "mu.x", "mu.y") %in% names(res)))
+
+  # Ensure measurement error was actually applied to the true locations
+  expect_false(isTRUE(all.equal(res$x, res$mu.x)))
+})
+
+test_that("simLangevin.default proactively catches mismatched observation error parameters", {
+  r <- list(habitat = get_valid_raster())
+  p <- get_valid_par()
+
+  # 1. Both KF and LS provided in measurementError
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p, spatialCovs = r,
+      measurementError = list(smaj.sd = 1, smin.sd = 1, x.sd = 1, y.sd = 1)
+    )),
+    "Cannot provide both Argos KF"
+  )
+
+  # 2. 'psi' provided with LS/GPS configuration
+  p_psi <- p
+  p_psi$psi <- 1.5
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_psi, spatialCovs = r,
+      measurementError = list(x.sd = 1, y.sd = 1)
+    )),
+    "configured for LS/GPS observations"
+  )
+
+  # 3. 'tau' or 'rho_o' provided with Error Ellipse (KF) configuration
+  p_tau <- p
+  p_tau$tau <- c(1, 1)
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_tau, spatialCovs = r,
+      measurementError = list(smaj.sd = 1.5, smin.sd = 0.75)
+    )),
+    "configured for error ellipses"
+  )
+
+  p_rho <- p
+  p_rho$rho_o <- 0.5
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_rho, spatialCovs = r,
+      measurementError = list(smaj.sd = 1.5, smin.sd = 0.75)
+    )),
+    "configured for error ellipses"
+  )
+
+  # 4. 'psi' provided with EMF Data Frame
+  emf_df <- data.frame(lc = "G", emf.x = 1, emf.y = 1, prob = 1)
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_psi, spatialCovs = r,
+      measurementError = emf_df
+    )),
+    "configured for EMF"
+  )
+
+  # 5. Observation error parameters provided when measurementError is NULL
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_psi, spatialCovs = r,
+      measurementError = NULL
+    )),
+    "when 'measurementError = NULL'"
+  )
+
+  # 6. 'df' parameter provided when obs_dist is Gaussian
+  p_df <- p
+  p_df$df <- 3
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_df, spatialCovs = r,
+      obs_dist = "Gaussian"
+    )),
+    "because the observation distribution is `Gaussian'."
+  )
+})

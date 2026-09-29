@@ -7,6 +7,7 @@
 fitLangevin(
   data,
   model = c("underdamped", "overdamped"),
+  obs_dist = c("Gaussian", "t"),
   spatialCovs,
   barrier = NULL,
   par,
@@ -36,13 +37,15 @@ fitLangevin(
 
 \item{model}{Character string indicating which Langevin diffusion model to fit (``underdamped'', or ``overdamped''). Default: ``underdamped''.}
 
+\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.}
+
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.}
 
 \item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).}
 
 \item{par}{List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma'').
-Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). All parameter are specified on their natural scale and are converted to working scale internally.
-Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, and ``rho_o'' = 0) via \code{map}. See Details.}
+Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). All parameters are specified on their natural scale and are converted to working scale internally.
+Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, ``rho_o'' = 0, and ``df'' = 5) via \code{map}. See Details.}
 
 \item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{suggestLambda}} for a strategy to determine the optimal penalty.}
 
@@ -103,22 +106,27 @@ function using \code{TMB}. Location data can be temporally irregular and/or subj
 }
 \details{
 \strong{Measurement Error Models:}
-The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information:
+The \code{fitLangevin} function accommodates various types of measurement error depending on the provided measurement error data. It handles measurement error through two distinct internal models with the same underlying structure, which differ in how the observation error covariance matrix is constructed based on the available error information. The observations can be modeled using either a bivariate Gaussian distribution (\code{obs_dist = "Gaussian"}):
 \deqn{(x,y) \sim N((\mu_x,\mu_y), \Sigma),}
-where \eqn{(x.y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, and \eqn{\Sigma} is the observation error covariance matrix.
+or a bivariate Student's t-distribution (\code{obs_dist = "t"}) to better handle heavy-tailed observation outliers:
+\deqn{(x,y) \sim t_{\nu}((\mu_x,\mu_y), \Sigma),}
+where \eqn{(x,y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, \eqn{\Sigma} is the observation error covariance matrix, and \eqn{\nu} represents the degrees of freedom (\code{df} parameter).
 \itemize{
   \item \strong{Error Ellipse Model (Argos Kalman Filter):} This model is used when error ellipse data (\code{smaj}, \code{smin}, and \code{eor}) are present for an observation. The (optional) observation process parameter \code{psi} acts as a scaling multiplier specifically on the semi-minor axis (\code{smin}) to account for uncertainty in the error ellipse.
-  For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015), with \code{psi} scaling the semi-minor axis.
+  For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015), with \eqn{\psi} (\code{psi}) scaling the semi-minor axis:
+  \deqn{\Sigma = \begin{bmatrix} (M/\sqrt{2})^2 \sin^2(c) + (\psi m/\sqrt{2})^2 \cos^2(c) & \frac{1}{2}\left(M^2 - (\psi m)^2\right) \cos(c) \sin(c) \\ \frac{1}{2}\left(M^2 - (\psi m)^2\right) \cos(c) \sin(c) & (M/\sqrt{2})^2 \cos^2(c) + (\psi m/\sqrt{2})^2 \sin^2(c) \end{bmatrix}}
+  where \eqn{M} is the semi-major axis (\code{smaj}), \eqn{m} is the semi-minor axis (\code{smin}), and \eqn{c} is the ellipse orientation in radians from north (\code{eor}).
   \item \strong{Standard Deviation Model (Argos Least Squares, GPS, Generic Locations):} This model is used when x- and y-axis standard deviations (\code{x.err} and \code{y.err}) are present for an observation. The (optional) observation parameter \code{tau} (a 2-vector) scales the \code{x.err} and \code{y.err}, respectively, to account for uncertainty in the x- and y-axis standard deviations, while the (optional) parameter \code{rho_o} accounts for correlation between the x- and y-axis standard deviations.
-  For the standard deviation model, \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix},}
+  For the standard deviation model:
+  \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix}}
   with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.err}=\sigma_x,\text{y.err}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for the correlation between the x- and y-axis errors.
 }
 Whenever a coordinate is \code{NA} (either present in the original dataset or introduced via the \code{predTimes} argument in \code{\link{formatData}}), \code{fitLangevin} skips the evaluation of the observation error model for that time step. Instead, it relies solely on the Langevin diffusion state process model to predict the true (latent) location.
 
-\strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}):}
+\strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}, \code{df}):}
 These parameters control the scaling and correlation of measurement errors and can be specified via \code{par} and \code{map}:
 \itemize{
-  \item \strong{1. Fixed at defaults:} If observation process parameters are omitted from \code{par}, the model automatically fixes them to neutral values: \code{psi = 1} (no scaling semi-minor axis), \code{tau = c(1, 1)} (no scaling of \code{x.err} or \code{y.err}), and \code{rho_o = 0} (no correlation between x- and y-axis errors).
+  \item \strong{1. Fixed at defaults:} If observation process parameters are omitted from \code{par}, the model automatically fixes them to neutral values: \code{psi = 1} (no scaling semi-minor axis), \code{tau = c(1, 1)} (no scaling of \code{x.err} or \code{y.err}), and \code{rho_o = 0} (no correlation between x- and y-axis errors). When \code{obs_dist="t"}, the default is a robust, heavy-tailed \code{df = 5}.
   \item \strong{2. Estimated from data:} To estimate one or more of these parameters, include them in \code{par} with an initial starting value (e.g., \code{par = list(psi = 1.2)}).
   \item \strong{3. Fixed to custom values:} To fix a parameter to a specific value other than the default, include the custom value in \code{par} and explicitly map it to \code{NA} in \code{map} (e.g., \code{par = list(psi = 1.5), map = list(psi = factor(NA))}).
 }

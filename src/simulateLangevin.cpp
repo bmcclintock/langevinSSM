@@ -39,6 +39,13 @@ arma::vec rmvnorm(const arma::vec& mean, const arma::mat& sigma) {
   return mean + eigvec * arma::diagmat(arma::sqrt(eigval)) * z;
 }
 
+// Helper function for multivariate t-distribution sampling
+arma::vec rmvt(const arma::vec& mean, const arma::mat& sigma, double df) {
+  arma::vec y = rmvnorm(arma::zeros(mean.n_elem), sigma);
+  double u = R::rchisq(df);
+  return mean + y * std::sqrt(df / u);
+}
+
 // [[Rcpp::export]]
 DataFrame simulate_langevin_cpp(int model,
                                 int nbAnimals,
@@ -231,6 +238,8 @@ List measurementError_rcpp(DataFrame data,
                            double smin_sd,
                            NumericVector eor,
                            double psi,
+                           int obs_dist = 0,
+                           double df = 3.0,
                            bool knownError = false) {
 
   int n = data.nrows();
@@ -298,7 +307,9 @@ List measurementError_rcpp(DataFrame data,
     cov_obs(1,0) = cov_obs(0,1);
 
     arma::vec mean = {mux[i], muy[i]};
-    arma::vec new_pos = rmvnorm(mean, cov_obs);
+    arma::vec new_pos;
+    if(obs_dist == 1) new_pos = rmvt(mean, cov_obs, df);
+    else new_pos = rmvnorm(mean, cov_obs);
 
     new_mux[i] = new_pos(0);
     new_muy[i] = new_pos(1);
@@ -319,6 +330,8 @@ List measurementError_LS_rcpp(DataFrame data,
                               double tau_x,
                               double tau_y,
                               double rho_o,
+                              int obs_dist = 0,
+                              double df = 3.0,
                               bool knownError = false) {
 
   int n = data.nrows();
@@ -361,7 +374,9 @@ List measurementError_LS_rcpp(DataFrame data,
     cov_obs(1,0) = cov_obs(0,1);
 
     arma::vec mean = {mux[i], muy[i]};
-    arma::vec new_pos = rmvnorm(mean, cov_obs);
+    arma::vec new_pos;
+    if(obs_dist == 1) new_pos = rmvt(mean, cov_obs, df);
+    else new_pos = rmvnorm(mean, cov_obs);
 
     obs_x[i] = new_pos(0);
     obs_y[i] = new_pos(1);

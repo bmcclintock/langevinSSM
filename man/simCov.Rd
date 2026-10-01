@@ -4,10 +4,20 @@
 \alias{simCov}
 \title{Simulate spatial covariate}
 \usage{
-simCov(sca = 100, irange = 0.3, sigma2 = 0.1, kappa = 0.5, M = NULL, N = NULL)
+simCov(
+  sca = 100,
+  res = 1,
+  irange = 0.3,
+  sigma2 = 0.1,
+  kappa = 0.5,
+  M = NULL,
+  N = NULL
+)
 }
 \arguments{
 \item{sca}{Numeric value for the spatial scale of the covariate. The resulting covariate will be on a grid of size (2*sca) x (2*sca). Default: 100.}
+
+\item{res}{Numeric value for the cell resolution of the resulting raster. Default: 1.}
 
 \item{irange}{Numeric value for the spatial range of the covariate, expressed as a proportion of \code{sca}. The resulting covariate will have spatial range equal to \code{irange} * \code{sca}. Default: 0.3.}
 

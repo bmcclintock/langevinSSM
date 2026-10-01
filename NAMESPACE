@@ -43,80 +43,92 @@ export(simCov)
 export(simLangevin)
 export(subSampleData)
 export(suggestLambda)
-importFrom(TMB,MakeADFun)
-importFrom(TMB,oneStepPredict)
-importFrom(TMB,sdreport)
-importFrom(dplyr,"%>%")
-importFrom(dplyr,all_of)
-importFrom(dplyr,arrange)
-importFrom(dplyr,everything)
-importFrom(dplyr,filter)
-importFrom(dplyr,group_by)
-importFrom(dplyr,mutate)
-importFrom(dplyr,n)
-importFrom(dplyr,rename)
-importFrom(dplyr,row_number)
-importFrom(dplyr,select)
-importFrom(dplyr,summarise)
-importFrom(dplyr,tibble)
-importFrom(dplyr,ungroup)
-importFrom(sf,st_as_sf)
-importFrom(sf,st_coordinates)
-importFrom(sf,st_crs)
-importFrom(sf,st_drop_geometry)
-importFrom(sf,st_is_longlat)
-importFrom(stats,Box.test)
-importFrom(stats,acf)
-importFrom(stats,approx)
-importFrom(stats,ave)
-importFrom(stats,cor)
-importFrom(stats,dchisq)
-importFrom(stats,dnorm)
-importFrom(stats,ks.test)
-importFrom(stats,median)
-importFrom(stats,na.omit)
-importFrom(stats,nlminb)
-importFrom(stats,ppoints)
-importFrom(stats,printCoefmat)
-importFrom(stats,qchisq)
-importFrom(stats,qnorm)
-importFrom(stats,quantile)
-importFrom(stats,rbinom)
-importFrom(stats,residuals)
-importFrom(stats,rnorm)
-importFrom(stats,sd)
-importFrom(stats,setNames)
-importFrom(terra,"crs<-")
-importFrom(terra,app)
-importFrom(terra,as.array)
-importFrom(terra,as.data.frame)
-importFrom(terra,as.matrix)
-importFrom(terra,cellFromXY)
-importFrom(terra,compareGeom)
-importFrom(terra,crds)
-importFrom(terra,crop)
-importFrom(terra,crs)
-importFrom(terra,distance)
-importFrom(terra,ext)
-importFrom(terra,extract)
-importFrom(terra,global)
-importFrom(terra,ifel)
-importFrom(terra,mask)
-importFrom(terra,ncell)
-importFrom(terra,nlyr)
-importFrom(terra,rast)
-importFrom(terra,res)
-importFrom(terra,setValues)
-importFrom(terra,time)
-importFrom(terra,trim)
-importFrom(terra,unique)
-importFrom(terra,values)
-importFrom(terra,varnames)
-importFrom(terra,xFromCol)
-importFrom(terra,xyFromCell)
-importFrom(terra,yFromRow)
-importFrom(utils,globalVariables)
-importFrom(utils,setTxtProgressBar)
-importFrom(utils,txtProgressBar)
+importFrom(TMB,
+  MakeADFun,
+  oneStepPredict,
+  sdreport
+)
+importFrom(dplyr,
+  "%>%",
+  all_of,
+  arrange,
+  everything,
+  filter,
+  group_by,
+  mutate,
+  n,
+  rename,
+  row_number,
+  select,
+  summarise,
+  tibble,
+  ungroup
+)
+importFrom(sf,
+  st_as_sf,
+  st_coordinates,
+  st_crs,
+  st_drop_geometry,
+  st_is_longlat
+)
+importFrom(stats,
+  Box.test,
+  acf,
+  approx,
+  ave,
+  cor,
+  dchisq,
+  dnorm,
+  ks.test,
+  median,
+  na.omit,
+  nlminb,
+  ppoints,
+  printCoefmat,
+  qchisq,
+  qnorm,
+  quantile,
+  rbinom,
+  residuals,
+  rnorm,
+  sd,
+  setNames
+)
+importFrom(terra,
+  "crs<-",
+  app,
+  as.array,
+  as.data.frame,
+  as.matrix,
+  cellFromXY,
+  compareGeom,
+  crds,
+  crop,
+  crs,
+  distance,
+  ext,
+  extract,
+  global,
+  ifel,
+  mask,
+  ncell,
+  nlyr,
+  rast,
+  res,
+  setValues,
+  time,
+  trim,
+  unique,
+  values,
+  varnames,
+  xFromCol,
+  xyFromCell,
+  yFromRow
+)
+importFrom(utils,
+  globalVariables,
+  setTxtProgressBar,
+  txtProgressBar
+)
 useDynLib(langevinSSM)
 useDynLib(langevinSSM, .registration=TRUE); useDynLib(langevinSSM_TMBExports)

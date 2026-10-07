@@ -165,6 +165,7 @@ fit_over
 #> Habitat-Driven Langevin Diffusion Model
 #> =======================================
 #> Model type:        Overdamped 
+#> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2530.959 
 #> Optimization time:  0.32 seconds
@@ -193,6 +194,7 @@ fit_under
 #> Habitat-Driven Langevin Diffusion Model
 #> =======================================
 #> Model type:        Underdamped 
+#> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Optimization time:  0.71 seconds
 #> Max Log-Likelihood: -2059.125 
@@ -310,23 +312,23 @@ res_under
 #> 
 #> ---- Goodness-of-Fit Tests ----
 #>  metric  statistic   p.value
-#>    KS_x 0.01623411 0.8250146
-#>    KS_y 0.02325261 0.3931915
-#>  KS_mah 0.02366581 0.3714851
-#>    LB_x 8.03971355 0.3291050
-#>    LB_y 3.21740171 0.8641889
-#>  LB_mah 5.83083916 0.5596346
+#>    KS_x 0.01564263 0.8572825
+#>    KS_y 0.02335012 0.3879998
+#>  KS_mah 0.02055859 0.5515890
+#>    LB_x 7.93035702 0.3387750
+#>    LB_y 3.25487561 0.8604659
+#>  LB_mah 4.98707889 0.6615401
 #> -------------------------------
 #> 
 #> Residual Summary:
-#>    residual.x         residual.y      
-#>  Min.   :-3.03539   Min.   :-3.59504  
-#>  1st Qu.:-0.66918   1st Qu.:-0.64664  
-#>  Median : 0.00477   Median : 0.01418  
-#>  Mean   : 0.01512   Mean   : 0.01724  
-#>  3rd Qu.: 0.70205   3rd Qu.: 0.72569  
-#>  Max.   : 3.09371   Max.   : 2.95225  
-#>  NA's   :3          NA's   :3
+#>    residual.x          residual.y      
+#>  Min.   :-3.065344   Min.   :-3.56404  
+#>  1st Qu.:-0.671110   1st Qu.:-0.64874  
+#>  Median : 0.001261   Median : 0.01792  
+#>  Mean   : 0.010294   Mean   : 0.02037  
+#>  3rd Qu.: 0.696990   3rd Qu.: 0.73589  
+#>  Max.   : 3.116007   Max.   : 2.92166  
+#>  NA's   :3           NA's   :3
 
 # plot residuals to check model fit
 p_under <- plot(res_under)
@@ -346,23 +348,23 @@ res_over
 #> Number of tracks:   3 
 #> 
 #> ---- Goodness-of-Fit Tests ----
-#>  metric    statistic      p.value
-#>    KS_x   0.01835388 0.6943096864
-#>    KS_y   0.03702382 0.0330107286
-#>  KS_mah   0.02090779 0.5296595534
-#>    LB_x  27.69691301 0.0002495031
-#>    LB_y 164.46091645 0.0000000000
-#>  LB_mah   9.67064806 0.2080183389
+#>  metric   statistic      p.value
+#>    KS_x  0.02794196 1.929492e-01
+#>    KS_y  0.01521674 8.788165e-01
+#>  KS_mah  0.02799526 1.912390e-01
+#>    LB_x 33.07038139 2.568897e-05
+#>    LB_y 96.40788013 0.000000e+00
+#>  LB_mah 11.75739691 1.088246e-01
 #> -------------------------------
 #> 
 #> Residual Summary:
 #>    residual.x          residual.y      
-#>  Min.   :-3.061934   Min.   :-3.51075  
-#>  1st Qu.:-0.637724   1st Qu.:-0.78183  
-#>  Median :-0.012202   Median :-0.07414  
-#>  Mean   : 0.002239   Mean   :-0.08122  
-#>  3rd Qu.: 0.640902   3rd Qu.: 0.59904  
-#>  Max.   : 2.975504   Max.   : 2.89001  
+#>  Min.   :-2.966217   Min.   :-3.50647  
+#>  1st Qu.:-0.611255   1st Qu.:-0.67612  
+#>  Median : 0.004829   Median :-0.01600  
+#>  Mean   : 0.011535   Mean   :-0.01739  
+#>  3rd Qu.: 0.658915   3rd Qu.: 0.67399  
+#>  Max.   : 2.763448   Max.   : 2.91241  
 #>  NA's   :3           NA's   :3
 
 p_over <- plot(res_over)
@@ -492,9 +494,10 @@ fit_barrier
 #> Habitat-Driven Langevin Diffusion Model
 #> =======================================
 #> Model type:        Underdamped 
+#> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -1937.79 
-#> Optimization time:  0.73 seconds
+#> Optimization time:  0.79 seconds
 #> Barrier penalty:    4.003 
 #> 
 #> Parameter Estimates (Natural Scale):
@@ -541,9 +544,10 @@ fit_barrier_lambda
 #> Habitat-Driven Langevin Diffusion Model
 #> =======================================
 #> Model type:        Underdamped 
+#> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -1938.061 
-#> Optimization time:  0.76 seconds
+#> Optimization time:  0.87 seconds
 #> Barrier penalty:    4.505 
 #> 
 #> Parameter Estimates (Natural Scale):

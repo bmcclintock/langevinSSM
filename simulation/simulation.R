@@ -19,14 +19,18 @@ obsPerAnimal <- 5000 # number of simulated locations per track
 timeStep <- 0.01 # time scale of simulation (should be small to help prevent discretization error)
 scaleFactor <- 1
 
+obs_dist <- "Gaussian" # measurement error observation distribution ("Gaussian" or "t")
+
 beta <- c(-4, 6, 5, -0.1) # resource selection coefficients for the spatial covariates (cov_1, cov_2, ... cov_ncov, d2c)
 ncov <- length(beta) - 1 # number of spatial covariates to be generated using simCov
 sigma <- 5 # diffusion (or speed) parameter
 gamma <- 0.5 # friction parameter (smaller value -> more directional persistence); ignored unless model=="underdamped"
 psi <- 1 # error ellipse scaling parameter
+df <- 5 # degrees of freedom (applies to obs_dist <- "t" only)
 
 initialInner <- TRUE # logical indicating whether or not to use an initial inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters
 map <- list(psi=factor(NA)) # map for fixing parameters
+if(obs_dist=="t") map$df <- factor(NA)
 
 ## sampling rate, missing data, and measurement error
 samplingRate <- 1 # for subsampling observations from true continuous-time model (e.g. if samplingRate = 2 then data are roughly thinned by 2); must be >= 1; note bias increases with samplingRate, but relationships largely preserved
@@ -53,10 +57,14 @@ zetaScale <- 2 # scale factor for smooth gradient neighborhood (>1 increases, <1
 
 langSim <- subDat <- langFit <- list()
 spatialCovs <- list()
-parMat <- matrix(NA,nrow=nsims,6+ifelse(model=="underdamped",1,0))
+parMat <- matrix(NA,nrow=nsims,6+1+(obs_dist=="t")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))
 if(model=="overdamped"){
-  colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","BA")
-} else colnames(parMat) <- c(paste0("beta",1:(ncov+1)),"sigma","gamma","BA")
+  cNames <- c(paste0("beta",1:(ncov+1)),"sigma")
+} else cNames <- c(paste0("beta",1:(ncov+1)),"sigma","gamma")
+if(!isTRUE(is.na(map$psi))) cNames <- c(cNames,"psi")
+if(obs_dist=="t" && (!isTRUE(is.na(map$df)))) cNames <- c(cNames,"df")
+cNames <- c(cNames,"BA")
+colnames(parMat) <- cNames
 
 dataName <- paste0(model,"_nbAnimals",nbAnimals,"_obsPerAnimal",obsPerAnimal,"_timeStep",timeStep,"","_beta",paste0(beta,collapse = "_"),"_sigma",sigma,"_gamma",gamma,"_sca",sca,"_scaleFactor",scaleFactor,"_covRange",paste0(covRange,collapse="_"),
                    ifelse(covTimes>1,paste0("_covTimes",covTimes),""))
@@ -101,9 +109,9 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
     names(spatialCovs[[isim]]) <- covNames
 
     if(model=="underdamped"){
-      par <- list(beta=beta,sigma=sigma,gamma=gamma,psi=psi)
+      par <- list(beta=beta,sigma=sigma,gamma=gamma)
     } else {
-      par <- list(beta=beta,sigma=sigma,psi=psi)
+      par <- list(beta=beta,sigma=sigma)
     }
 
     # simulate "high resolution" tracks; this can take a while...
@@ -150,10 +158,13 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
   }
 }
 
+par <- list(psi=psi)
+if(obs_dist=="t") par$df <- df
+
 # add measurement error
 set.seed(1, kind="Mersenne-Twister", normal.kind = "Inversion")
 for(isim in 1:nsims){
-  subDat[[isim]] <- addMeasurementError(langSim[[isim]], measurementError = measurementError)
+  subDat[[isim]] <- addMeasurementError(langSim[[isim]], par=par, measurementError = measurementError, obs_dist = obs_dist)
 }
 
 # subsample data
@@ -177,6 +188,8 @@ for(isim in 1:nsims){
 
   par <- list(psi=psi)
 
+  if(obs_dist=="t") par$df <- df
+
   # generate missing data using aniMotum
   if(propMissing>0 && any(is.na(subDat[[isim]]$x))){
     if(use_aniMotum){
@@ -195,15 +208,17 @@ for(isim in 1:nsims){
     }
   }
 
-  par <- suppressMessages(initialValues(subDat[[isim]],model,par=par,spatialCovs=spatialCovs[[isim]]))
+  par <- suppressMessages(initialValues(subDat[[isim]],model,par=par,spatialCovs=spatialCovs[[isim]],obs_dist=obs_dist))
 
-  langFit[[isim]] <- suppressMessages(fitLangevin(subDat[[isim]],model=model,par=par,spatialCovs=spatialCovs[[isim]],
-                                 map=map,
-                                 smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale, scaleFactor = scaleFactor,
-                                 silent=TRUE, control=list(trace=0),initialInner=initialInner))
+  langFit[[isim]] <- suppressMessages(fitLangevin(subDat[[isim]],model=model,obs_dist=obs_dist,par=par,spatialCovs=spatialCovs[[isim]],
+                                                  map=map,
+                                                  smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale, scaleFactor = scaleFactor,
+                                                  silent=TRUE, control=list(trace=0),initialInner=initialInner))
 
-  parMat[isim,1:(5+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
+  parMat[isim,1:(5+1+(obs_dist=="t")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
   parMat[isim,"sigma"] <- langFit[[isim]]$estimates$natural["sigma",1]
+  if("psi" %in% colnames(parMat)) parMat[isim,"psi"] <- langFit[[isim]]$estimates$natural["psi",1]
+  if(obs_dist=="t" && "df" %in% colnames(parMat)) parMat[isim,"df"] <- langFit[[isim]]$estimates$natural["df",1]
   if(model=="underdamped") parMat[isim,"gamma"] <- langFit[[isim]]$estimates$natural["gamma",1]
 
   zoom_ext <- terra::ext(-100, 100, -100, 100)
@@ -234,4 +249,4 @@ for(isim in 1:nsims){
 }
 
 if(!dir.exists("simulation/results")) dir.create("simulation/results")
-save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,covTimes,scaleFactor,file=paste0("simulation/results/",dataName,"_psi",psi,ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))
+save(parMat,beta,sigma,gamma,obsPerAnimal,subDat,langFit,psi,df,timeStep,samplingRate,propMissing,measurementError,sca,npoints,curweight,covRange,map,covTimes,scaleFactor,obs_dist,file=paste0("simulation/results/",dataName,"_psi",psi,ifelse(obs_dist=="t",paste0("_df",df),""),ifelse(!is.null(measurementError),paste0("_smaj",measurementError$smaj.sd,"_smin",measurementError$smin.sd,"_eor",paste0(measurementError$eor.lim,collapse="_")),""),"_obs_dist",obs_dist,"_samplingRate",samplingRate,"_propMissing",propMissing,"_aniMotum",use_aniMotum,"_npoints",npoints,"_curweight",curweight,"_zetaScale",zetaScale,".RData"))

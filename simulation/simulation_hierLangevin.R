@@ -14,6 +14,8 @@ nSims <- 100          # Number of simulations to run
 n_ind <- 30           # Number of individuals to simulate per simulation
 n_obs <- 60000       # Number of observations per individual
 
+obs_dist <- "t"
+
 sigma <- 5   # true population scale parameter
 gamma <- 0.5 # true population friction parameter
 
@@ -107,6 +109,7 @@ for (sim in 1:nSims) {
 
     sim_track <- suppressMessages(simLangevin(
       model = "underdamped",
+      obs_dist = obs_dist,
       spatialCovs = covs,
       par = par_i,
       nbAnimals = 1,
@@ -171,6 +174,7 @@ for (sim in 1:nSims) {
       suppressMessages(fitLangevin(
         data = sim_data_list[[i]],
         model = "underdamped",
+        obs_dist = obs_dist,
         spatialCovs = covs,
         scaleFactor = scaleFactor,
         silent = TRUE

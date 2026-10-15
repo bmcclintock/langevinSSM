@@ -2,7 +2,7 @@
 #'
 #' This function adds measurement error to the true locations in the data frame, either by simulating new errors using provided measurement error parameters or by applying existing error columns natively found in the data. It supports both Argos Kalman Filter (KF) and Least Squares (LS)/GPS error models.
 #' @param data A \code{dataLangevin} object containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).
-#' @param par A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. If \code{obs_dist="t"}, then \code{par} can also include the degrees of freedom (`df`) parameter. See \code{\link{fitLangevin}}.
+#' @param par A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. If \code{obs_dist="t"}, then \code{par} can also include the degrees of freedom (`df`) parameter. If \code{obs_dist="Huber"}, then \code{par} can also include the threshold (`k`) parameter. See \code{\link{fitLangevin}}.
 #' @param measurementError A list or data frame used to simulate observation error. The structure determines the error model used:
 #' \itemize{
 #'   \item \strong{Argos Kalman Filter (KF):} A list containing \code{smaj.sd} (numeric; the SD to generate the semi-major axis), \code{smin.sd} (numeric; the SD to generate the semi-minor axis), and optionally \code{eor.lim} (numeric vector of length 2; boundaries in degrees for uniform orientation, defaulting to \code{c(0, 180)}).
@@ -11,15 +11,15 @@
 #' }
 #' You cannot provide parameters for multiple error models simultaneously. If \code{NULL}, the function assumes known error magnitudes already exist within \code{data} and applies the error covariance matrix row-by-row.
 #' @param coord A character vector of length 2 specifying the column names in `data` that contain the true x and y locations (default is `c("mu.x", "mu.y")`).
-#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.
+#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber''.
 #' @return A data frame with observed locations (`x`, `y`). and measurement error terms added.
 #' @importFrom dplyr %>% mutate
 #' @importFrom stats rnorm
 #' @export
-addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord = c("mu.x", "mu.y"), obs_dist = c("Gaussian", "t")) {
+addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord = c("mu.x", "mu.y"), obs_dist = c("Gaussian", "t", "Huber")) {
 
   obs_dist <- match.arg(obs_dist)
-  obs_dist_val <- ifelse(obs_dist == "t", 1, 0)
+  obs_dist_val <- match(obs_dist, c("Gaussian", "t", "Huber")) - 1L
 
   if (!inherits(data, "dataLangevin")) {
     stop("'data' must be a 'dataLangevin' object (as returned by formatData or simLangevin.")
@@ -33,6 +33,7 @@ addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord
   if(!is.null(par$tau) & !is.null(par$l_tau)) stop("Cannot provide both 'tau' and 'l_tau' in 'par'.")
   if(!is.null(par$rho_o) & !is.null(par$l_rho_o)) stop("Cannot provide both 'rho_o' and 'l_rho_o' in 'par'.")
   if(!is.null(par$df) & !is.null(par$l_df)) stop("Cannot provide both 'df' and 'l_df' in 'par'.")
+  if(!is.null(par$k) & !is.null(par$l_k)) stop("Cannot provide both 'k' and 'l_k' in 'par'.")
 
   if (is.data.frame(measurementError)) {
     if (!all(c("lc", "emf.x", "emf.y", "prob") %in% names(measurementError))) {
@@ -74,6 +75,8 @@ addMeasurementError <- function(data, par = NULL, measurementError = NULL, coord
   tau <- if (!is.null(par$tau)) par$tau else if (!is.null(par$l_tau)) exp(par$l_tau) else c(1, 1)
   rho_o <- if (!is.null(par$rho_o)) par$rho_o else if (!is.null(par$l_rho_o)) (2 / (1 + exp(-par$l_rho_o)) - 1) else 0
   df <- if (!is.null(par$df)) par$df else if (!is.null(par$l_df)) exp(par$l_df) else 5
+  # the C++ samplers take one shape parameter: df for the t-distribution, k for the pseudo-Huber model
+  if (obs_dist == "Huber") df <- if (!is.null(par$k)) par$k else if (!is.null(par$l_k)) exp(par$l_k) else 2
 
   checkErrorData(data, coord, measurementError, knownError)
 

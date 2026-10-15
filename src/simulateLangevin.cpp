@@ -46,6 +46,21 @@ arma::vec rmvt(const arma::vec& mean, const arma::mat& sigma, double df) {
   return mean + y * std::sqrt(df / u);
 }
 
+// Helper function for bivariate pseudo-Huber (hyperbolic) sampling with threshold k:
+// density proportional to exp(-k sqrt(k^2 + d^2)), d^2 = r' Sigma^-1 r. The Mahalanobis radius is
+// d = k sqrt(s^2 - 1), where s - 1 is a mixture of Exp(k^2) (weight k^2/(k^2+1)) and Gamma(2, k^2);
+// the direction is uniform.
+arma::vec rmvhyp(const arma::vec& mean, const arma::mat& sigma, double k) {
+  double k2 = k * k;
+  double t = (R::unif_rand() < k2 / (k2 + 1.0)) ? R::rexp(1.0 / k2) : R::rgamma(2.0, 1.0 / k2);
+  double s = 1.0 + t;
+  double d = k * std::sqrt(s * s - 1.0);
+  double ph = R::runif(0.0, 2.0 * M_PI);
+  arma::vec z = {d * std::cos(ph), d * std::sin(ph)};
+  arma::mat L = arma::chol(sigma, "lower");
+  return mean + L * z;
+}
+
 // [[Rcpp::export]]
 DataFrame simulate_langevin_cpp(int model,
                                 int nbAnimals,
@@ -321,6 +336,7 @@ List measurementError_rcpp(DataFrame data,
     arma::vec mean = {mux[i], muy[i]};
     arma::vec new_pos;
     if(obs_dist == 1) new_pos = rmvt(mean, cov_obs, df);
+    else if(obs_dist == 2) new_pos = rmvhyp(mean, cov_obs, df);
     else new_pos = rmvnorm(mean, cov_obs);
 
     new_mux[i] = new_pos(0);
@@ -388,6 +404,7 @@ List measurementError_LS_rcpp(DataFrame data,
     arma::vec mean = {mux[i], muy[i]};
     arma::vec new_pos;
     if(obs_dist == 1) new_pos = rmvt(mean, cov_obs, df);
+    else if(obs_dist == 2) new_pos = rmvhyp(mean, cov_obs, df);
     else new_pos = rmvnorm(mean, cov_obs);
 
     obs_x[i] = new_pos(0);

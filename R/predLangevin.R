@@ -38,6 +38,9 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   if ("l_psi" %in% parNames) par_mle$psi <- exp(parList$l_psi)
   if ("l_tau" %in% parNames) par_mle$tau <- exp(parList$l_tau)
   if ("l_rho_o" %in% parNames) par_mle$rho_o <- 2 / (1 + exp(-parList$l_rho_o)) - 1
+  obs_dist <- if (is.null(fit$conditions$obs_dist)) "Gaussian" else fit$conditions$obs_dist
+  if (obs_dist == "t" && !is.null(parList$l_df)) par_mle$df <- exp(parList$l_df)
+  if (obs_dist == "Huber" && !is.null(parList$l_k)) par_mle$k <- exp(parList$l_k)
 
   if (!is.null(args$par$mu)) par_mle$mu <- args$par$mu
   if (fit$conditions$model == "underdamped" && !is.null(args$par$vel)) {
@@ -52,6 +55,8 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   if ("psi" %in% names(par_mle)) map$psi <- factor(NA)
   if ("tau" %in% names(par_mle)) map$tau <- factor(rep(NA, length(par_mle$tau)))
   if ("rho_o" %in% names(par_mle)) map$rho_o <- factor(NA)
+  if ("df" %in% names(par_mle)) map$df <- factor(NA)
+  if ("k" %in% names(par_mle)) map$k <- factor(NA)
 
   if (!is.null(args$map$mu)) map$mu <- args$map$mu
   if (!is.null(args$map$vel)) map$vel <- args$map$vel
@@ -61,6 +66,7 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   if (isTRUE(fit$conditions$smoothGradient)) attr(args$data, "smoothPar") <- .cond_smoothPar(fit$conditions, fit)
   args$spatialCovs <- spatialCovs
   args$model <- fit$conditions$model
+  args$obs_dist <- obs_dist
   args$par <- par_mle
   args$map <- map
   args$scaleFactor <- scaleFactor
@@ -77,7 +83,6 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   args$npoints <- fit$conditions$npoints
   args$curweight <- fit$conditions$curweight
   args$zetaScale <- fit$conditions$zetaScale
-  obs_dist <- fit$conditions$obs_dist
   args$prior <- fit$conditions$prior
 
   message("   Running post-hoc prediction via TMB inner optimization...")

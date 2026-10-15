@@ -284,7 +284,18 @@ test_that("simLangevin.default proactively catches mismatched observation error 
       par = p_df, spatialCovs = r,
       obs_dist = "Gaussian"
     )),
-    "because the observation distribution is `Gaussian'."
+    "unless obs_dist = 't'"
+  )
+
+  # 7. 'k' parameter provided when obs_dist is not Huber
+  p_k <- p
+  p_k$k <- 2
+  expect_error(
+    suppressMessages(simLangevin(
+      par = p_k, spatialCovs = r,
+      obs_dist = "t"
+    )),
+    "unless obs_dist = 'Huber'"
   )
 })
 

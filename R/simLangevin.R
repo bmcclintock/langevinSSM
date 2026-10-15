@@ -7,11 +7,11 @@
 #' @param model Can be either a character string specifying the model to simulate from scratch (\code{"underdamped"} or \code{"overdamped"}), or a fitted Langevin model object of class \code{fitLangevin} (as returned by \code{\link{fitLangevin}}).
 #' @param ... Additional arguments passed to the specific methods.
 #'
-#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.
+#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber; see \code{\link{fitLangevin}}).
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #'
-#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. See \code{\link{fitLangevin}}.
+#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. If \code{obs_dist = "Huber"}, this can also include \code{k}. See \code{\link{fitLangevin}}.
 #' @param barrierOnset Onset length of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). \code{0} (default) gives the quadratic potential \eqn{\min(d,0)^2/2}. See \code{\link{fitLangevin}}. Stored in \code{attr(, "barrierOnset")} so that \code{fitLangevin(barrierOnset = NULL)} uses the same value.
 #' @param lambda Barrier strength. Either \code{"tied"} (default) or a non-negative number. With \code{"tied"} the barrier is a hard wall, defined exactly as in \code{\link{fitLangevin}}: at every simulation step the spring constant is the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed from the true \code{sigma} and \code{gamma}. A number gives a soft wall of that fixed stiffness (e.g. for simulation studies of animals that do enter the restricted zone). Ignored if \code{barrier = NULL}. See Details.
 #' @param grad Interpolation used for the covariate surfaces (and the barrier distance) whose gradients give the habitat force: \code{"quintic"} (default), \code{"cubic"} or \code{"bilinear"}. See \code{\link{fitLangevin}}. When simulating from a fitted model, the fit's setting is used.
@@ -152,7 +152,7 @@ simLangevin <- function(model, ...) {
 #' @rdname simLangevin
 #' @export
 simLangevin.default <- function(model = c("underdamped", "overdamped"),
-                                obs_dist = c("Gaussian", "t"),
+                                obs_dist = c("Gaussian", "t", "Huber"),
                                 spatialCovs,
                                 barrier = NULL,
                                 par,
@@ -205,8 +205,11 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     }
   }
 
-  if (obs_dist == "Gaussian" && "df" %in% names(par)) {
-    stop("Cannot specify 'df' in 'par' because the observation distribution is `Gaussian'.")
+  if (obs_dist != "t" && "df" %in% names(par)) {
+    stop("Cannot specify 'df' in 'par' unless obs_dist = 't'.")
+  }
+  if (obs_dist != "Huber" && "k" %in% names(par)) {
+    stop("Cannot specify 'k' in 'par' unless obs_dist = 'Huber'.")
   }
   # ---------------------------------------------------------------------------------
 
@@ -515,7 +518,8 @@ simLangevin.fitLangevin <- function(model,
     psi = if(!is.null(par_drawn$l_psi)) exp(par_drawn$l_psi) else 1,
     tau = if(!is.null(par_drawn$l_tau)) exp(par_drawn$l_tau) else c(1, 1),
     rho_o = if(!is.null(par_drawn$l_rho_o)) 2/(1 + exp(-par_drawn$l_rho_o)) - 1 else 0,
-    df = if(!is.null(par_drawn$l_df)) exp(par_drawn$l_df) else 5
+    df = if(!is.null(par_drawn$l_df)) exp(par_drawn$l_df) else 5,
+    k = if(!is.null(par_drawn$l_k)) exp(par_drawn$l_k) else 2
   )
 
   sigma_working <- exp(par_drawn$log_sigma)

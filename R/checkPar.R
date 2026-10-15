@@ -9,8 +9,11 @@ validate_obs_error <- function(par, map, dat) {
   if (!has_ls && (any(c("tau", "rho_o") %in% names(par)) || any(c("tau", "rho_o") %in% names(map)))) {
     stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard error observations ('x.err', 'y.err').")
   }
-  if (dat$obs_dist==0 && (("df" %in% names(par)) || ("df" %in% names(map)))) {
-    stop("Cannot specify 'df' in 'par' or 'map' because the observation distribution is `Gaussian'.")
+  if (dat$obs_dist!=1 && (("df" %in% names(par)) || ("df" %in% names(map)))) {
+    stop("Cannot specify 'df' in 'par' or 'map' unless obs_dist = 't'.")
+  }
+  if (dat$obs_dist!=2 && (("k" %in% names(par)) || ("k" %in% names(map)))) {
+    stop("Cannot specify 'k' in 'par' or 'map' unless obs_dist = 'Huber'.")
   }
 }
 
@@ -101,6 +104,10 @@ parse_priors <- function(par, prior, spatialCovs) {
   priors$prior_mean_l_df <- if (!is.null(pr_mean_list$l_df)) as.numeric(pr_mean_list$l_df) else NA_real_
   priors$prior_sd_l_df   <- if (!is.null(pr_sd_list$l_df)) as.numeric(pr_sd_list$l_df) else NA_real_
 
+  priors$has_prior_l_k <- as.integer(!is.null(pr_mean_list$l_k) && any(!is.na(pr_mean_list$l_k)))
+  priors$prior_mean_l_k <- if (!is.null(pr_mean_list$l_k)) as.numeric(pr_mean_list$l_k) else NA_real_
+  priors$prior_sd_l_k   <- if (!is.null(pr_sd_list$l_k)) as.numeric(pr_sd_list$l_k) else NA_real_
+
   priors$has_prior_mu <- as.integer(!is.null(pr_mean_list$mu) && any(!is.na(pr_mean_list$mu)))
   if (priors$has_prior_mu == 1L) {
     valid_mu <- which(!is.na(pr_mean_list$mu))
@@ -133,13 +140,13 @@ parse_priors <- function(par, prior, spatialCovs) {
 checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL, lambda_mode = 0L){
 
   if(!is.list(par)) stop("par must be a list.")
-  if(!all(names(par) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df"))) {
-    stop("names(par) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df')")
+  if(!all(names(par) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df", "k"))) {
+    stop("names(par) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df', 'k')")
   }
   if(!is.null(map)){
     if(!is.list(map)) stop("map must be a list.")
-    if(!all(names(map) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df"))) {
-      stop("names(map) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df')")
+    if(!all(names(map) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df", "k"))) {
+      stop("names(map) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df', 'k')")
     }
   } else map <- list()
 
@@ -320,6 +327,28 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     } else map$l_df <- factor(NA)
   }
 
+  if(!is.null(par$k)){
+    if(length(par$k) != 1) stop("par$k should be of length 1.")
+    if(!is.finite(par$k) || par$k <= 0){
+      stop("par$k should be greater than zero.")
+    }
+    par$l_k <- log(par$k)
+    par$k <- NULL
+
+    if(!is.null(map$k)){
+      if(length(map$k) != length(par$l_k)) stop("map$k should be of length 1.")
+      map$l_k <- map$k
+      map$k <- NULL
+    }
+  } else {
+    par$l_k <- log(2)
+    if(!is.null(map$k)){
+      if(length(map$k) != length(par$l_k)) stop("map$k should be of length 1.")
+      map$l_k <- map$k
+      map$k <- NULL
+    } else map$l_k <- factor(NA)
+  }
+
   if(!is.null(dat)){
     if(!is.null(par$mu)) par$mu <- t(par$mu)
     if(!is.null(par$vel)) par$vel <- t(par$vel)
@@ -361,7 +390,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     if(any(dim(par$vel) != dim(dat$Y))) stop("par$vel must have ", ncol(dat$Y), " rows and 2 columns")
     if(any(!is.finite(par$mu)) || any(!is.finite(par$vel))) stop("par$mu and/or par$vel must be finite")
 
-    par <- par[c("beta","log_sigma","log_gamma","log_lambda","mu","vel","l_psi","l_tau","l_rho_o","l_df")]
+    par <- par[c("beta","log_sigma","log_gamma","log_lambda","mu","vel","l_psi","l_tau","l_rho_o","l_df","l_k")]
   }
 
   priors <- parse_priors(par, prior, spatialCovs)

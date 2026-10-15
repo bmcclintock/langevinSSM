@@ -54,7 +54,7 @@ if (!file.exists(coast_file)) {
 land <- st_read(coast_file, quiet = TRUE)
 
 # signed distance to the shoreline (m): positive in water (allowed), negative on land (restricted)
-barrier <- prepBarrier(land, template = template)   # ~15 s at 821 m
+barrier <- prepBarrier(land, template = template)
 
 # binary mask on the same grid (water = 1 allowed, land = 0 restricted), for plotting and maskLeakage
 mask <- rasterize(vect(land), template, field = 0, background = 1)
@@ -112,15 +112,7 @@ fit0 <- fitLangevin(narDat, model = model, spatialCovs = covs["bathy"],
                     control=list(trace=1),
                     silent = TRUE)
 fit0
-# Covariates are 0 (with zero gradient) outside the hull of raster cell centres, so check that the
-# fitted locations stay well inside the raster (the prepareRaster "dangerously close" warning is
-# based on obs +/- 3 error SDs, i.e. the huge Argos ellipses, not on the fitted locations).
-muEdge <- function(fit, r) {
-  m <- fit$estimates$random$mu$est; e <- as.vector(ext(r))
-  min(m$mu.x - e[1], e[2] - m$mu.x, m$mu.y - e[3], e[4] - m$mu.y) / 1000
-}
-cat(sprintf("min distance from fitted mu to raster edge: %.0f km\n", muEdge(fit0, bathy)))
-leaks0 <- maskLeakage(fit0,mask, level=1, tolerance=res(m))
+leaks0 <- maskLeakage(fit0,mask, level=1, tolerance=res(mask)[1])
 
 # ---------------------------------------------------------------------------------------------------
 # Barrier fit
@@ -158,7 +150,6 @@ narFit <- fitLangevin(narDat, model = model, spatialCovs = covs, barrier = "barr
                       control=list(trace=1),
                       silent = TRUE)
 narFit
-cat(sprintf("min distance from fitted mu to raster edge: %.0f km\n", muEdge(narFit, bathy)))
 plot(narFit,spatialCovs=covs,data=narDat,extent=origextent,normalize=TRUE,maskRast=mask)
 narLeaks <- maskLeakage(narFit,mask,level=1,tolerance = res(mask)[1])
 
@@ -173,8 +164,23 @@ narFit_t <- fitLangevin(narDat, model = model, spatialCovs = covs, barrier = "ba
                       control=list(trace=1),
                       silent = TRUE)
 narFit_t
-cat(sprintf("min distance from fitted mu to raster edge: %.0f km\n", muEdge(narFit_t, bathy)))
 plot(narFit_t,spatialCovs=covs,data=narDat,extent=origextent,normalize=TRUE,maskRast=mask)
 narLeaks_t <- maskLeakage(narFit_t,mask,level=1,tolerance = res(mask)[1])
 
-AIC(fit0,narFit,narFit_t)
+narPar_huber <- narPar
+narPar_huber$k <- 30
+narFit_huber <- fitLangevin(narDat, model = model, spatialCovs = covs, barrier = "barrier",
+                        par = narPar_huber,
+                        obs_dist = "Huber",
+                        scaleFactor=scaleFactor,
+                        lambda = lambdaArg,
+                        barrierOnset = "res",
+                        control=list(trace=1),
+                        silent = TRUE)
+narFit_huber
+plot(narFit_huber,spatialCovs=covs,data=narDat,extent=origextent,normalize=TRUE,maskRast=mask)
+narLeaks_huber <- maskLeakage(narFit_huber,mask,level=1,tolerance = res(mask)[1])
+
+AIC(fit0,narFit,narFit_t,narFit_huber)
+
+res <- residuals(narFit_t,data=narDat,spatialCovs=covs,method="cdf",ncores = 3)

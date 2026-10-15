@@ -730,7 +730,7 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   p_acf_x <- .make_acf_plot(res_x_full, paste0("ACF: x residuals", title_suffix))
   p_acf_y <- .make_acf_plot(res_y_full, paste0("ACF: y residuals", title_suffix))
 
-  if (obs_dist == "t") {
+  if (obs_dist %in% c("t", "Huber")) {
     return(list(
       qq_x = p_qq_x, qq_y = p_qq_y,
       acf_x = p_acf_x, acf_y = p_acf_y

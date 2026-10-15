@@ -5,7 +5,7 @@
 #'
 #' @param fit A \code{fitLangevin} object.
 #'
-#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{lambda} (if the barrier strength was estimated, i.e. \code{lambda = "estimate"}), \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}) that were estimated).
+#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{lambda} (if the barrier strength was estimated, i.e. \code{lambda = "estimate"}), \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}, \code{df}, \code{k}) that were estimated).
 #' @export
 getPar <- function(fit) {
 
@@ -52,6 +52,9 @@ getPar <- function(fit) {
   }
   if ("l_df" %in% active_pars) {
     par_out$df <- exp(parList$l_df)
+  }
+  if ("l_k" %in% active_pars) {
+    par_out$k <- exp(parList$l_k)
   }
 
   par_out$mu <- unname(as.matrix(t(parList$mu) * scaleFactor))

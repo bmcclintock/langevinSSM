@@ -56,11 +56,99 @@ void log_pnorm_both(Type z, Type &logF, Type &logS)
   logS = log(pnorm(-z) + Type(1e-300));
 }
 
+// log K_nu(z) (modified Bessel function of the second kind) for z > 0, safe for large z.
+// For z > 50 the asymptotic expansion is used (relative error < 1e-12 for the orders used here),
+// so the result stays finite where besselK itself underflows. Both branches are finite on the tape.
+template<class Type>
+Type log_besselK(Type z, Type nu)
+{
+  Type zc = CppAD::CondExpGt(z, Type(50.0), Type(50.0), z);
+  Type direct = log(besselK(zc, nu));
+  Type mu4 = Type(4.0) * nu * nu;
+  Type term = Type(1.0), ser = Type(1.0);
+  for (int j = 1; j <= 8; j++) {
+    Type a = Type(2.0 * j - 1.0);
+    term = term * (mu4 - a * a) / (Type(8.0 * j) * z);
+    ser += term;
+  }
+  Type asym = Type(0.5) * log(Type(M_PI) / (Type(2.0) * z)) - z + log(ser);
+  return CppAD::CondExpGt(z, Type(50.0), asym, direct);
+}
+
+// Log density of the 1D generalised hyperbolic distribution (symmetric, location 0, unit scale)
+//   f(z) = (psi/chi)^(lam/2) / (sqrt(2 pi) K_lam(sqrt(chi psi))) *
+//          ((chi + z^2)/psi)^((lam - 1/2)/2) * K_{lam-1/2}(sqrt(psi (chi + z^2)))
+// Used for the x-marginal and the y|x-conditional of the bivariate hyperbolic (pseudo-Huber) model.
+template<class Type>
+Type log_dgh1(Type z, Type lam, Type chi, Type psi)
+{
+  return Type(0.5) * lam * log(psi / chi) - Type(0.5) * log(Type(2.0 * M_PI)) - log_besselK(sqrt(chi * psi), lam) +
+    Type(0.5) * (lam - Type(0.5)) * log((chi + z * z) / psi) + log_besselK(sqrt(psi * (chi + z * z)), lam - Type(0.5));
+}
+
+// log Phi(-x) (standard normal upper tail), accurate for large x where pnorm(-x) underflows.
+// For x > 8 the asymptotic series is used (relative truncation error < 5e-8); below that pnorm itself is exact.
+template<class Type>
+Type log_pnorm_upper(Type x)
+{
+  Type xc = CppAD::CondExpGt(x, Type(8.0), Type(8.0), x);
+  Type direct = log(pnorm(-xc));
+  Type xa = CppAD::CondExpGt(x, Type(8.0), x, Type(8.0));
+  Type r = Type(1.0) / (xa * xa);
+  Type ser = Type(1.0) + r * (Type(-1.0) + r * (Type(3.0) + r * (Type(-15.0) + r * (Type(105.0) +
+             r * (Type(-945.0) + r * Type(10395.0))))));
+  Type asym = -Type(0.5) * xa * xa - Type(0.5) * log(Type(2.0 * M_PI)) - log(xa) + log(ser);
+  return CppAD::CondExpGt(x, Type(8.0), asym, direct);
+}
+
+// log P(Z > z) for Z ~ GH(lam, chi, psi) (the 1D distribution of log_dgh1).
+// Z is a normal variance mixture, Z | W ~ N(0, W) with W ~ GIG(lam, chi, psi), so
+//   P(Z > z) = E[ Phi(-z / sqrt(W)) ].
+// The expectation is computed by 24-point Gauss-Hermite quadrature in v = log W, centred and scaled at the
+// approximate mode of the integrand (for z > 0 the factor Phi(-z/sqrt(w)) ~ exp(-z^2/(2w)) adds z^2 to chi).
+// The rule is fixed, so the result is a smooth AD function of (z, lam, chi, psi); the relative error of the
+// tail probability is below 2e-5 for k >= 0.3 and below 1e-6 for k >= 2 (checked against numerical integration).
+template<class Type>
+Type log_pgh1_upper(Type z, Type lam, Type chi, Type psi)
+{
+  static const double gh_x[24] = {-6.0159255614257443, -5.2593829276680388, -4.6256627564237869, -4.0536644024481499,
+    -3.5200068130345272, -3.0125461375655633, -2.5238810170114276, -2.0490035736616981, -1.5842500109616937,
+    -1.1267608176112449, -0.67417110703721195, -0.22441454747251546, 0.2244145474725153, 0.67417110703721228,
+    1.1267608176112454, 1.5842500109616942, 2.0490035736616989, 2.5238810170114263, 3.0125461375655638,
+    3.520006813034525, 4.0536644024481516, 4.6256627564237869, 5.259382927668045, 6.0159255614257434};
+  // log(weight) + node^2
+  static const double gh_lw[24] = {-0.14055535719000289, -0.38776076553999417, -0.51518226609870865, -0.59745971303239642,
+    -0.65576687610675322, -0.69901095318921058, -0.73173791030169699, -0.75654526290860691, -0.77502142694586862,
+    -0.7881713515714166, -0.79662923758200099, -0.8007705983701533, -0.80077059837015296, -0.79662923758199922,
+    -0.7881713515714206, -0.77502142694586817, -0.7565452629085998, -0.73173791030170143, -0.69901095318921058,
+    -0.65576687610675677, -0.59745971303238932, -0.51518226609870155, -0.38776076553996575, -0.14055535718998868};
+  // centring: smooth positive part of z
+  Type zp = Type(0.5) * (z + sqrt(z * z + Type(1.0)));
+  Type chi2 = chi + zp * zp;
+  Type l2 = lam - Type(0.5) * zp * zp / (Type(1.0) + zp * zp);
+  Type wm = (l2 + sqrt(l2 * l2 + chi2 * psi)) / psi;
+  Type sc = sqrt(Type(2.0)) / sqrt(Type(0.5) * (chi2 / wm + psi * wm));
+  Type vm = log(wm);
+  // GIG normalising constant
+  Type lc = Type(0.5) * lam * log(psi / chi) - log(Type(2.0)) - log_besselK(sqrt(chi * psi), lam);
+  vector<Type> lv(24);
+  for (int j = 0; j < 24; j++) {
+    Type v = vm + sc * Type(gh_x[j]);
+    Type w = exp(v);
+    lv(j) = lc + lam * v - Type(0.5) * (chi / w + psi * w) + log_pnorm_upper(z * exp(-Type(0.5) * v)) + Type(gh_lw[j]);
+  }
+  Type m = lv(0);
+  for (int j = 1; j < 24; j++) m = CppAD::CondExpGt(lv(j), m, lv(j), m);
+  Type sum = Type(0.0);
+  for (int j = 0; j < 24; j++) sum += exp(lv(j) - m);
+  return m + log(sum) + log(sc);
+}
+
 template<class Type>
 Type langevinSSM(objective_function<Type>* obj)
 {
   DATA_INTEGER(process_model);      // 0 = overdamped, 1 = underdamped
-  DATA_INTEGER(obs_dist);           // 0 = Gaussian, 1 = t-distribution
+  DATA_INTEGER(obs_dist);           // 0 = Gaussian, 1 = t-distribution, 2 = pseudo-Huber (bivariate hyperbolic)
   DATA_ARRAY(Y);           // Array of observed locations
   DATA_ARRAY_INDICATOR(keep, Y); // used for TMB oneStepPredict bivariate decomposition
   DATA_VECTOR(delta_t);          // Time steps
@@ -118,6 +206,7 @@ Type langevinSSM(objective_function<Type>* obj)
   PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale)
   PARAMETER(l_rho_o);           // measurement error correlation b/w x,y
   PARAMETER(l_df);       // Log degrees of freedom for t-distribution
+  PARAMETER(l_k);        // Log threshold k of the pseudo-Huber observation model
 
   // PRIOR INPUTS
   DATA_INTEGER(has_prior_beta);
@@ -152,6 +241,10 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_VECTOR(prior_mean_l_df);
   DATA_VECTOR(prior_sd_l_df);
 
+  DATA_INTEGER(has_prior_l_k);
+  DATA_VECTOR(prior_mean_l_k);
+  DATA_VECTOR(prior_sd_l_k);
+
   DATA_INTEGER(has_prior_mu);
   DATA_IVECTOR(prior_idx_mu);
   DATA_VECTOR(prior_mean_mu_val);
@@ -166,6 +259,7 @@ Type langevinSSM(objective_function<Type>* obj)
   vector<Type> tau = exp(l_tau);
   Type rho_o = Type(2.0) / (Type(1.0) + exp(-l_rho_o)) - Type(1.0);
   Type df = exp(l_df);
+  Type k = exp(l_k);
 
   Type nll = 0.0;
 
@@ -388,6 +482,11 @@ Type langevinSSM(objective_function<Type>* obj)
     if(!R_IsNA(asDouble(prior_mean_l_df(0)))) nll -= dnorm(l_df, prior_mean_l_df(0), prior_sd_l_df(0), true);
   }
 
+  // l_k
+  if (has_prior_l_k == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_k(0)))) nll -= dnorm(l_k, prior_mean_l_k(0), prior_sd_l_k(0), true);
+  }
+
   // mu
   if (has_prior_mu == 1) {
     for(int k=0; k < prior_idx_mu.size(); k++){
@@ -497,6 +596,49 @@ Type langevinSSM(objective_function<Type>* obj)
           log_pt_both((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, lF, lS);
           nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
         }
+      } else if (obs_dist == 2) {
+        // Pseudo-Huber model (bivariate hyperbolic distribution):
+        //   -log f = k sqrt(k^2 + d2) - k^2 + log(2 pi) + 1/2 log|Sigma| + log(1 + 1/k^2),
+        // with d2 = r' Sigma^-1 r and r = obs - mu. It is quadratic (Gaussian) for d << k and
+        // linear in d for d >> k (exponential tails). sqrt(k^2 + d2) is a norm of (k, Sigma^-1/2 r), so
+        // -log f is convex in mu: the observation model can never make the inner (latent state)
+        // problem non-convex, unlike the t-distribution. As k -> Inf it tends to the Gaussian.
+        // Written as kX * log f(x) + kY * log f(y | x) so that it is smooth in the OSA indicators.
+        // Exactly:
+        //   x / sdX                       ~ GH(lambda = 3/2, chi = k^2, psi = k^2)
+        //   (y - mu_y|x) / sd_y|x | x     ~ GH(lambda = 1,   chi = k^2 + (x/sdX)^2, psi = k^2)
+        // log f(y | x) is evaluated as log f(x, y) - log f(x), and log f(x) (Bessel functions) is only
+        // recorded on the tape when OSA residuals are being computed.
+        Type dx = x_obs - mu_x;
+        Type dy = y_obs - mu_y;
+        Type var_y_given_x = varY - covXY * covXY / varX;
+        Type det = varX * var_y_given_x;
+        Type d2 = dx * dx / varX + pow(dy - (covXY / varX) * dx, 2) / var_y_given_x;
+        Type k2 = k * k;
+        Type ll_joint = -(k * sqrt(k2 + d2) - k2) - log(Type(2.0 * M_PI)) - Type(0.5) * log(det) -
+          log(Type(1.0) + Type(1.0) / k2);
+        if (!keep.osa_active()) {
+          nll -= ll_joint;
+        } else {
+          Type zx = dx / sdX;
+          Type ll_x = log_dgh1(zx, Type(1.5), k2, k2) - log(sdX);
+          Type ll_ymarg = log_dgh1(dy / sdY, Type(1.5), k2, k2) - log(sdY);
+          Type ll_y = kX * (ll_joint - ll_x) + (Type(1.0) - kX) * ll_ymarg;
+          nll -= kX * ll_x + kY * ll_y;
+          if (osa_cdf) {
+            // x / sdX ~ GH(3/2, k^2, k^2). Given x (kX = 1) the standardised y | x ~ GH(1, k^2 + zx^2, k^2);
+            // without x (kX = 0) y / sdY ~ GH(3/2, k^2, k^2). Blended smoothly in kX, exact at kX = 0 and 1.
+            Type zy = (dy - kX * (covXY / varX) * dx) / sqrt(kX * var_y_given_x + (Type(1.0) - kX) * varY);
+            Type lam_y = Type(1.5) - Type(0.5) * kX;
+            Type chi_y = k2 + kX * zx * zx;
+            Type lF = log_pgh1_upper(-zx, Type(1.5), k2, k2);
+            Type lS = log_pgh1_upper(zx, Type(1.5), k2, k2);
+            nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
+            lF = log_pgh1_upper(-zy, lam_y, chi_y, k2);
+            lS = log_pgh1_upper(zy, lam_y, chi_y, k2);
+            nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
+          }
+        }
       }
     }
   }
@@ -508,6 +650,7 @@ Type langevinSSM(objective_function<Type>* obj)
   ADREPORT(tau);
   ADREPORT(psi);
   if(obs_dist == 1) ADREPORT(df);
+  if(obs_dist == 2) ADREPORT(k);
   if(lambda_mode > 0) ADREPORT(lambda);
 
   // Backup in case sdreport fails
@@ -518,6 +661,7 @@ Type langevinSSM(objective_function<Type>* obj)
   REPORT(tau);
   REPORT(psi);
   if(obs_dist == 1) REPORT(df);
+  if(obs_dist == 2) REPORT(k);
   REPORT(lambda);
   REPORT(mu);
   if(process_model == 1) REPORT(vel);

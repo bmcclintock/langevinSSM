@@ -19,7 +19,9 @@ obsPerAnimal <- 5000 # number of simulated locations per track
 timeStep <- 0.01 # time scale of simulation (should be small to help prevent discretization error)
 scaleFactor <- 1
 
-obs_dist <- "Gaussian" # measurement error observation distribution ("Gaussian" or "t")
+obs_dist <- "Gaussian" # measurement error observation distribution ("Gaussian", "t", or "Huber)
+
+fitGrad <- "quintic" # gradient approximation method to use in fitLangevin
 
 beta <- c(-4, 6, 5, -0.1) # resource selection coefficients for the spatial covariates (cov_1, cov_2, ... cov_ncov, d2c)
 ncov <- length(beta) - 1 # number of spatial covariates to be generated using simCov
@@ -27,9 +29,11 @@ sigma <- 5 # diffusion (or speed) parameter
 gamma <- 0.5 # friction parameter (smaller value -> more directional persistence); ignored unless model=="underdamped"
 psi <- 1 # error ellipse scaling parameter
 df <- 5 # degrees of freedom (applies to obs_dist <- "t" only)
+k <- 2 # threshold (applies to obs_dist <- "Huber" only)
 
 map <- list(psi=factor(NA)) # map for fixing parameters
 if(obs_dist=="t") map$df <- factor(NA)
+if(obs_dist=="Huber") map$k <- factor(NA)
 
 ## sampling rate, missing data, and measurement error
 samplingRate <- 1 # for subsampling observations from true continuous-time model (e.g. if samplingRate = 2 then data are roughly thinned by 2); must be >= 1; note bias increases with samplingRate, but relationships largely preserved
@@ -56,12 +60,13 @@ zetaScale <- 2 # scale factor for smooth gradient neighborhood (>1 increases, <1
 
 langSim <- subDat <- langFit <- list()
 spatialCovs <- list()
-parMat <- matrix(NA,nrow=nsims,6+1+(obs_dist=="t")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))
+parMat <- matrix(NA,nrow=nsims,6+1+(obs_dist=="t" | obs_dist=="Huber")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))
 if(model=="overdamped"){
   cNames <- c(paste0("beta",1:(ncov+1)),"sigma")
 } else cNames <- c(paste0("beta",1:(ncov+1)),"sigma","gamma")
 if(!isTRUE(is.na(map$psi))) cNames <- c(cNames,"psi")
 if(obs_dist=="t" && (!isTRUE(is.na(map$df)))) cNames <- c(cNames,"df")
+if(obs_dist=="Huber" && (!isTRUE(is.na(map$k)))) cNames <- c(cNames,"k")
 cNames <- c(cNames,"BA")
 colnames(parMat) <- cNames
 
@@ -122,7 +127,8 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
         obsPerAnimal = obsPerAnimal,
         timeStep = timeStep,
         par=par,
-        spatialCovs = spatialCovs[[isim]]
+        spatialCovs = spatialCovs[[isim]],
+        grad = "quintic",
       ),error=function(e) e)
       if(inherits(langSim[[isim]],"error")){
         message("    Retrying Simulation ",isim,": ",langSim[[isim]]$message)
@@ -159,6 +165,7 @@ if(!file.exists(paste0("simulation/data/",dataName,".RData"))){
 
 par <- list(psi=psi)
 if(obs_dist=="t") par$df <- df
+if(obs_dist=="Huber") par$k <- k
 
 # add measurement error
 set.seed(1, kind="Mersenne-Twister", normal.kind = "Inversion")
@@ -188,6 +195,7 @@ for(isim in 1:nsims){
   par <- list(psi=psi)
 
   if(obs_dist=="t") par$df <- df
+  if(obs_dist=="Huber") par$k <- k
 
   # generate missing data using aniMotum
   if(propMissing>0 && any(is.na(subDat[[isim]]$x))){
@@ -211,13 +219,15 @@ for(isim in 1:nsims){
 
   langFit[[isim]] <- suppressMessages(fitLangevin(subDat[[isim]],model=model,obs_dist=obs_dist,par=par,spatialCovs=spatialCovs[[isim]],
                                                   map=map,
+                                                  grad = fitGrad,
                                                   smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale, scaleFactor = scaleFactor,
                                                   silent=TRUE, control=list(trace=0)))
 
-  parMat[isim,1:(5+1+(obs_dist=="t")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
+  parMat[isim,1:(5+1+(obs_dist=="t" | obs_dist=="Huber")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
   parMat[isim,"sigma"] <- langFit[[isim]]$estimates$natural["sigma",1]
   if("psi" %in% colnames(parMat)) parMat[isim,"psi"] <- langFit[[isim]]$estimates$natural["psi",1]
   if(obs_dist=="t" && "df" %in% colnames(parMat)) parMat[isim,"df"] <- langFit[[isim]]$estimates$natural["df",1]
+  if(obs_dist=="Huber" && "k" %in% colnames(parMat)) parMat[isim,"k"] <- langFit[[isim]]$estimates$natural["k",1]
   if(model=="underdamped") parMat[isim,"gamma"] <- langFit[[isim]]$estimates$natural["gamma",1]
 
   zoom_ext <- terra::ext(-100, 100, -100, 100)

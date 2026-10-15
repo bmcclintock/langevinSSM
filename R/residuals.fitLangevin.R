@@ -22,19 +22,20 @@
 #' @param object A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
 #' @param data The \code{dataLangevin} object originally used to fit the model.
 #' @param spatialCovs The list of \code{SpatRaster} objects originally used to fit the model.
-#' @param method Character string specifying the OSA method for noisy data. See \code{\link[TMB]{oneStepPredict}}. If \code{NULL} (the default), the method depends on the observation distribution of the fitted model: \code{"oneStepGaussianOffMode"} for \code{obs_dist = "Gaussian"}, and \code{"oneStepGeneric"} for \code{obs_dist = "t"}.
+#' @param method Character string specifying the OSA method for noisy data. See \code{\link[TMB]{oneStepPredict}}. If \code{NULL} (the default), the method depends on the observation distribution of the fitted model: \code{"oneStepGaussianOffMode"} for \code{obs_dist = "Gaussian"}, and \code{"oneStepGeneric"} for \code{obs_dist = "t"} or \code{"Huber"}.
 #' The Gaussian methods (\code{"oneStepGaussianOffMode"}, \code{"oneStepGaussian"}, \code{"fullGaussian"}) assume that the one-step predictive distribution of each observation is Gaussian. This is not true for t-distributed measurement error: the residuals then have inflated variance and the wrong tail shape, so goodness-of-fit tests reject even a correctly specified model. A warning is issued if one of these methods is requested for a t model.
-#' Method \code{"cdf"} is also supported for both observation distributions. It is about 3 times faster than \code{"oneStepGeneric"}, but it applies the Laplace approximation to the one-step \emph{CDF} (rather than the density). This systematically inflates the absolute residuals when the predictive uncertainty of the latent location is not small compared with the measurement error, as for the \eqn{y | x} component. Use it for quick checks only, and use \code{"oneStepGeneric"} for formal goodness-of-fit testing.
+#' Method \code{"cdf"} is also supported for all three observation distributions. For \code{obs_dist = "Huber"} the one-step CDF has no closed form; it is evaluated by a fixed 24-point Gauss-Hermite quadrature over the normal variance-mixture representation (relative error of the tail probabilities below \eqn{2 \times 10^{-5}}). It is about 3 times faster than \code{"oneStepGeneric"} for Gaussian and t errors, but only about 1.2 times faster for \code{"Huber"}, but it applies the Laplace approximation to the one-step \emph{CDF} (rather than the density). This systematically inflates the absolute residuals when the predictive uncertainty of the latent location is not small compared with the measurement error, as for the \eqn{y | x} component. Use it for quick checks only, and use \code{"oneStepGeneric"} for formal goodness-of-fit testing.
 #' @param trace Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.
-#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}. The tests are:
+#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? The results are attached as a data frame to the \code{"tests"} attribute of the output, with columns \code{metric}, \code{statistic}, \code{p.value} and \code{effect}. Default: \code{TRUE}. The tests are:
 #' \itemize{
-#'   \item \code{KS_x}, \code{KS_y}: Kolmogorov-Smirnov tests of the x and y residuals against N(0,1).
-#'   \item \code{KS_mah}: Kolmogorov-Smirnov test of the squared Mahalanobis distance \eqn{D^2 = r_x^2 + r_y^2} against \eqn{\chi^2_2}. This test is far more sensitive to a common scale error in the residuals than \code{KS_x}/\code{KS_y} (e.g. a 2\% variance deficit with 30,000 residuals is detected about 80\% of the time by \code{KS_mah}, but only about 13\% of the time by \code{KS_x}/\code{KS_y}). It is therefore complemented by the following two tests, which separate scale from shape.
-#'   \item \code{KS_mah_shape}: scale-free test of the shape of \eqn{D^2}. \eqn{D^2} is rescaled by its mean and compared with the exponential distribution; the p-value is obtained by Monte Carlo (Lilliefors-type, \code{nsim = 1000} with a fixed internal seed; the user's random number stream is not affected).
-#'   \item \code{Disp_mah}: dispersion test. The statistic is \eqn{\overline{D^2}/2}, the average residual variance (1 under the model); the two-sided p-value uses \eqn{\sum D^2 \sim \chi^2_{2n}}.
-#'   \item \code{LB_x}, \code{LB_y}, \code{LB_mah}: Ljung-Box tests for autocorrelation (lag \eqn{\lfloor \log n \rfloor}).
+#'   \item \code{KS_x}, \code{KS_y}: Kolmogorov-Smirnov tests of the x and y residuals against N(0,1). \code{effect} is the KS distance (the largest difference between the empirical and the normal CDF).
+#'   \item \code{KS_mah_shape}: scale-free test of the shape of the squared Mahalanobis distance \eqn{D^2 = r_x^2 + r_y^2}. \eqn{D^2} is rescaled by its mean and compared with the exponential distribution (\eqn{D^2/2 \sim} Exp(1) under the model); the p-value is obtained by Monte Carlo (Lilliefors-type, \code{nsim = 1000} with a fixed internal seed; the user's random number stream is not affected). \code{effect} is the KS distance.
+#'   \item \code{Disp_mah}: dispersion test. The statistic is \eqn{\overline{D^2}/2}, the average residual variance (1 under the model); the two-sided p-value uses \eqn{\sum D^2 \sim \chi^2_{2n}}. \code{effect} is the relative variance error \eqn{\overline{D^2}/2 - 1}.
+#'   \item \code{LB_x}, \code{LB_y}, \code{LB_mah}: Ljung-Box tests for autocorrelation of the x residuals, the y residuals and \eqn{D^2}. They are computed within each track (lag \eqn{\lfloor \log n_i \rfloor} for a track with \eqn{n_i} residuals) and pooled by summing the Ljung-Box statistics and their degrees of freedom, so the end of one track is never treated as the predecessor of the start of the next. \code{effect} is the largest absolute autocorrelation over the tested lags (averaged over tracks, weighted by \eqn{n_i}).
 #' }
-#' A rejection of \code{KS_mah} with \code{Disp_mah} rejecting and \code{KS_mah_shape} not rejecting indicates residuals that are correctly shaped but too small (\code{statistic < 1}) or too large (\code{statistic > 1}), typically because of mis-estimated process parameters rather than a misspecified distribution. The Mahalanobis-based tests are omitted for \code{obs_dist = "t"}.
+#' Together, \code{KS_mah_shape} and \code{Disp_mah} replace a single KS test of \eqn{D^2} against \eqn{\chi^2_2}, which mixes scale and shape errors. \code{Disp_mah} rejecting while \code{KS_mah_shape} does not indicates residuals that are correctly shaped but too small (\code{statistic < 1}) or too large (\code{statistic > 1}), typically because of mis-estimated process parameters rather than a misspecified distribution. The Mahalanobis-based tests are omitted for \code{obs_dist = "t"} and \code{"Huber"}.
+#'
+#' With long tracks, these tests can detect departures far too small to matter. In particular, the OSA residuals are only approximately independent (Laplace approximation, windowing, estimated parameters), so with tens of thousands of residuals the Ljung-Box tests can reject on autocorrelations of about 0.02 even when the model is correct. Judge the \code{effect} column, not just the p-value: for example, autocorrelations below about 0.05 or a variance error of a few percent are rarely of practical concern. Up to seven tests are reported, so a single p-value below 0.05 is expected fairly often under a correct model.
 #' @param ncores Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.
 #' @param window Integer; maximum number of observations whose OSA residuals are calculated in a single call to \code{\link[TMB]{oneStepPredict}}. Long tracks are processed in consecutive windows of this size. Short windows keep the unobserved tail of latent states short, which stops the inner optimisation from diverging (which otherwise gives \code{NaN} residuals). \code{window} mainly affects run time. Within a window, the not-yet-observed future latent states are integrated out by the Laplace approximation, which is not exact when the drift is nonlinear. This adds a small amount of noise to the residuals (typically about 0.003, at most about 0.07, with no bias) that levels off after about 5 future observations. Shorter windows therefore never lose accuracy. Each window pays the cost of its \code{burnin} observations once, which favours longer windows. But every OSA step re-optimises all the latent states in the window, which favours shorter ones. The fastest window is roughly \eqn{\sqrt{10 \times burnin}} for \code{"oneStepGaussianOffMode"}, and 25--50 for \code{"oneStepGeneric"}. Default: \code{50}.
 #' @param burnin Integer; number of valid observations immediately before each window that are conditioned on (treated as known) when calculating the OSA residuals within the window. This approximates conditioning on all past observations. The approximation error decays quickly once \code{burnin} exceeds the velocity autocorrelation time \eqn{1/(\gamma \, \text{median}(\Delta t))} (in observations): about \eqn{10^{-5}} at 1 autocorrelation time and below \eqn{10^{-10}} at 2. Default (\code{NULL}): 1.5 autocorrelation times (\eqn{1.5/(\gamma \, \text{median}(\Delta t))}) for the underdamped model, constrained to [20, 500], and 20 for the overdamped model. The overdamped model has no velocity state, so the effect of the past dies out within about 10 observations.
@@ -81,21 +82,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
   coord <- cond$coord
   scaleFactor <- cond$scaleFactor
 
-  if (!is.null(cond$barrier)) {
-    barrier_sdf <- spatialCovs[[cond$barrier]]   # build_tmb_data() converts to working units
-    spatialCovs[[cond$barrier]] <- NULL
-  } else {
-    barrier_sdf <- NULL
-  }
-
-  dat <- build_tmb_data(data, spatialCovs, cond$model, coord, cond$scaleFactor,
-                        cond$smoothGradient, cond$npoints, cond$curweight,
-                        cond$zetaScale, obs_dist = cond$obs_dist, barrier_sdf = barrier_sdf,
-                        lambda = .lambda_args(cond)$lambda, lambda_mode = .lambda_args(cond)$lambda_mode,
-                        grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, object),
-                        barrierOnset = .cond_onset(cond))
-
-  dat <- c(dat, object$tmb_setup$priors)
+  dat <- .fit_tmb_data(object, data, spatialCovs)
 
   # Check for valid measurement error observations
   valid_obs_counts <- sapply(unique(dat$ID), function(id) sum(dat$isd[dat$ID == id] == 1))
@@ -145,7 +132,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     par_to_pass <- object$par[!(names(object$par) %in% c("l_tau", "l_rho_o"))]
   }
   # ---- choose / check the OSA method ----
-  is_t <- !is.null(cond$obs_dist) && cond$obs_dist == "t" && has_measurement_error
+  is_t <- !is.null(cond$obs_dist) && cond$obs_dist %in% c("t", "Huber") && has_measurement_error
   gaussian_methods <- c("oneStepGaussianOffMode", "oneStepGaussian", "fullGaussian")
   if (is.null(method)) {
     method <- if (is_t) "oneStepGeneric" else "oneStepGaussianOffMode"
@@ -153,7 +140,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     method <- match.arg(method, c(gaussian_methods, "oneStepGeneric", "cdf"))
     if (is_t && method %in% gaussian_methods)
       warning("method = '", method, "' assumes a Gaussian one-step predictive distribution, but the model ",
-              "has t-distributed measurement error (obs_dist = 't'). The residuals will not be N(0,1) even ",
+              "has non-Gaussian measurement error (obs_dist = '", cond$obs_dist, "'). The residuals will not be N(0,1) even ",
               "if the model is correct (inflated variance, wrong tails), and goodness-of-fit tests will be ",
               "unreliable. Use method = 'oneStepGeneric' or 'cdf' instead.", call. = FALSE)
   }
@@ -414,8 +401,8 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
   if(run_tests) {
     tests_df <- gof_tests(res_df)
 
-    # Exclude Mahalanobis distance tests when using a t-distribution
-    if (!is.null(cond$obs_dist) && cond$obs_dist == "t") {
+    # Exclude Mahalanobis distance tests for the t and Huber models (D^2 is not chi^2_2 there)
+    if (!is.null(cond$obs_dist) && cond$obs_dist %in% c("t", "Huber")) {
       tests_df <- tests_df[!grepl("mah", tests_df$metric, ignore.case = TRUE), ]
     }
 

@@ -7,7 +7,7 @@
 initialValues(
   data,
   model = c("underdamped", "overdamped"),
-  obs_dist = c("Gaussian", "t"),
+  obs_dist = c("Gaussian", "t", "Huber"),
   par,
   spatialCovs,
   coord = c("x", "y"),
@@ -20,9 +20,9 @@ initialValues(
 
 \item{model}{Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".}
 
-\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.}
+\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber''.}
 
-\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o","df"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
+\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o","df","k"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
 
 \item{spatialCovs}{A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.}
 

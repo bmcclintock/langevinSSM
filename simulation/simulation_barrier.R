@@ -14,6 +14,10 @@ obsPerAnimal <- 5000
 covRange <- c(0.1, 0.5)
 lambda_max <- NULL
 
+obs_dist <- "t"
+df <- 3 # degrees of freedom (applies to obs_dist <- "t" only)
+k <- 2 # threshold (applied to obs_dist <- "Huber" only)
+
 measurementError = list(smaj.sd = 1.5, smin.sd = 0.75)
 
 sim_pars <- list(
@@ -21,11 +25,13 @@ sim_pars <- list(
   sigma = 5,
   psi = 1
 )
+if(obs_dist=="t") sim_pars$df <- df
+if(obs_dist=="Huber") sim_pars$k <- k
 if(model=="underdamped") sim_pars$gamma <- 0.5
 
 nSims <- 100
-parMat <- matrix(NA, nSims, 8)
-colnames(parMat) <- c(paste0("beta", 1:length(sim_pars$beta)), "sigma", "gamma", "lambda", "BA")
+parMat <- matrix(NA, nSims, 8+ifelse(obs_dist=="Gaussian",0,1))
+colnames(parMat) <- c(paste0("beta", 1:length(sim_pars$beta)), "sigma", "gamma", paste0(ifelse(obs_dist=="Gaussian","",ifelse(obs_dist=="t","df","k"))),"lambda", "BA")
 parMat_true <- parMat
 
 for(isim in 1:nSims){
@@ -75,6 +81,7 @@ for(isim in 1:nSims){
     sim_data <- tryCatch({
       out_data <- simLangevin(
         model = model,
+        obs_dist = obs_dist,
         par = sim_pars,
         spatialCovs = covs,
         barrier = "coast_barrier",
@@ -98,17 +105,30 @@ for(isim in 1:nSims){
 
   trueUD <- getUD(covs, beta=sim_pars$beta, barrier="coast_barrier", lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
+
+  par <- initialValues(sim_data,model=model,obs_dist = obs_dist,spatialCovs=covs[1:length(sim_pars$beta)],lambda="estimate")
+  if(obs_dist=="t") par$df <- 5
+  if(obs_dist=="Huber") par$k <- 5
+
   fit <- tryCatch(suppressMessages(fitLangevin(
     data = sim_data,
     model = model,
+    obs_dist = obs_dist,
+    par = par,
     spatialCovs = covs,
     lambda = "estimate",
     silent = TRUE
   )),error=function(e) e)
 
+  par <- initialValues(sim_data,model=model,obs_dist = obs_dist,spatialCovs=covs[1:length(sim_pars$beta)],lambda="tied")
+  if(obs_dist=="t") par$df <- df
+  if(obs_dist=="Huber") par$k <- k
+
   fit_true <- tryCatch(suppressMessages(fitLangevin(
     data = sim_data,
     model = model,
+    obs_dist = obs_dist,
+    par = par,
     spatialCovs = covs,
     silent = TRUE
   )),error=function(e) e)
@@ -116,6 +136,8 @@ for(isim in 1:nSims){
   if(!inherits(fit, "error")){
     estUD <- suppressMessages(getUD(covs, fit=fit, log=TRUE, plot=FALSE))
     parMat[isim, 1:6] <- fit$estimates$natural$Estimate[1:6]
+    if(obs_dist=="t") parMat[isim,"df"] <- fit$estimates$natural["df",1]
+    if(obs_dist=="Huber") parMat[isim,"k"] <- fit$estimates$natural["k",1]
     parMat[isim, "BA"] <- rasterOverlap(exp(estUD), exp(trueUD))#,local=fit)
     parMat[isim, "lambda"] <- fit$conditions$lambda
     print(plot(fit,data=sim_data,spatialCovs=covs,log=TRUE,maskRast=water_mask)+labs(title=paste0("Sim ",isim)))
@@ -124,6 +146,8 @@ for(isim in 1:nSims){
   if(!inherits(fit_true, "error")){
     estUD_true <- suppressMessages(getUD(covs, fit=fit_true, log=TRUE, plot=FALSE))
     parMat_true[isim, 1:6] <- fit_true$estimates$natural$Estimate[1:6]
+    if(obs_dist=="t") parMat_true[isim,"df"] <- fit_true$estimates$natural["df",1]
+    if(obs_dist=="Huber") parMat_true[isim,"k"] <- fit_true$estimates$natural["k",1]
     parMat_true[isim, "BA"] <- rasterOverlap(exp(estUD_true), exp(trueUD))#,local=fit_true)
     parMat_true[isim, "lambda"] <- fit_true$conditions$lambda
   }

@@ -391,6 +391,8 @@ print.resLangevin <- function(x, ...) {
   if(!is.null(tests_df)){
     cat("---- Goodness-of-Fit Tests ----\n")
     print(tests_df, row.names = FALSE)
+    if ("effect" %in% names(tests_df))
+      cat("With many residuals, judge the effect size, not only the p-value. See ?residuals.fitLangevin.\n", sep = "")
     cat("-------------------------------\n\n")
   }
 
@@ -721,10 +723,8 @@ gof_tests <- function(res_df, nsim = 1000){
     # Suppress warnings for ties, which can occasionally happen in large datasets
     ks_x <- suppressWarnings(stats::ks.test(rx, "pnorm", mean = 0, sd = 1))
     ks_y <- suppressWarnings(stats::ks.test(ry, "pnorm", mean = 0, sd = 1))
-    ks_mah <- suppressWarnings(stats::ks.test(mah, "pchisq", df = 2))
-
-    # KS_mah is very sensitive to a common scale error in the residuals (much more so than
-    # KS_x / KS_y), so it is split into two complementary tests:
+    # The squared Mahalanobis distance mah = rx^2 + ry^2 (chi^2_2 under the model) is tested in two
+    # complementary parts, separating scale from shape (a single KS test against chi^2_2 mixes them):
     #
     # (1) Shape (KS_mah_shape): under the model mah/2 ~ Exp(1). Rescale by the sample mean
     #     (e = mah / mean(mah)) and compute the KS distance to Exp(1). Because the scale is
@@ -754,21 +754,41 @@ gof_tests <- function(res_df, nsim = 1000){
     S <- sum(mah)
     p_disp <- min(1, 2 * min(stats::pchisq(S, 2 * n), stats::pchisq(S, 2 * n, lower.tail = FALSE)))
 
-    # Box-Ljung test for autocorrelation (lag typically defaults to log(N))
-    lag_val <- max(1, floor(log(n)))
-    lb_x <- stats::Box.test(rx, lag = lag_val, type = "Ljung-Box")
-    lb_y <- stats::Box.test(ry, lag = lag_val, type = "Ljung-Box")
-    lb_mah <- stats::Box.test(mah, lag = lag_val, type = "Ljung-Box")
+    # Ljung-Box tests for autocorrelation, computed within each track and pooled. Concatenating
+    # tracks would treat the end of one track and the start of the next as consecutive. Each track
+    # with n_i > 3 valid residuals contributes Q_i = n_i (n_i + 2) sum_{k <= L_i} r_ik^2 / (n_i - k),
+    # with L_i = floor(log n_i); under independence the Q_i are independent chi^2_{L_i}, so
+    # sum Q_i ~ chi^2_{sum L_i}. The effect size is the largest absolute autocorrelation (lags 1 to
+    # min L_i), averaged over tracks with weights n_i.
+    ids <- res_df$id[valid_idx]
+    lb_pooled <- function(z) {
+      Q <- 0; df <- 0; acfs <- list(); w <- numeric(0)
+      for (zi in split(z, factor(ids, levels = unique(ids)))) {
+        ni <- length(zi)
+        if (ni <= 3) next
+        Li <- max(1L, floor(log(ni)))
+        r <- stats::acf(zi, lag.max = Li, plot = FALSE, demean = TRUE)$acf[-1]
+        Q <- Q + ni * (ni + 2) * sum(r^2 / (ni - seq_len(Li)))
+        df <- df + Li
+        acfs[[length(acfs) + 1L]] <- r; w <- c(w, ni)
+      }
+      if (df == 0) return(c(statistic = NA, p.value = NA, effect = NA))
+      Lmin <- min(lengths(acfs))
+      rbar <- colSums(do.call(rbind, lapply(acfs, `[`, seq_len(Lmin))) * w) / sum(w)
+      c(statistic = Q, p.value = stats::pchisq(Q, df, lower.tail = FALSE), effect = max(abs(rbar)))
+    }
+    lb_x <- lb_pooled(rx)
+    lb_y <- lb_pooled(ry)
+    lb_mah <- lb_pooled(mah)
 
     tests_df <- data.frame(
-      metric = c("KS_x", "KS_y", "KS_mah", "KS_mah_shape", "Disp_mah",
-                 "LB_x", "LB_y", "LB_mah"),
-      statistic = unname(c(ks_x$statistic, ks_y$statistic, ks_mah$statistic,
-                           D_shape, mean(mah) / 2,
-                           lb_x$statistic, lb_y$statistic, lb_mah$statistic)),
-      p.value = unname(c(ks_x$p.value, ks_y$p.value, ks_mah$p.value,
-                         p_shape, p_disp,
-                         lb_x$p.value, lb_y$p.value, lb_mah$p.value)),
+      metric = c("KS_x", "KS_y", "KS_mah_shape", "Disp_mah", "LB_x", "LB_y", "LB_mah"),
+      statistic = unname(c(ks_x$statistic, ks_y$statistic, D_shape, mean(mah) / 2,
+                           lb_x["statistic"], lb_y["statistic"], lb_mah["statistic"])),
+      p.value = unname(c(ks_x$p.value, ks_y$p.value, p_shape, p_disp,
+                         lb_x["p.value"], lb_y["p.value"], lb_mah["p.value"])),
+      effect = unname(c(ks_x$statistic, ks_y$statistic, D_shape, mean(mah) / 2 - 1,
+                        lb_x["effect"], lb_y["effect"], lb_mah["effect"])),
       stringsAsFactors = FALSE
     )
   } else {
@@ -1180,4 +1200,39 @@ print.hierLangevin <- function(x, ...) {
   out[neg] <- ifelse(t <= 1, onset^2 * (t^7 / 7 - t^6 / 2 + t^5 / 2),
                      0.5 * u^2 - 0.5 * onset * u + onset^2 / 7)
   out
+}
+
+
+# TMB data list of a fitted model, rebuilt from the data and covariates it was fitted to
+# (the barrier raster, if any, is split off as in fitLangevin()).
+.fit_tmb_data <- function(object, data, spatialCovs) {
+  cond <- object$conditions
+  if (!is.null(cond$barrier)) {
+    barrier_sdf <- spatialCovs[[cond$barrier]]   # build_tmb_data() converts to working units
+    spatialCovs[[cond$barrier]] <- NULL
+  } else {
+    barrier_sdf <- NULL
+  }
+  dat <- build_tmb_data(data, spatialCovs, cond$model, cond$coord, cond$scaleFactor,
+                        cond$smoothGradient, cond$npoints, cond$curweight,
+                        cond$zetaScale, obs_dist = cond$obs_dist, barrier_sdf = barrier_sdf,
+                        lambda = .lambda_args(cond)$lambda, lambda_mode = .lambda_args(cond)$lambda_mode,
+                        grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, object),
+                        barrierOnset = .cond_onset(cond))
+  c(dat, object$tmb_setup$priors)
+}
+
+# Rebuild the TMB objective of a fitted model (internal; used by tests and diagnostics).
+# The objective is evaluated once at the estimates, so obj$env$last.par.best holds the fitted
+# latent path. All parameters keep the map of the fit (lambda is fixed at its estimate).
+.make_obj <- function(object, data, spatialCovs) {
+  if (!inherits(object, "fitLangevin")) stop("'object' must be a fitLangevin object.")
+  verify_signatures(object, data = data, spatialCovs = spatialCovs)
+  dat <- .fit_tmb_data(object, data, spatialCovs)
+  obj <- TMB::MakeADFun(c(model = "langevinSSM", dat), object$tmb_setup$parList, map = object$tmb_setup$map,
+                        random = object$tmb_setup$random, DLL = "langevinSSM_TMBExports", silent = TRUE)
+  p <- object$par[names(object$par) %in% unique(names(obj$par))]   # drops parameters fixed afterwards (log_lambda)
+  if (length(p) != length(obj$par) || any(names(p) != names(obj$par))) stop("Could not match the fitted parameters to the TMB objective.")
+  obj$fn(p)
+  obj
 }

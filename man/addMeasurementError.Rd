@@ -9,13 +9,13 @@ addMeasurementError(
   par = NULL,
   measurementError = NULL,
   coord = c("mu.x", "mu.y"),
-  obs_dist = c("Gaussian", "t")
+  obs_dist = c("Gaussian", "t", "Huber")
 )
 }
 \arguments{
 \item{data}{A \code{dataLangevin} object containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).}
 
-\item{par}{A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. If \code{obs_dist="t"}, then \code{par} can also include the degrees of freedom (`df`) parameter. See \code{\link{fitLangevin}}.}
+\item{par}{A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. If \code{obs_dist="t"}, then \code{par} can also include the degrees of freedom (`df`) parameter. If \code{obs_dist="Huber"}, then \code{par} can also include the threshold (`k`) parameter. See \code{\link{fitLangevin}}.}
 
 \item{measurementError}{A list or data frame used to simulate observation error. The structure determines the error model used:
 \itemize{
@@ -27,7 +27,7 @@ You cannot provide parameters for multiple error models simultaneously. If \code
 
 \item{coord}{A character vector of length 2 specifying the column names in `data` that contain the true x and y locations (default is `c("mu.x", "mu.y")`).}
 
-\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.}
+\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber''.}
 }
 \value{
 A data frame with observed locations (`x`, `y`). and measurement error terms added.

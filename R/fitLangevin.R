@@ -1,8 +1,10 @@
-build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = NULL, lambda = NULL) {
+build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = NULL, lambda = NULL, lambda_mode = 0L, grad = "quintic", smoothPar = NULL, barrierOnset = 0) {
   if (!is.null(barrier_sdf)) {
     barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE) / scaleFactor
-    barrier_pen <- lambda
+    # lambda is on the natural scale; the template works in coordinates / scaleFactor (lambda * scaleFactor^2)
+    barrier_pen <- if (lambda_mode == 0L) lambda * scaleFactor^2 else 0
   } else {
+    lambda_mode <- 0L
     barrier_dist_mat <- matrix(0, 1, 1)
     barrier_pen <- 0
   }
@@ -39,9 +41,19 @@ build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothG
   dat$smoothGradient <- ifelse(smoothGradient, 1, 0)
   dat$weights <- c(curweight, rep((1 - curweight) / npoints, npoints))
   dat$zetaScale <- zetaScale
+  # fixed (sigma, gamma) for the smoothing radius, natural scale -> working scale
+  if (is.null(smoothPar)) smoothPar <- list(sigma = 1, gamma = 1)
+  dat$smooth_sigma <- smoothPar$sigma / scaleFactor
+  dat$smooth_gamma <- smoothPar$gamma
 
   dat$barrier_dist <- barrier_dist_mat
   dat$barrier_penalty <- barrier_pen
+  dat$lambda_mode <- as.integer(lambda_mode)
+  # onset length of the barrier potential (natural units -> working units)
+  dat$barrier_onset <- if (is.null(barrier_sdf)) 0 else .resolve_onset(barrierOnset, barrier_sdf) / scaleFactor
+  pos_dt <- dat$delta_t[dat$delta_t > 1.e-6]
+  dat$median_dt <- if (length(pos_dt)) stats::median(pos_dt) else 1
+  dat$spline_degree <- .grad_degree(grad)
   dat <- c(dat, raster_data)
 
   return(dat)
@@ -71,6 +83,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
     # 2. natural scale
     rep_vals <- obj$report()
     nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi","df")
+    if (isTRUE(obj$env$data$lambda_mode > 0)) nat_names <- c(nat_names, "lambda")
     existing_names <- nat_names[nat_names %in% names(rep_vals)]
     nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
     names(nat_list) <- existing_names
@@ -194,26 +207,26 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
-#' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma'').
+#' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma''). If \code{lambda = "estimate"}, \code{par} can also include the initial barrier strength (``lambda'', natural scale; default: the stability limit used by \code{lambda = "tied"} at the median time step, see \code{\link{initialValues}}), which can be fixed using \code{map = list(lambda = factor(NA))}. ``lambda'' cannot be included in \code{par} otherwise.
 #' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). All parameters are specified on their natural scale and are converted to working scale internally.
 #' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, ``rho_o'' = 0, and ``df'' = 5) via \code{map}. See Details.
-#' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{suggestLambda}} for a strategy to determine the optimal penalty.
-#' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).
+#' @param lambda Barrier strength. One of: \code{"tied"} (default), a non-negative number (fixed), or \code{"estimate"}. With \code{"tied"} the barrier is treated as a hard wall: at every time step \eqn{t} the spring constant is set to the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed inside the likelihood from the current \code{sigma} and \code{gamma} (see Details), so \eqn{\lambda} is not a free parameter and the wall becomes harder automatically as the time step shrinks. A number fixes \eqn{\lambda} (a soft wall of known stiffness, e.g. data simulated by \code{\link{simLangevin}}); \code{"estimate"} treats \eqn{\log\lambda} as a free parameter (only identifiable when animals actually enter the restricted zone), with its starting value given by \code{par$lambda}. Numeric values, \code{par$lambda}, and the reported estimates are all on the natural scale (units of 1/distance^2 in the units of the coordinates) and do not depend on \code{scaleFactor}. If \code{NULL}, the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"tied"}.
+#' @param barrierOnset Onset length \eqn{\ell} of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). With \code{0} the potential is \eqn{B(d) = \min(d,0)^2/2} (the penalty of Delporte et al. 2025), whose force is continuous at the boundary but whose curvature jumps from 0 to \eqn{\lambda}. With \eqn{\ell > 0} the force rises smoothly (\eqn{C^4}) from zero at the boundary over the first \eqn{\ell} of the restricted side and is thereafter the quadratic wall shifted by \eqn{\ell/2}; the allowed side is unaffected. A small positive onset (e.g., one cell) makes the Laplace approximation better behaved when many (smoothed) locations lie close to the boundary, and is a natural way to encode positional uncertainty of the boundary itself. It is not a fixed quantity and should be chosen for the species and data: for animals that should never be on the restricted side (e.g., whales at a coastline) it is a numerical device of the order of the raster resolution or coastline accuracy; for animals that legitimately use the restricted side (e.g., pinnipeds hauling out on land) a larger value (or a soft, estimated \code{lambda}) is more appropriate. Ignored without a barrier. If \code{NULL} (default), the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{0}. See Details.
+#' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}, or \code{"log_lambda"} when \code{lambda = "estimate"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).
 #' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
 #' @param coord Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.
 #' @param scaleFactor Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.
+#' @param grad Interpolation used for the covariate surfaces (and the barrier distance) whose gradients give the habitat force. One of \code{"quintic"} (default), \code{"cubic"} or \code{"bilinear"}. See Details.
 #' @param smoothGradient Logical indicating whether or not to smooth the gradients. See Details. Default: \code{FALSE}.
 #' @param npoints Number of smoothing points around current cell (4 = diagonal, 8 = queen neighborhood). Ignored unless \code{smoothGradient=TRUE}.
 #' @param curweight Smoothing weight of current cell location (\code{0 <= curweight < 1}). Ignored unless \code{smoothGradient=TRUE}.
-#' @param zetaScale Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). Ignored unless \code{smoothGradient=TRUE}.
+#' @param zetaScale Multiplier of the smoothing radius (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). \code{zetaScale = 1} (default) is the moment-matched radius for both models, evaluated at values of \code{sigma} and \code{gamma} derived from the data before fitting (see Details). Ignored unless \code{smoothGradient=TRUE}.
 #' @param hessian Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.
 #' @param silent Logical indicating whether or not to disable TMB tracing information. See \code{\link[TMB]{MakeADFun}}. Default: \code{TRUE}.
 #' @param method Character string indicating the type of algorithm used for the outer optimization (e.g., \code{"BFGS"}). When \code{optMethod = "nloptr"}, \code{"BFGS"} is internally mapped to \code{"NLOPT_LD_LBFGS"} for compatibility. Default: \code{"BFGS"}.
 #' @param optMethod Character string indicating the optimization function (engine) to use for the outer optimization. Options are \code{"nlminb"} or \code{"nloptr"}. If \code{"nloptr"} is selected, the \code{nloptr} package must be installed. Default: \code{"nlminb"}.
-#' @param initialInner Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
 #' @param control A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}.
-#' @param polishOptim Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization has completed. Default: \code{FALSE}.
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
 #' @param calcSE Logical indicating whether or not to calculate standard errors for the parameter estimates. Default: \code{TRUE}.
 #'
@@ -258,9 +271,17 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'   \item \strong{3. Fixed to custom values:} To fix a parameter to a specific value other than the default, include the custom value in \code{par} and explicitly map it to \code{NA} in \code{map} (e.g., \code{par = list(psi = 1.5), map = list(psi = factor(NA))}).
 #' }
 #'
+#' \strong{Gradient interpolation (\code{grad}):} the force is the gradient of the covariate surfaces, which are interpolated from the raster cell-centre values by an interpolating tensor-product B-spline of degree 5 (\code{"quintic"}), 3 (\code{"cubic"}) or 1 (\code{"bilinear"}). All three pass exactly through the cell values, and in all three the raster cell is looked up afresh from the current location at every evaluation of the objective. They differ in smoothness, which matters for the Laplace approximation: the inner (latent-path) problem uses the 2nd and 3rd derivatives of the surface, and TMB's gradient of the marginal likelihood the 4th. With \code{"quintic"} all of these are continuous, so the marginal likelihood and its gradient are smooth. With \code{"cubic"} the force and its first derivative are continuous but the 3rd derivative of the surface jumps at cell edges, so the marginal likelihood is slightly non-smooth; the inner Hessian is cheaper. With \code{"bilinear"} the force itself jumps at every cell edge and its derivatives within a cell are zero, which makes each inner step cheap but the inner problem non-smooth; the outer optimizer can then report false convergence and stop at different points from different starting values. \code{"bilinear"} is mainly useful for quick exploratory fits or comparison with earlier versions of the package; check its results against \code{"cubic"} or \code{"quintic"}. The estimates (in particular \code{beta}) depend somewhat on the interpolation, because the gradient of a rough raster is not uniquely defined; \code{simLangevin}, \code{predLangevin}, \code{cAIC} and \code{residuals} use the setting stored in the fit.
+#'
 #' \strong{Gradient smoothing:} Setting \code{smoothGradient=TRUE} applies the smoothing approach of Blackwell and Matthiopoulos (2024) to the gradients of the habitat selection covariates (\code{spatialCovs}), which can help reduce attenuation bias in habitat selection coefficients when observations are obtained at a coarser time resolution than the underlying continuous-time movement process.
-#' This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, where the weights are determined by a Gaussian kernel based on the distance between locations and the specified neighborhood parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
-#' The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sigma}, while the neightborhood for the overdamped model is \code{zetaScale * sigma / sqrt(2)}. See Blackwell and Matthiopoulos (2024) for more details.
+#' This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, with weights and neighborhood determined by the parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
+#' The \code{npoints} neighbours lie on a ring of radius \eqn{r} around the current location (equally spaced; weight \code{(1-curweight)/npoints} each, \code{curweight} at the centre), so the smoothed gradient is a discrete average of the gradient over the positions the animal may occupy during the interval.
+#' The transition density holds the force fixed at its value at the start of each interval \eqn{\Delta}, whereas in the continuous-time process it acts along the path; to second order the force averaged over the interval (weighted as in the transition mean) is \eqn{h(x) + \frac{1}{2} m \nabla^2 h(x)}, where \eqn{m} is the correspondingly weighted mean squared displacement per coordinate.
+#' The ring has second moment \eqn{(1-c) r^2/2} per coordinate (\eqn{c} = \code{curweight}) for both \code{npoints = 4} and \code{npoints = 8}, so it reproduces this correction when \eqn{r^* = \sqrt{2m/(1-c)}}.
+#' For the underdamped model, with \eqn{a = \gamma\Delta}, \deqn{m = \frac{2\sigma^2}{\gamma^2}\,\frac{a^2/2 - 2a + 3 - (3+a)e^{-a}}{a - 1 + e^{-a}},}
+#' so that \eqn{r^* \approx \sigma\Delta/\sqrt{3(1-c)}} when \eqn{\gamma\Delta \ll 1} (ballistic motion within the interval) and \eqn{r^* \approx \sigma\sqrt{2\Delta/(\gamma(1-c))}} when \eqn{\gamma\Delta \gg 1}. For the overdamped model \eqn{m = \sigma^2\Delta/2} and \eqn{r^* = \sigma\sqrt{\Delta/(1-c)}}; for the default \code{curweight = 0.5} this is \eqn{\sigma\sqrt{2\Delta}}, the root-mean-square two-dimensional step length, i.e. exactly the radius \eqn{\zeta\sqrt{2\delta t}} of Blackwell and Matthiopoulos (2024, eqs. 29--30).
+#' The radius used is \eqn{r = } \code{zetaScale} \eqn{\times\, r^*} (\code{zetaScale = 1}, the default, is the moment-matched radius for both models), computed for each interval \eqn{\Delta}. As in Blackwell and Matthiopoulos (2024), where \eqn{\zeta} is computed from the observed step lengths before fitting, \eqn{\sigma} and \eqn{\gamma} in \eqn{r^*} are fixed values derived from the data alone: the measurement-error-corrected variogram estimates of \code{\link{initialValues}} (\code{type = "variogram"}), or, if the variogram fit fails, the moment estimators \eqn{\sigma = \sqrt{\overline{|\Delta x|^2/(2\Delta)}}} (B&M's \eqn{\zeta}) and \eqn{\gamma = 1/\mathrm{median}(\Delta)}. They do not depend on \code{par} or on the parameters being estimated, so the smoothing is a fixed property of the likelihood. The values used are stored in \code{fit$conditions$smoothPar}. For the underdamped model the radius is insensitive to \eqn{\gamma} when \eqn{\gamma\Delta \ll 1}; to adjust the radius, use \code{zetaScale}.
+#' The ring averages over the stationary velocity distribution rather than conditioning on the latent velocity, and it corrects only the mean of the transition (not its variance), so it mainly addresses attenuation from abrupt changes in the gradient over the interval; it cannot remove the bias that arises when the observation interval is long relative to the spatial scale of the covariates. See Blackwell and Matthiopoulos (2024) for the smoothing approach.
 #'
 #' @template barrier_details
 #'
@@ -335,7 +356,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @importFrom stats nlminb
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = c("Gaussian", "t"), spatialCovs, barrier = NULL, par, lambda = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), initialInner = TRUE, inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), polishOptim = FALSE, getJointPrecision = FALSE, calcSE = TRUE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = c("Gaussian", "t"), spatialCovs, barrier = NULL, par, lambda = "tied", barrierOnset = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, grad = c("quintic", "cubic", "bilinear"), smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE, calcSE = TRUE){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
@@ -350,6 +371,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
   }
 
   if(!all(coord %in% colnames(data))) stop("coord not found in data.")
+  grad <- match.arg(grad)
   if(smoothGradient & isFALSE(npoints %in% c(4,8))) stop("npoints must be 4 or 8")
   if(smoothGradient & isFALSE(curweight>=0 & curweight<1)) stop("curweight must be >=0 and <1")
   if(smoothGradient & isFALSE(zetaScale>0)) stop("zetaScale must be >0")
@@ -373,30 +395,47 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
     if(!isTRUE(attr(barrier_sdf,"barLangevin"))) stop("barrier is not a 'barLangevin' object created by prepBarrier.")
     spatialCovs[[barrier]] <- NULL
 
+    lambda_mode <- 0L
     if (is.null(lambda)) {
       sim_lambda <- attr(data, "lambda")
       if (!is.null(sim_lambda)) {
-        lambda <- sim_lambda
-        message("   Auto-detected barrier penalty (lambda) from simLangevin data: ", signif(lambda, 4))
-      } else {
-        stop("A numeric value for 'lambda' must be supplied when using a barrier constraint.\n",
-             "  If you do not know what value to use, see ?suggestLambda")
-      }
+        lambda <- if (is.character(sim_lambda) || is.infinite(sim_lambda)) "tied" else sim_lambda
+        message("   Auto-detected barrier penalty (lambda) from simLangevin data: ", if (is.character(lambda)) lambda else signif(lambda, 4))
+      } else lambda <- "tied"
     }
-    .validate_lambda(lambda)
+    if (is.character(lambda)) {
+      lambda <- match.arg(lambda, c("tied", "estimate"))
+      lambda_mode <- if (lambda == "tied") 1L else 2L
+    }
+    if (lambda_mode == 0L) .validate_lambda(lambda)
+    if (is.null(barrierOnset)) {
+      sim_onset <- attr(data, "barrierOnset")
+      barrierOnset <- if (!is.null(sim_onset)) sim_onset else 0
+      if (!is.null(sim_onset) && sim_onset > 0) message("   Auto-detected barrier onset length from simLangevin data: ", signif(sim_onset, 4))
+    }
+    barrierOnset <- .resolve_onset(barrierOnset, barrier_sdf)
   } else {
     barrier_sdf <- NULL
+    lambda_mode <- 0L
+    barrierOnset <- 0
   }
 
   if (length(spatialCovs) == 0) {
     stop("At least one habitat covariate must remain in spatialCovs after isolating the barrier constraint.")
   }
 
-  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = barrier_sdf, lambda = lambda)
+  # Smoothing radius (Blackwell & Matthiopoulos 2024): fixed before optimisation, derived from the data only
+  smoothPar <- if (!smoothGradient) NULL else if (!is.null(attr(data, "smoothPar"))) attr(data, "smoothPar") else
+    .smooth_par_data(data, model, obs_dist, spatialCovs, coord)   # attribute: set internally by predLangevin()
+  par <- initialValues(data, model, obs_dist, par, spatialCovs, coord, lambda = if (lambda_mode == 2L) "estimate" else NULL)
 
-  par <- initialValues(data, model, obs_dist, par, spatialCovs, coord)
+  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = barrier_sdf, lambda = lambda, lambda_mode = lambda_mode, grad = grad, smoothPar = smoothPar, barrierOnset = barrierOnset)
+
+  if (lambda_mode != 2L && !is.null(prior) && "log_lambda" %in% rownames(prior)) {
+    stop("A prior on 'log_lambda' can only be specified when a barrier is specified and lambda = \"estimate\".")
+  }
   origprior <- prior
-  cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior)
+  cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior, lambda_mode=lambda_mode)
   tmbpar <- cp$par
   tmbmap <- cp$map
   re <- cp$re
@@ -404,33 +443,11 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
   dat <- c(dat, cp$priors)
   tmbmap <- mapDuplicatedTimes(dat, tmbmap, tmbpar, re)
 
-  # scale parameters internally for TMB
+  # scale parameters internally for TMB; par$lambda (natural scale) -> log_lambda (working scale)
   tmbpar$log_sigma <- tmbpar$log_sigma - log(scaleFactor)
+  if (lambda_mode == 2L) tmbpar$log_lambda <- tmbpar$log_lambda + 2 * log(scaleFactor)
   tmbpar$mu <- tmbpar$mu / scaleFactor
   tmbpar$vel <- tmbpar$vel / scaleFactor
-
-  if(initialInner){
-    map_inner <- lapply(tmbpar[names(tmbpar)[!names(tmbpar) %in% c("mu","vel")]], function(x) factor(rep(NA,length(x))))
-    if(!is.null(tmbmap$mu)) map_inner$mu <- tmbmap$mu
-    if(!is.null(tmbmap$vel)) map_inner$vel <- tmbmap$vel
-
-    message("   Performing initial inner optimization...")
-
-    obj1 <- try({
-      TMB::MakeADFun(c(model="langevinSSM",dat), tmbpar, map = map_inner, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
-    }, silent = TRUE)
-
-    if (inherits(obj1, "try-error")) stop("Initial inner optimization (obj1) failed during TMB::MakeADFun. Check parameter initial values or data.\nError details: ", attr(obj1, "condition")$message)
-
-    obj1$fn(obj1$par)
-    smoothed_pars <- obj1$env$parList()
-
-    if("mu" %in% re) tmbpar$mu <- smoothed_pars$mu
-    if("vel" %in% re) tmbpar$vel <- smoothed_pars$vel
-
-    if(!is.null(tmbmap$mu)) tmbpar$mu[is.na(tmbmap$mu)] <- (cp$par$mu / scaleFactor)[is.na(tmbmap$mu)]
-    if(!is.null(tmbmap$vel)) tmbpar$vel[is.na(tmbmap$vel)] <- (cp$par$vel / scaleFactor)[is.na(tmbmap$vel)]
-  }
 
   message("   Constructing objective function...")
 
@@ -493,84 +510,6 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
 
     fit$elapsedTime <- proc.time() - start
 
-    if(polishOptim==TRUE){
-      message("   Polishing optimization...")
-
-      obj2$fn(fit$par)
-      parList_mle <- obj2$env$parList(fit$par)
-      par_mle <- list(
-        beta = parList_mle$beta,
-        sigma = exp(parList_mle$log_sigma) * scaleFactor
-      )
-      if (model == "underdamped") par_mle$gamma <- exp(parList_mle$log_gamma)
-
-      parNames <- names(fit$par)
-      if ("l_psi" %in% parNames) par_mle$psi <- exp(parList_mle$l_psi)
-      if ("l_tau" %in% parNames) par_mle$tau <- exp(parList_mle$l_tau)
-      if ("l_rho_o" %in% parNames) par_mle$rho_o <- 2 / (1 + exp(-parList_mle$l_rho_o)) - 1
-
-      par_mle$mu <- t(parList_mle$mu * scaleFactor)
-      if (model == "underdamped") par_mle$vel <- t(parList_mle$vel * scaleFactor)
-
-      map_inner <- list(
-        beta = factor(rep(NA, length(par_mle$beta))),
-        sigma = factor(NA)
-      )
-      if (model == "underdamped") map_inner$gamma <- factor(NA)
-      if ("psi" %in% names(par_mle)) map_inner$psi <- factor(NA)
-      if ("tau" %in% names(par_mle)) map_inner$tau <- factor(rep(NA, length(par_mle$tau)))
-      if ("rho_o" %in% names(par_mle)) map_inner$rho_o <- factor(NA)
-
-      if (!is.null(map[[ "mu" ]])) map_inner$mu <- map[[ "mu" ]]
-      if (!is.null(map[[ "vel" ]])) map_inner$vel <- map[[ "vel" ]]
-
-      inner_fit <- try({
-        suppressMessages(fitLangevin(data = data, model = model, spatialCovs = orig_spatialCovs,
-                                     barrier = barrier, par = par_mle, lambda = lambda,
-                                     prior = origprior, map = map_inner, coord = coord,
-                                     scaleFactor = scaleFactor, smoothGradient = smoothGradient,
-                                     npoints = npoints, curweight = curweight, zetaScale = zetaScale,
-                                     hessian = FALSE, silent = TRUE, method = method,
-                                     optMethod = optMethod, initialInner = FALSE,
-                                     inner.control = inner.control, control = control,
-                                     polishOptim = FALSE, getJointPrecision = FALSE, calcSE = FALSE))
-      }, silent = TRUE)
-
-      if (!inherits(inner_fit, "try-error") && !is.null(inner_fit$par)) {
-
-        inner_parList <- inner_fit$tmb_setup$parList
-        par_polished <- par_mle
-        par_polished$mu <- t(inner_parList$mu * scaleFactor)
-        if (model == "underdamped") par_polished$vel <- t(inner_parList$vel * scaleFactor)
-
-        outer_fit <- try({
-          suppressWarnings(suppressMessages(fitLangevin(data = data, model = model, spatialCovs = orig_spatialCovs,
-                                                        barrier = barrier, par = par_polished, lambda = lambda,
-                                                        prior = origprior, map = map, coord = coord,
-                                                        scaleFactor = scaleFactor, smoothGradient = smoothGradient,
-                                                        npoints = npoints, curweight = curweight, zetaScale = zetaScale,
-                                                        hessian = hessian, silent = silent, method = method,
-                                                        optMethod = optMethod, initialInner = FALSE,
-                                                        inner.control = inner.control, control = control,
-                                                        polishOptim = FALSE, getJointPrecision = getJointPrecision, calcSE = FALSE)))
-        }, silent = TRUE)
-
-        if (!inherits(outer_fit, "try-error") && !is.null(outer_fit$objective) && outer_fit$objective < fit$objective) {
-          fit$par <- outer_fit$par
-          fit$objective <- outer_fit$objective
-          fit$convergence <- outer_fit$convergence
-          fit$message <- outer_fit$message
-          fit$iterations <- outer_fit$iterations
-          fit$evaluations <- outer_fit$evaluations
-          obj2$fn(fit$par)
-        } else {
-          message("      Polishing did not improve the log-likelihood. Proceeding with original fit.")
-        }
-      } else {
-        message("      Inner optimization for polishing failed, proceeding with original fit.")
-      }
-    }
-
     if (!is.null(fit$convergence) && fit$convergence != 0) warning("Optimization did not appear to converge. Code: ", fit$convergence, " - ", fit$message)
 
   }
@@ -609,14 +548,59 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
                            mu_est$mu.y < safe_ymin | mu_est$mu.y > safe_ymax, na.rm = TRUE)
   }
 
-  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, initialInner = initialInner, polishOptim = polishOptim, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda, calcSE = calcSE)
+  lambda_report <- if (lambda_mode == 0L) lambda else as.numeric(obj2$report(obj2$env$last.par.best)$lambda)
+  # "tied": lambda is a numerical device that grows without bound as the time step shrinks, so the
+  # continuous-time model is a hard wall; downstream UD calculations use lambda = Inf (zero use of land).
+  lambda_est <- if (lambda_mode == 1L) Inf else lambda_report
+  if (is.null(barrier)) { lambda_est <- NULL; lambda_report <- NULL }
+  if (lambda_mode == 2L) {
+    # lambda is only informed by (smoothed) locations on the restricted side of the barrier
+    n_restr <- tryCatch({
+      n_obs <- sum(terra::extract(barrier_sdf, cbind(data$x, data$y))[, 1] < 0, na.rm = TRUE)
+      n_mu <- if (!is.null(fit$estimates$random$mu)) sum(terra::extract(barrier_sdf, cbind(fit$estimates$random$mu$est$mu.x, fit$estimates$random$mu$est$mu.y))[, 1] < 0, na.rm = TRUE) else 0
+      max(n_obs, n_mu)
+    }, error = function(e) NA)
+    lse <- tryCatch(fit$estimates$natural["lambda", "Std. Error"] / lambda_report, error = function(e) NA)
+    if ((!is.na(n_restr) && n_restr < 5) || (calcSE && (is.na(lse) || !is.finite(lse) || lse > 2)))
+      warning("lambda = \"estimate\": the barrier strength is poorly identified (", ifelse(is.na(n_restr), "?", n_restr),
+              " observed/estimated locations on the restricted side of the barrier",
+              if (calcSE) paste0("; relative SE ", ifelse(is.finite(lse), signif(lse, 2), "NaN")) else "",
+              "). Consider fixing lambda or using lambda = \"tied\".", call. = FALSE)
+  }
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, grad = grad, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, smoothPar = smoothPar, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda_est, lambda_mode = if (is.null(barrier)) NULL else c("fixed","tied","estimate")[lambda_mode + 1L], lambda_report = lambda_report, barrierOnset = if (is.null(barrier)) NULL else barrierOnset, calcSE = calcSE)
 
   boundsWarning(fit)
 
   fit$signatures <- list(data = get_data_signature(data, coord), covs = get_covs_signature(orig_spatialCovs))
   fit$tmb_setup <- list(parList = obj2$env$parList(fit$par), map = tmbmap, random = re, priors = cp$priors)
+  # Downstream functions rebuild the objective with lambda fixed at its estimate (lambda = "estimate"),
+  # or with the same tied rule as the fit (lambda = "tied"; see .lambda_args()).
+  fit$tmb_setup$map$log_lambda <- factor(NA)
 
 
   fit <- class_fitLangevin(fit)
   return(fit)
+}
+
+# Natural-scale (sigma, gamma) at which the smoothing radius is evaluated, derived from the data
+# alone (never from 'par'), as zeta is in Blackwell & Matthiopoulos (2024): the measurement-error-
+# corrected variogram estimates of initialValues(type = "variogram"), falling back to the moment
+# estimators sigma = sqrt(mean(|dx|^2 / (2 dt))) (= B&M's zeta) and gamma = 1 / median(dt).
+.smooth_par_data <- function(data, model, obs_dist, spatialCovs, coord) {
+  iv <- suppressMessages(initialValues(data, model, obs_dist, spatialCovs = spatialCovs, coord = coord, type = "variogram"))
+  sp <- list(sigma = as.numeric(iv$sigma), gamma = if (model == "underdamped") as.numeric(iv$gamma) else 1)
+  if (!is.finite(sp$sigma) || sp$sigma <= 0 || !is.finite(sp$gamma) || sp$gamma <= 0)
+    stop("Could not derive the gradient smoothing radius from the data.")
+  sp
+}
+
+# (sigma, gamma) used for the smoothing radius of a fit, for downstream functions. Fits made
+# before this was stored (whose radius tracked the current sigma and gamma) use the estimates.
+.cond_smoothPar <- function(cond, fit = NULL) {
+  if (!is.null(cond$smoothPar)) return(cond$smoothPar)
+  pl <- fit$tmb_setup$parList
+  if (!is.null(pl$log_sigma))
+    return(list(sigma = exp(pl$log_sigma) * cond$scaleFactor,
+                gamma = if (cond$model == "underdamped") exp(pl$log_gamma) else 1))
+  list(sigma = 1, gamma = 1)
 }

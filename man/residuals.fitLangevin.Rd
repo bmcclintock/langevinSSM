@@ -8,10 +8,12 @@
   object,
   data,
   spatialCovs,
-  method = "oneStepGaussianOffMode",
+  method = NULL,
   trace = FALSE,
   run_tests = TRUE,
   ncores = 1,
+  window = 50,
+  burnin = NULL,
   ...
 )
 }
@@ -22,13 +24,27 @@
 
 \item{spatialCovs}{The list of \code{SpatRaster} objects originally used to fit the model.}
 
-\item{method}{Character string specifying the OSA method for noisy data. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.}
+\item{method}{Character string specifying the OSA method for noisy data. See \code{\link[TMB]{oneStepPredict}}. If \code{NULL} (the default), the method depends on the observation distribution of the fitted model: \code{"oneStepGaussianOffMode"} for \code{obs_dist = "Gaussian"}, and \code{"oneStepGeneric"} for \code{obs_dist = "t"}.
+The Gaussian methods (\code{"oneStepGaussianOffMode"}, \code{"oneStepGaussian"}, \code{"fullGaussian"}) assume that the one-step predictive distribution of each observation is Gaussian. This is not true for t-distributed measurement error: the residuals then have inflated variance and the wrong tail shape, so goodness-of-fit tests reject even a correctly specified model. A warning is issued if one of these methods is requested for a t model.
+Method \code{"cdf"} is also supported for both observation distributions. It is about 3 times faster than \code{"oneStepGeneric"}, but it applies the Laplace approximation to the one-step \emph{CDF} (rather than the density). This systematically inflates the absolute residuals when the predictive uncertainty of the latent location is not small compared with the measurement error, as for the \eqn{y | x} component. Use it for quick checks only, and use \code{"oneStepGeneric"} for formal goodness-of-fit testing.}
 
 \item{trace}{Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.}
 
-\item{run_tests}{Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}.}
+\item{run_tests}{Logical; calculate quantitative goodness-of-fit tests? The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}. The tests are:
+\itemize{
+  \item \code{KS_x}, \code{KS_y}: Kolmogorov-Smirnov tests of the x and y residuals against N(0,1).
+  \item \code{KS_mah}: Kolmogorov-Smirnov test of the squared Mahalanobis distance \eqn{D^2 = r_x^2 + r_y^2} against \eqn{\chi^2_2}. This test is far more sensitive to a common scale error in the residuals than \code{KS_x}/\code{KS_y} (e.g. a 2\% variance deficit with 30,000 residuals is detected about 80\% of the time by \code{KS_mah}, but only about 13\% of the time by \code{KS_x}/\code{KS_y}). It is therefore complemented by the following two tests, which separate scale from shape.
+  \item \code{KS_mah_shape}: scale-free test of the shape of \eqn{D^2}. \eqn{D^2} is rescaled by its mean and compared with the exponential distribution; the p-value is obtained by Monte Carlo (Lilliefors-type, \code{nsim = 1000} with a fixed internal seed; the user's random number stream is not affected).
+  \item \code{Disp_mah}: dispersion test. The statistic is \eqn{\overline{D^2}/2}, the average residual variance (1 under the model); the two-sided p-value uses \eqn{\sum D^2 \sim \chi^2_{2n}}.
+  \item \code{LB_x}, \code{LB_y}, \code{LB_mah}: Ljung-Box tests for autocorrelation (lag \eqn{\lfloor \log n \rfloor}).
+}
+A rejection of \code{KS_mah} with \code{Disp_mah} rejecting and \code{KS_mah_shape} not rejecting indicates residuals that are correctly shaped but too small (\code{statistic < 1}) or too large (\code{statistic > 1}), typically because of mis-estimated process parameters rather than a misspecified distribution. The Mahalanobis-based tests are omitted for \code{obs_dist = "t"}.}
 
 \item{ncores}{Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.}
+
+\item{window}{Integer; maximum number of observations whose OSA residuals are calculated in a single call to \code{\link[TMB]{oneStepPredict}}. Long tracks are processed in consecutive windows of this size. Short windows keep the unobserved tail of latent states short, which stops the inner optimisation from diverging (which otherwise gives \code{NaN} residuals). \code{window} mainly affects run time. Within a window, the not-yet-observed future latent states are integrated out by the Laplace approximation, which is not exact when the drift is nonlinear. This adds a small amount of noise to the residuals (typically about 0.003, at most about 0.07, with no bias) that levels off after about 5 future observations. Shorter windows therefore never lose accuracy. Each window pays the cost of its \code{burnin} observations once, which favours longer windows. But every OSA step re-optimises all the latent states in the window, which favours shorter ones. The fastest window is roughly \eqn{\sqrt{10 \times burnin}} for \code{"oneStepGaussianOffMode"}, and 25--50 for \code{"oneStepGeneric"}. Default: \code{50}.}
+
+\item{burnin}{Integer; number of valid observations immediately before each window that are conditioned on (treated as known) when calculating the OSA residuals within the window. This approximates conditioning on all past observations. The approximation error decays quickly once \code{burnin} exceeds the velocity autocorrelation time \eqn{1/(\gamma \, \text{median}(\Delta t))} (in observations): about \eqn{10^{-5}} at 1 autocorrelation time and below \eqn{10^{-10}} at 2. Default (\code{NULL}): 1.5 autocorrelation times (\eqn{1.5/(\gamma \, \text{median}(\Delta t))}) for the underdamped model, constrained to [20, 500], and 20 for the overdamped model. The overdamped model has no velocity state, so the effect of the past dies out within about 10 observations.}
 
 \item{...}{Additional arguments passed to \code{\link[TMB]{oneStepPredict}}.}
 }
@@ -50,6 +66,10 @@ These residuals evaluate the joint process and observation model by predicting t
 Adds true locations (\code{mu}) to the random effects vector and injects a
 negligible pseudo-observation error (\eqn{10^{-4} \times \sigma \sqrt{\text{median}(\Delta t)}}) to the observations.
 TMB's OSA algorithm is then used to perform one-step-ahead prediction.
+
+\strong{Windowing:} To keep the calculation stable and fast for long tracks, each track is split into windows of \code{window} observations.
+Within each window, the OSA residuals are conditioned on the preceding \code{burnin} observations rather than on the entire past of the track.
+If \code{oneStepPredict} still returns non-finite values for a window, the window is split in half and recomputed.
 }
 \examples{
 par <- list(beta = c(-4, 6, 5, -0.1), sigma = 5, gamma = 0.5)

@@ -82,11 +82,16 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, individu
 
   if(!is.null(fit$conditions$barrier)) barrier <- fit$conditions$barrier
   if(!is.null(fit$conditions$lambda)) lambda <- fit$conditions$lambda
+  barrierOnset <- .cond_onset(fit$conditions)
   if(!is.null(fit$conditions$scaleFactor)) scaleFactor <- fit$conditions$scaleFactor
 
-  bar_info <- .prep_barrier_raster(spatialCovs, barrier, lambda, scaleFactor)
+  bar_info <- .prep_barrier_raster(spatialCovs, barrier, lambda, scaleFactor, barrierOnset)
   spatialCovs <- bar_info$spatialCovs
   mod_spatialCovs <- bar_info$mod_spatialCovs
+  lambda_coef <- isTRUE(bar_info$lambda_coef)   # lambda pooled by hierLangevin (lambda = "estimate")
+  if (lambda_coef && (missing(fit) || !.hier_lambda_estimated(fit))) {
+    stop("lambda = \"estimate\" is only supported for hierLangevin fits whose Stage I fits used lambda = \"estimate\"; otherwise supply a numeric lambda or \"tied\".")
+  }
 
   beta_info <- .extract_langevin_beta_list(fit = fit, individual = individual)
   beta_list <- beta_info$beta_list
@@ -147,7 +152,7 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, individu
 
       pop_cov <- diag(item$sd^2, nrow = length(item$sd))
       beta_draws_marg <- as.matrix(MASS::mvrnorm(n_mc, item$mu, pop_cov))
-      if (!is.null(barrier)) beta_draws_marg <- cbind(beta_draws_marg, 1)
+      beta_draws_marg <- .append_barrier_coef(beta_draws_marg, barrier, lambda_coef)
 
       cpp_res_marg <- simulate_ud_cpp(
         nSims = n_mc, n_cells = n_cells, n_ud_layers = n_layers,
@@ -176,7 +181,7 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, individu
 
           inner_cov <- diag(sd_s^2, nrow = length(sd_s))
           inner_beta_draws <- as.matrix(MASS::mvrnorm(M_inner, mu_s, inner_cov))
-          if (!is.null(barrier)) inner_beta_draws <- cbind(inner_beta_draws, 1)
+          inner_beta_draws <- .append_barrier_coef(inner_beta_draws, barrier, lambda_coef)
 
           inner_res <- simulate_regionprob_cpp(
             nSims = M_inner, n_cells = n_cells, n_layers = n_layers,
@@ -201,7 +206,7 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, individu
 
     } else {
       b_vec <- if (is.list(item)) item$vec else item
-      if (!is.null(barrier)) b_vec <- c(b_vec, 1)
+      b_vec <- .append_barrier_coef(b_vec, barrier, lambda_coef)
 
       if (can_calc_se && !hierarchical_logical) {
         SE_delta <- numeric(n_layers)
@@ -252,7 +257,7 @@ regionProb <- function(fit, spatialCovs, mask, nSims = 0, level = 0.95, individu
         }
 
         if (!is.null(beta_draws)) {
-          if (!is.null(barrier)) beta_draws <- cbind(beta_draws, 1)
+          beta_draws <- .append_barrier_coef(beta_draws, barrier, lambda_coef)
 
           P_sims_mat <- simulate_regionprob_cpp(
             nSims = nSims, n_cells = n_cells, n_layers = n_layers,

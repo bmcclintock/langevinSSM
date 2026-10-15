@@ -1,3 +1,16 @@
-langevinSSM 0.0.1 2026-09-23
+langevinSSM 0.0.2 2026-10-15
+-----------------
+NEW FEATURES
+
+* "quintic" (default) and "cubic" splines for gradient approximation via 'grad' argument in simLangevin and fitLangevin
+
+* barrier force (lambda) can now be fixed, tied to the movement parameters, or estimated
+
+BUG FIXES
+
+* Previously the cell index was computed with floor(asDouble(x)) while the tape was being recorded, which froze the cell (and hence the raster values) at the taping location. When the inner optimisation moved a location into a neighbouring cell, the tape kept using the old cell's values.
+
+
+langevinSSM 0.0.1 2026-10-12
 -----------------
 * Initial posting

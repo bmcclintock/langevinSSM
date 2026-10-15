@@ -287,3 +287,61 @@ test_that("simLangevin.default proactively catches mismatched observation error 
     "because the observation distribution is `Gaussian'."
   )
 })
+
+# --- Barrier strength: simLangevin uses the same "tied" default as fitLangevin ---
+get_barrier_covs <- function() {
+  r <- terra::rast(nrows = 40, ncols = 40, ext = c(-1000, 1000, -1000, 1000))
+  terra::values(r) <- ifelse(terra::xFromCell(r, seq_len(terra::ncell(r))) >= -600, 1, 0)   # land for x < -600
+  names(r) <- "coast_barrier"
+  bar <- suppressMessages(prepBarrier(r))
+  hab <- terra::rast(nrows = 40, ncols = 40, ext = c(-1000, 1000, -1000, 1000))
+  terra::values(hab) <- terra::yFromCell(hab, seq_len(terra::ncell(hab))) / 1000
+  names(hab) <- "habitat"
+  list(habitat = hab, coast_barrier = bar)
+}
+
+test_that("simLangevin defaults to lambda = 'tied' and stores it as a hard wall", {
+  expect_identical(formals(langevinSSM:::simLangevin.default)$lambda, "tied")
+  covs <- get_barrier_covs()
+  set.seed(1)
+  sim <- suppressMessages(simLangevin(par = get_valid_par(), spatialCovs = covs, barrier = "coast_barrier",
+                                      obsPerAnimal = 50, initialPosition = c(0, 0)))
+  expect_identical(attr(sim, "lambda"), "tied")
+  # a tied wall is not rescaled by subsampling
+  set.seed(1)
+  sim_sub <- suppressMessages(simLangevin(par = get_valid_par(), spatialCovs = covs, barrier = "coast_barrier",
+                                          obsPerAnimal = 50, initialPosition = c(0, 0),
+                                          subSample = list(samplingRate = 5, propMissing = 0)))
+  expect_identical(attr(sim_sub, "lambda"), "tied")
+  # a numeric lambda is still stored (and rescaled when subsampled)
+  set.seed(1)
+  sim_num <- suppressMessages(simLangevin(par = get_valid_par(), spatialCovs = covs, barrier = "coast_barrier",
+                                          lambda = 2, obsPerAnimal = 50, initialPosition = c(0, 0)))
+  expect_equal(attr(sim_num, "lambda"), 2)
+  expect_error(simLangevin(par = get_valid_par(), spatialCovs = covs, barrier = "coast_barrier", lambda = "hard",
+                           obsPerAnimal = 10, initialPosition = c(0, 0)), "tied")
+})
+
+test_that("tied simulation equals a fixed simulation at the exact stability limit", {
+  covs <- get_barrier_covs()
+  p <- get_valid_par()
+  lam <- langevinSSM:::.stability_limit("underdamped", p$sigma, p$gamma, 0.01)
+  set.seed(7)
+  s_tied <- suppressMessages(simLangevin(par = p, spatialCovs = covs, barrier = "coast_barrier",
+                                         obsPerAnimal = 200, timeStep = 0.01, initialPosition = c(-550, 0)))
+  set.seed(7)
+  s_fix <- suppressMessages(simLangevin(par = p, spatialCovs = covs, barrier = "coast_barrier", lambda = lam,
+                                        obsPerAnimal = 200, timeStep = 0.01, initialPosition = c(-550, 0)))
+  expect_equal(s_tied$mu.x, s_fix$mu.x)
+  expect_equal(s_tied$mu.y, s_fix$mu.y)
+})
+
+test_that("getUD treats lambda = 'tied' as a hard wall (zero use of the restricted zone)", {
+  covs <- get_barrier_covs()
+  ud_t <- getUD(covs, beta = 0.5, barrier = "coast_barrier", lambda = "tied", log = TRUE, plot = FALSE)
+  ud_i <- getUD(covs, beta = 0.5, barrier = "coast_barrier", lambda = Inf, log = TRUE, plot = FALSE)
+  v_t <- terra::values(ud_t[["log_UD"]][[1]])[, 1]
+  expect_equal(v_t, terra::values(ud_i[["log_UD"]][[1]])[, 1])
+  land <- terra::values(covs$coast_barrier)[, 1] <= 0
+  expect_true(all(is.na(v_t[land])))
+})

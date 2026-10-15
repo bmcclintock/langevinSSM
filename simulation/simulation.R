@@ -28,7 +28,6 @@ gamma <- 0.5 # friction parameter (smaller value -> more directional persistence
 psi <- 1 # error ellipse scaling parameter
 df <- 5 # degrees of freedom (applies to obs_dist <- "t" only)
 
-initialInner <- TRUE # logical indicating whether or not to use an initial inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters
 map <- list(psi=factor(NA)) # map for fixing parameters
 if(obs_dist=="t") map$df <- factor(NA)
 
@@ -213,7 +212,7 @@ for(isim in 1:nsims){
   langFit[[isim]] <- suppressMessages(fitLangevin(subDat[[isim]],model=model,obs_dist=obs_dist,par=par,spatialCovs=spatialCovs[[isim]],
                                                   map=map,
                                                   smoothGradient = ifelse(npoints>0,TRUE,FALSE), npoints = npoints, curweight = curweight, zetaScale = zetaScale, scaleFactor = scaleFactor,
-                                                  silent=TRUE, control=list(trace=0),initialInner=initialInner))
+                                                  silent=TRUE, control=list(trace=0)))
 
   parMat[isim,1:(5+1+(obs_dist=="t")-sum(unlist(lapply(map,function(x) isTRUE(is.na(x)))))+ifelse(model=="underdamped",1,0))] <- langFit[[isim]]$par
   parMat[isim,"sigma"] <- langFit[[isim]]$estimates$natural["sigma",1]

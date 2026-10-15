@@ -11,7 +11,8 @@ initialValues(
   par,
   spatialCovs,
   coord = c("x", "y"),
-  type = c("neutral", "empirical")
+  type = c("variogram", "neutral", "empirical"),
+  lambda = NULL
 )
 }
 \arguments{
@@ -21,19 +22,22 @@ initialValues(
 
 \item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default) or ``t''.}
 
-\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","mu","vel","psi","tau","rho_o"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
+\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o","df"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
 
 \item{spatialCovs}{A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.}
 
 \item{coord}{Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").}
 
-\item{type}{Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "neutral" (default) or "empirical". See Details.}
+\item{type}{Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "variogram" (default), "neutral", or "empirical". See Details.}
+
+\item{lambda}{Barrier strength setting passed to \code{\link{fitLangevin}}. Only \code{lambda = "estimate"} affects the result: the barrier strength then becomes a parameter and \code{par$lambda} is included in the output (see Details). For any other value (default: \code{NULL}), \code{par$lambda} cannot be specified.}
 }
 \value{
 A list of initial parameter values, with names corresponding to the parameters used in the model. The list will include the following parameters:
 \item{beta}{Numeric vector of initial values for the coefficients of the spatial covariates. Length should match the number of spatial covariates.}
 \item{sigma}{Numeric value for the initial estimate of the diffusion (or speed) parameter}
 \item{gamma}{Numeric value for the initial estimate of the friction parameter (only for the underdamped model).}
+\item{lambda}{Numeric value for the initial barrier strength on the natural scale (only when \code{lambda = "estimate"}).}
 \item{mu}{Numeric matrix of initial values for the true locations of the animals. Should have the same number of rows as the number of observations in the data and 2 columns for the x and y coordinates. If \code{mu} includes missing values (\code{NA}), these are filled in using linear interpolation.}
 \item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.} If \code{vel} includes missing values (\code{NA}), these are filled in using linear interpolation.
 And, if provided in \code{par}, the following observation process parameters:
@@ -50,8 +54,13 @@ This function generates initial parameter values for fitting the Langevin moveme
 If not provided in \code{par}, the initial values for the movement process parameters are generated as follows:
 \itemize{
  \item \code{beta}: Initialized as a vector of zeros with length equal to the number of spatial covariates.
- \item \code{sigma}: Under \code{type="empirical"}, for the underdamped model, it is initialized using a Method-of-Moments estimator based on the stationary variance of the OU process. Under \code{type="neutral"}, it is initialized using a heuristic assuming standard diffusive scaling: \eqn{\sqrt{\text{mean}(R^2 / (2 * \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step.
- \item \code{gamma} (``underdamped'' model only): Under \code{type="empirical"}, it is initialized based on the lag-1 autocorrelation of the finite-differenced velocities. Under \code{type="neutral"}, initialized as \eqn{1 / \text{median}(\Delta)}.
+ \item \code{sigma} and \code{gamma} (``underdamped'' model only):
+ \itemize{
+  \item \code{type="variogram"} (default): a measurement-error-corrected variogram estimator. The mean squared displacement between locations is computed as a function of time lag (pooled across tracks and binned on a log scale). The habitat-driven process is approximated by the same Langevin process in a quadratic potential whose stationary variance matches the error-corrected variance of the observed locations (a damped harmonic oscillator for the underdamped model; an Ornstein-Uhlenbeck process for the overdamped model). The model variogram plus a measurement error term, \eqn{\psi(e_i + e_j)} where \eqn{e_i} is the trace of the error covariance matrix of location \eqn{i} implied by the error ellipse or standard errors, is fitted by weighted least squares with \eqn{\psi} free. If no error information is available, a constant nugget is estimated instead. This removes the dominant bias of the naive estimators when the measurement error is large compared with the movement between consecutive locations. Because real habitat potentials are not quadratic, \code{gamma} tends to be overestimated (by a factor of about 2-4 in simulations), but it is typically within an order of magnitude of the maximum likelihood estimate. If the variogram fit fails (e.g., too few locations), the ``neutral'' values are used with a message.
+  \item \code{type="neutral"}: \code{sigma} is initialized using a heuristic assuming standard diffusive scaling, \eqn{\sqrt{\text{mean}(R^2 / (2 \Delta))}}, where \eqn{R^2} is the squared displacement between consecutive non-missing observations and \eqn{\Delta} is the time step; \code{gamma} is initialized as \eqn{1 / \text{median}(\Delta)}. These ignore measurement error and can be orders of magnitude too large when measurement error dominates the step lengths.
+  \item \code{type="empirical"} (underdamped only): \code{gamma} is initialized from the lag-1 autocorrelation of the finite-differenced velocities, and \code{sigma} by a method-of-moments estimator. Measurement error makes the velocity autocorrelation negative, in which case this reverts to ``neutral''.
+ }
+ \item \code{lambda} (\code{lambda = "estimate"} only): Initialized at the largest numerically stable barrier strength for the initial \code{sigma} and \code{gamma} at the median time step, \eqn{\lambda_{max}(\sigma, \gamma, \text{median}(\Delta))} (the value used by \code{lambda = "tied"}; see \code{\link{fitLangevin}}). \code{lambda} is on the natural scale (units of 1/distance^2 in the units of the coordinates), i.e. it does not depend on \code{scaleFactor}.
  \item \code{mu}: Initialized at the locations in \code{data} as a matrix with 2 columns corresponding to the x and y coordinates. If there are missing values (\code{NA}) in \code{data[,coord]}, these are filled in using linear interpolation separately for each track (see \code{\link[stats]{approx}}).
  \item \code{vel} (``underdamped'' model only): Initialized as a matrix of zeros with the same number of rows as \code{data} and 2 columns corresponding to the x and y velocity components.
 }

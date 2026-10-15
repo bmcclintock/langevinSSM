@@ -87,6 +87,8 @@ head(exampleDat)
 fit_over <- fitLangevin(model = "overdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
+                   par = list(beta = rep(0,length(exampleCovs)),
+                              sigma = 5),
                    getJointPrecision = TRUE)  
 
 fit_over
@@ -95,6 +97,9 @@ fit_over
 fit_under <- fitLangevin(model = "underdamped",
                    data = exampleDat,
                    spatialCovs = exampleCovs,
+                   par = list(beta = rep(0,length(exampleCovs)),
+                              sigma = 5,
+                              gamma = 0.5),
                    getJointPrecision = TRUE)  
 
 fit_under

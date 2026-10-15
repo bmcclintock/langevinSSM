@@ -924,3 +924,72 @@ test_that("fitLangevin catches common user mistakes with obs_dist = 't' and df p
   expect_true(is.na(fit_default_df$tmb_setup$map$l_df))
 })
 
+
+test_that("lambda = 'tied' (default) ties lambda to the stability limit at each step", {
+  r <- terra::rast(nrows = 20, ncols = 20, ext = c(-100, 200, -100, 200))
+  terra::values(r) <- ifelse(terra::crds(r)[, "x"] >= 50, 1, 0)
+  names(r) <- "coast_barrier"
+  bar <- suppressMessages(prepBarrier(r))
+  cov1 <- terra::rast(nrows = 20, ncols = 20, ext = c(-100, 200, -100, 200)); terra::values(cov1) <- terra::crds(cov1)[, "y"] / 100
+  names(cov1) <- "cov1"
+  df <- data.frame(id = as.factor(rep("A", 5)), date = as.POSIXct("2024-01-01 12:00:00", tz = "UTC") + c(0, 1, 2, 4, 5) * 3600,
+                   dt = c(0, 1, 1, 2, 1), x = c(60, 60, 30, 60, 60), y = c(50, 55, 60, 65, 70),
+                   x.err = c(1, 1, 20, 1, 1), y.err = c(1, 1, 20, 1, 1), smaj = NA, smin = NA, eor = NA, lc = as.factor("G"))
+  attr(df, "time.unit") <- "hours"; class(df) <- c("dataLangevin", "data.frame")
+  m <- list(beta = factor(NA), sigma = factor(NA))
+  fit <- suppressMessages(suppressWarnings(fitLangevin(data = df, model = "overdamped", spatialCovs = list(cov1 = cov1, coast_barrier = bar),
+           barrier = "coast_barrier", par = list(beta = 0.1, sigma = 5), map = m, silent = TRUE, calcSE = FALSE)))
+  expect_identical(fit$conditions$lambda_mode, "tied")
+  expect_true(is.infinite(fit$conditions$lambda))
+  # reported lambda is the limit at the median step (1 hour): 2 / (sigma^2 * 1)
+  expect_equal(fit$conditions$lambda_report, 2 / 25, tolerance = 1e-8)
+  # the latent location is pushed back to the allowed side
+  expect_true(fit$estimates$random$mu$est$mu.x[3] >= 49)
+  expect_error(suppressMessages(fitLangevin(data = df, model = "overdamped", spatialCovs = list(cov1 = cov1, coast_barrier = bar),
+           barrier = "coast_barrier", par = list(beta = 0.1, sigma = 5), map = m, lambda = "hard")), "should be one of")
+})
+
+test_that(".stability_limit matches the spectral-radius-one boundary", {
+  M <- function(L, s, g, dt) { e <- exp(-g * dt); k <- s^2 * L; A <- (dt - (1 - e) / g) / g; matrix(c(1 - k * A, -k * (1 - e) / g, (1 - e) / g, e), 2) }
+  rho <- function(L, s, g, dt) max(Mod(eigen(M(L, s, g, dt), only.values = TRUE)$values))
+  for (dt in c(0.01, 1, 5, 10)) {
+    L <- langevinSSM:::.stability_limit("underdamped", 5, 0.5, dt)
+    expect_lt(rho(0.999 * L, 5, 0.5, dt), 1)
+    expect_gt(rho(1.01 * L, 5, 0.5, dt), 1)
+  }
+  expect_equal(langevinSSM:::.stability_limit("underdamped", 5, 0.5, 0.01), langevinSSM:::.calc_lambda_limit("underdamped", 5, 0.5, 0.01))
+  # vectorised over dt (used for per-step tied simulation)
+  expect_equal(langevinSSM:::.stability_limit("underdamped", 5, 0.5, c(0.01, 1)),
+               c(langevinSSM:::.stability_limit("underdamped", 5, 0.5, 0.01), langevinSSM:::.stability_limit("underdamped", 5, 0.5, 1)))
+})
+
+test_that("fitLangevin(lambda = NULL) picks up a tied simLangevin attribute", {
+  r <- terra::rast(nrows = 20, ncols = 20, ext = c(-100, 200, -100, 200))
+  terra::values(r) <- ifelse(terra::crds(r)[, "x"] >= 50, 1, 0)
+  names(r) <- "coast_barrier"
+  bar <- suppressMessages(prepBarrier(r))
+  cov1 <- terra::rast(nrows = 20, ncols = 20, ext = c(-100, 200, -100, 200)); terra::values(cov1) <- terra::crds(cov1)[, "y"] / 100
+  names(cov1) <- "cov1"
+  df <- data.frame(id = as.factor(rep("A", 5)), date = as.POSIXct("2024-01-01 12:00:00", tz = "UTC") + c(0, 1, 2, 4, 5) * 3600,
+                   dt = c(0, 1, 1, 2, 1), x = c(60, 60, 30, 60, 60), y = c(50, 55, 60, 65, 70),
+                   x.err = c(1, 1, 20, 1, 1), y.err = c(1, 1, 20, 1, 1), smaj = NA, smin = NA, eor = NA, lc = as.factor("G"))
+  attr(df, "time.unit") <- "hours"; class(df) <- c("dataLangevin", "data.frame")
+  attr(df, "lambda") <- "tied"
+  m <- list(beta = factor(NA), sigma = factor(NA))
+  fit <- suppressMessages(suppressWarnings(fitLangevin(data = df, model = "overdamped", spatialCovs = list(cov1 = cov1, coast_barrier = bar),
+           barrier = "coast_barrier", par = list(beta = 0.1, sigma = 5), map = m, lambda = NULL, silent = TRUE, calcSE = FALSE)))
+  expect_identical(fit$conditions$lambda_mode, "tied")
+})
+
+test_that("initialInner and polishOptim have been removed", {
+  expect_false(any(c("initialInner", "polishOptim") %in% names(formals(fitLangevin))))
+  r <- list(habitat = get_valid_raster())
+  d <- get_valid_dataLangevin()
+  p <- get_valid_par()
+  expect_error(fitLangevin(d, spatialCovs = r, par = p, polishOptim = TRUE), "unused argument")
+  expect_error(fitLangevin(d, spatialCovs = r, par = p, initialInner = FALSE), "unused argument")
+  fit <- suppressWarnings(suppressMessages(fitLangevin(d, spatialCovs = r, par = p, calcSE = FALSE,
+           map = list(beta = factor(NA), sigma = factor(NA), gamma = factor(NA)))))
+  expect_false(any(c("initialInner", "polishOptim") %in% names(fit$conditions)))
+  expect_true(is.finite(fit$objective))
+})

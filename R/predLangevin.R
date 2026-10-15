@@ -57,21 +57,28 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   if (!is.null(args$map$vel)) map$vel <- args$map$vel
 
   args$data <- data
+  # reuse the fit's smoothing radius rather than re-deriving it from the padded prediction data
+  if (isTRUE(fit$conditions$smoothGradient)) attr(args$data, "smoothPar") <- .cond_smoothPar(fit$conditions, fit)
   args$spatialCovs <- spatialCovs
   args$model <- fit$conditions$model
   args$par <- par_mle
   args$map <- map
   args$scaleFactor <- scaleFactor
   args$barrier <- fit$conditions$barrier
-  if(is.null(args$lambda)) args$lambda <- fit$conditions$lambda
+  if(is.null(args$lambda)) {
+    if (identical(fit$conditions$lambda_mode, "tied")) {
+      args$lambda <- "tied"
+    } else args$lambda <- fit$conditions$lambda
+  }
+  if (is.null(args$barrierOnset) && !is.null(fit$conditions$barrier)) args$barrierOnset <- .cond_onset(fit$conditions)
   args$coord <- fit$conditions$coord
+  args$grad <- .cond_grad(fit$conditions)
   args$smoothGradient <- fit$conditions$smoothGradient
   args$npoints <- fit$conditions$npoints
   args$curweight <- fit$conditions$curweight
   args$zetaScale <- fit$conditions$zetaScale
+  obs_dist <- fit$conditions$obs_dist
   args$prior <- fit$conditions$prior
-
-  args$initialInner <- FALSE
 
   message("   Running post-hoc prediction via TMB inner optimization...")
 

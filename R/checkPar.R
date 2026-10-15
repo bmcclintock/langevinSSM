@@ -81,6 +81,10 @@ parse_priors <- function(par, prior, spatialCovs) {
   priors$prior_mean_log_gamma <- if (!is.null(pr_mean_list$log_gamma)) as.numeric(pr_mean_list$log_gamma) else NA_real_
   priors$prior_sd_log_gamma   <- if (!is.null(pr_sd_list$log_gamma)) as.numeric(pr_sd_list$log_gamma) else NA_real_
 
+  priors$has_prior_log_lambda <- as.integer(!is.null(pr_mean_list$log_lambda) && any(!is.na(pr_mean_list$log_lambda)))
+  priors$prior_mean_log_lambda <- if (!is.null(pr_mean_list$log_lambda)) as.numeric(pr_mean_list$log_lambda) else NA_real_
+  priors$prior_sd_log_lambda   <- if (!is.null(pr_sd_list$log_lambda)) as.numeric(pr_sd_list$log_lambda) else NA_real_
+
   priors$has_prior_l_psi <- as.integer(!is.null(pr_mean_list$l_psi) && any(!is.na(pr_mean_list$l_psi)))
   priors$prior_mean_l_psi <- if (!is.null(pr_mean_list$l_psi)) as.numeric(pr_mean_list$l_psi) else NA_real_
   priors$prior_sd_l_psi   <- if (!is.null(pr_sd_list$l_psi)) as.numeric(pr_sd_list$l_psi) else NA_real_
@@ -125,18 +129,40 @@ parse_priors <- function(par, prior, spatialCovs) {
 }
 
 # --- Main checkPar Function ---
-checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL){
+# lambda_mode: 0 = fixed or no barrier, 1 = tied, 2 = estimate (par$lambda/map$lambda only allowed for 2)
+checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL, lambda_mode = 0L){
 
   if(!is.list(par)) stop("par must be a list.")
-  if(!all(names(par) %in% c("beta","sigma","gamma","mu","vel","psi","tau","rho_o", "df"))) {
-    stop("names(par) is limited to c('beta','sigma','gamma','mu','vel','psi','tau','rho_o', 'df')")
+  if(!all(names(par) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df"))) {
+    stop("names(par) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df')")
   }
   if(!is.null(map)){
     if(!is.list(map)) stop("map must be a list.")
-    if(!all(names(map) %in% c("beta","sigma","gamma","mu","vel","psi","tau","rho_o", "df"))) {
-      stop("names(map) is limited to c('beta','sigma','gamma','mu','vel','psi','tau','rho_o', 'df')")
+    if(!all(names(map) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df"))) {
+      stop("names(map) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df')")
     }
   } else map <- list()
+
+  # barrier strength (natural scale); a free parameter only when lambda = "estimate"
+  if (lambda_mode != 2L && ("lambda" %in% names(par) || "lambda" %in% names(map))) {
+    stop("'lambda' can only be specified in 'par' or 'map' when a barrier is specified and lambda = \"estimate\".")
+  }
+  if (!is.null(par$lambda)) {
+    if (length(par$lambda) != 1 || !is.numeric(par$lambda) || !is.finite(par$lambda) || par$lambda <= 0) {
+      stop("par$lambda should be a single value greater than zero.")
+    }
+    par$log_lambda <- log(par$lambda)
+    par$lambda <- NULL
+    if (!is.null(map$lambda)) {
+      if (length(map$lambda) != 1) stop("map$lambda should be of length 1.")
+      map$log_lambda <- map$lambda
+      map$lambda <- NULL
+    }
+  } else {
+    if (lambda_mode == 2L) stop("par$lambda is missing, with no default.")
+    par$log_lambda <- 0
+    map$log_lambda <- factor(NA)
+  }
 
   if (model == "overdamped") {
     if (any(c("gamma", "vel") %in% names(par)) || any(c("gamma", "vel") %in% names(map))) {
@@ -335,7 +361,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     if(any(dim(par$vel) != dim(dat$Y))) stop("par$vel must have ", ncol(dat$Y), " rows and 2 columns")
     if(any(!is.finite(par$mu)) || any(!is.finite(par$vel))) stop("par$mu and/or par$vel must be finite")
 
-    par <- par[c("beta","log_sigma","log_gamma","mu","vel","l_psi","l_tau","l_rho_o","l_df")]
+    par <- par[c("beta","log_sigma","log_gamma","log_lambda","mu","vel","l_psi","l_tau","l_rho_o","l_df")]
   }
 
   priors <- parse_priors(par, prior, spatialCovs)

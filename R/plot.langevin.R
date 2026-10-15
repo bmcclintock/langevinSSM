@@ -89,6 +89,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, normaliz
 
   barrier <- x$conditions$barrier
   lambda <- x$conditions$lambda
+  barrierOnset <- .cond_onset(x$conditions)
   scaleFactor <- x$conditions$scaleFactor
   rn <- rownames(x$estimates$natural)
   beta_est <- x$estimates$natural[which(grepl("^beta", rn)), "Estimate"]
@@ -103,7 +104,7 @@ plot.fitLangevin <- function(x, spatialCovs, log = TRUE, extent = NULL, normaliz
     resolved_extent <- c(x_mid - 0.6 * max_range, x_mid + 0.6 * max_range, y_mid - 0.6 * max_range, y_mid + 0.6 * max_range)
   }
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier=barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor, extent = if(normalize) resolved_extent else extent, normalize = normalize)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta_est, barrier=barrier, lambda = lambda, barrierOnset = barrierOnset, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor, extent = if(normalize) resolved_extent else extent, normalize = normalize)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name
@@ -147,6 +148,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
 
   barrier <- attr(x, "barrier")
   lambda <- attr(x, "lambda")
+  barrierOnset <- if (is.null(attr(x, "barrierOnset"))) 0 else attr(x, "barrierOnset")
   sf_attr <- attr(x, "scaleFactor")
   scaleFactor <- if (!is.null(sf_attr)) sf_attr else 1
 
@@ -199,7 +201,7 @@ plot.simLangevin <- function(x, spatialCovs, beta = NULL, log = TRUE, extent = N
     resolved_extent <- c(x_mid - 0.6 * max_range, x_mid + 0.6 * max_range, y_mid - 0.6 * max_range, y_mid + 0.6 * max_range)
   }
 
-  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor, extent = if(normalize) resolved_extent else extent, normalize = normalize)
+  ud_full <- getUD(spatialCovs = spatialCovs, beta = beta, barrier = barrier, lambda = lambda, barrierOnset = barrierOnset, log = log, plot = FALSE, maskRast = maskRast, scaleFactor = scaleFactor, extent = if(normalize) resolved_extent else extent, normalize = normalize)
   ud_layer_name <- if (log) "log_UD" else "UD"
 
   # extract all layers that match the target name

@@ -13,8 +13,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // simulate_langevin_cpp
-DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition, NumericMatrix barrier_dist, double barrier_penalty);
-RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP, SEXP barrier_distSEXP, SEXP barrier_penaltySEXP) {
+DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition, NumericMatrix barrier_dist, NumericVector barrier_penalty, int spline_degree, double barrier_onset);
+RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP, SEXP barrier_distSEXP, SEXP barrier_penaltySEXP, SEXP spline_degreeSEXP, SEXP barrier_onsetSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -28,8 +28,10 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< List >::type raster_data(raster_dataSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type initialPosition(initialPositionSEXP);
     Rcpp::traits::input_parameter< NumericMatrix >::type barrier_dist(barrier_distSEXP);
-    Rcpp::traits::input_parameter< double >::type barrier_penalty(barrier_penaltySEXP);
-    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, barrier_penalty));
+    Rcpp::traits::input_parameter< NumericVector >::type barrier_penalty(barrier_penaltySEXP);
+    Rcpp::traits::input_parameter< int >::type spline_degree(spline_degreeSEXP);
+    Rcpp::traits::input_parameter< double >::type barrier_onset(barrier_onsetSEXP);
+    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, barrier_penalty, spline_degree, barrier_onset));
     return rcpp_result_gen;
 END_RCPP
 }

@@ -15,13 +15,29 @@
 #' negligible pseudo-observation error (\eqn{10^{-4} \times \sigma \sqrt{\text{median}(\Delta t)}}) to the observations.
 #' TMB's OSA algorithm is then used to perform one-step-ahead prediction.
 #'
+#' \strong{Windowing:} To keep the calculation stable and fast for long tracks, each track is split into windows of \code{window} observations.
+#' Within each window, the OSA residuals are conditioned on the preceding \code{burnin} observations rather than on the entire past of the track.
+#' If \code{oneStepPredict} still returns non-finite values for a window, the window is split in half and recomputed.
+#'
 #' @param object A \code{fitLangevin} object returned by \code{\link{fitLangevin}}.
 #' @param data The \code{dataLangevin} object originally used to fit the model.
 #' @param spatialCovs The list of \code{SpatRaster} objects originally used to fit the model.
-#' @param method Character string specifying the OSA method for noisy data. Default is \code{"oneStepGaussianOffMode"}. See \code{\link[TMB]{oneStepPredict}}.
+#' @param method Character string specifying the OSA method for noisy data. See \code{\link[TMB]{oneStepPredict}}. If \code{NULL} (the default), the method depends on the observation distribution of the fitted model: \code{"oneStepGaussianOffMode"} for \code{obs_dist = "Gaussian"}, and \code{"oneStepGeneric"} for \code{obs_dist = "t"}.
+#' The Gaussian methods (\code{"oneStepGaussianOffMode"}, \code{"oneStepGaussian"}, \code{"fullGaussian"}) assume that the one-step predictive distribution of each observation is Gaussian. This is not true for t-distributed measurement error: the residuals then have inflated variance and the wrong tail shape, so goodness-of-fit tests reject even a correctly specified model. A warning is issued if one of these methods is requested for a t model.
+#' Method \code{"cdf"} is also supported for both observation distributions. It is about 3 times faster than \code{"oneStepGeneric"}, but it applies the Laplace approximation to the one-step \emph{CDF} (rather than the density). This systematically inflates the absolute residuals when the predictive uncertainty of the latent location is not small compared with the measurement error, as for the \eqn{y | x} component. Use it for quick checks only, and use \code{"oneStepGeneric"} for formal goodness-of-fit testing.
 #' @param trace Logical; Trace progress? See \code{\link[TMB]{oneStepPredict}}. Default: \code{FALSE}.
-#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? (Kolmogorov-Smirnov for normality/chi-square, and Ljung-Box for autocorrelation). The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}.
+#' @param run_tests Logical; calculate quantitative goodness-of-fit tests? The results are attached as a data frame to the \code{"tests"} attribute of the output. Default: \code{TRUE}. The tests are:
+#' \itemize{
+#'   \item \code{KS_x}, \code{KS_y}: Kolmogorov-Smirnov tests of the x and y residuals against N(0,1).
+#'   \item \code{KS_mah}: Kolmogorov-Smirnov test of the squared Mahalanobis distance \eqn{D^2 = r_x^2 + r_y^2} against \eqn{\chi^2_2}. This test is far more sensitive to a common scale error in the residuals than \code{KS_x}/\code{KS_y} (e.g. a 2\% variance deficit with 30,000 residuals is detected about 80\% of the time by \code{KS_mah}, but only about 13\% of the time by \code{KS_x}/\code{KS_y}). It is therefore complemented by the following two tests, which separate scale from shape.
+#'   \item \code{KS_mah_shape}: scale-free test of the shape of \eqn{D^2}. \eqn{D^2} is rescaled by its mean and compared with the exponential distribution; the p-value is obtained by Monte Carlo (Lilliefors-type, \code{nsim = 1000} with a fixed internal seed; the user's random number stream is not affected).
+#'   \item \code{Disp_mah}: dispersion test. The statistic is \eqn{\overline{D^2}/2}, the average residual variance (1 under the model); the two-sided p-value uses \eqn{\sum D^2 \sim \chi^2_{2n}}.
+#'   \item \code{LB_x}, \code{LB_y}, \code{LB_mah}: Ljung-Box tests for autocorrelation (lag \eqn{\lfloor \log n \rfloor}).
+#' }
+#' A rejection of \code{KS_mah} with \code{Disp_mah} rejecting and \code{KS_mah_shape} not rejecting indicates residuals that are correctly shaped but too small (\code{statistic < 1}) or too large (\code{statistic > 1}), typically because of mis-estimated process parameters rather than a misspecified distribution. The Mahalanobis-based tests are omitted for \code{obs_dist = "t"}.
 #' @param ncores Integer; Number of cores to use for parallel processing of independent tracks. Default is \code{1}.
+#' @param window Integer; maximum number of observations whose OSA residuals are calculated in a single call to \code{\link[TMB]{oneStepPredict}}. Long tracks are processed in consecutive windows of this size. Short windows keep the unobserved tail of latent states short, which stops the inner optimisation from diverging (which otherwise gives \code{NaN} residuals). \code{window} mainly affects run time. Within a window, the not-yet-observed future latent states are integrated out by the Laplace approximation, which is not exact when the drift is nonlinear. This adds a small amount of noise to the residuals (typically about 0.003, at most about 0.07, with no bias) that levels off after about 5 future observations. Shorter windows therefore never lose accuracy. Each window pays the cost of its \code{burnin} observations once, which favours longer windows. But every OSA step re-optimises all the latent states in the window, which favours shorter ones. The fastest window is roughly \eqn{\sqrt{10 \times burnin}} for \code{"oneStepGaussianOffMode"}, and 25--50 for \code{"oneStepGeneric"}. Default: \code{50}.
+#' @param burnin Integer; number of valid observations immediately before each window that are conditioned on (treated as known) when calculating the OSA residuals within the window. This approximates conditioning on all past observations. The approximation error decays quickly once \code{burnin} exceeds the velocity autocorrelation time \eqn{1/(\gamma \, \text{median}(\Delta t))} (in observations): about \eqn{10^{-5}} at 1 autocorrelation time and below \eqn{10^{-10}} at 2. Default (\code{NULL}): 1.5 autocorrelation times (\eqn{1.5/(\gamma \, \text{median}(\Delta t))}) for the underdamped model, constrained to [20, 500], and 20 for the overdamped model. The overdamped model has no velocity state, so the effect of the past dies out within about 10 observations.
 #' @param ... Additional arguments passed to \code{\link[TMB]{oneStepPredict}}.
 #' @return A \code{resLangevin} data frame containing the OSA residuals. If \code{run_tests = TRUE}, the data frame will have an attribute \code{"tests"} containing a data frame of goodness-of-fit statistics and p-values.
 #' @examples
@@ -47,7 +63,7 @@
 #' @importFrom TMB MakeADFun oneStepPredict
 #' @importFrom stats ks.test Box.test residuals median
 #' @export
-residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGaussianOffMode", trace = FALSE, run_tests = TRUE, ncores = 1, ...) {
+residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trace = FALSE, run_tests = TRUE, ncores = 1, window = 50, burnin = NULL, ...) {
 
   if(!inherits(object, "fitLangevin")) stop("'object' must be a fitLangevin object.")
   if(is.null(object$tmb_setup)) stop("The provided fit object does not contain a 'tmb_setup' blueprint.")
@@ -66,7 +82,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
   scaleFactor <- cond$scaleFactor
 
   if (!is.null(cond$barrier)) {
-    barrier_sdf <- spatialCovs[[cond$barrier]] / scaleFactor
+    barrier_sdf <- spatialCovs[[cond$barrier]]   # build_tmb_data() converts to working units
     spatialCovs[[cond$barrier]] <- NULL
   } else {
     barrier_sdf <- NULL
@@ -74,7 +90,10 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
   dat <- build_tmb_data(data, spatialCovs, cond$model, coord, cond$scaleFactor,
                         cond$smoothGradient, cond$npoints, cond$curweight,
-                        cond$zetaScale, obs_dist = cond$obs_dist, barrier_sdf = barrier_sdf, lambda = cond$lambda)
+                        cond$zetaScale, obs_dist = cond$obs_dist, barrier_sdf = barrier_sdf,
+                        lambda = .lambda_args(cond)$lambda, lambda_mode = .lambda_args(cond)$lambda_mode,
+                        grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, object),
+                        barrierOnset = .cond_onset(cond))
 
   dat <- c(dat, object$tmb_setup$priors)
 
@@ -125,12 +144,48 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
 
     par_to_pass <- object$par[!(names(object$par) %in% c("l_tau", "l_rho_o"))]
   }
+  # ---- choose / check the OSA method ----
+  is_t <- !is.null(cond$obs_dist) && cond$obs_dist == "t" && has_measurement_error
+  gaussian_methods <- c("oneStepGaussianOffMode", "oneStepGaussian", "fullGaussian")
+  if (is.null(method)) {
+    method <- if (is_t) "oneStepGeneric" else "oneStepGaussianOffMode"
+  } else {
+    method <- match.arg(method, c(gaussian_methods, "oneStepGeneric", "cdf"))
+    if (is_t && method %in% gaussian_methods)
+      warning("method = '", method, "' assumes a Gaussian one-step predictive distribution, but the model ",
+              "has t-distributed measurement error (obs_dist = 't'). The residuals will not be N(0,1) even ",
+              "if the model is correct (inflated variance, wrong tails), and goodness-of-fit tests will be ",
+              "unreliable. Use method = 'oneStepGeneric' or 'cdf' instead.", call. = FALSE)
+  }
 
   # =========================================================================
-  # ONE-STEP-AHEAD RESIDUAL CALCULATION (SUBSETTED BY TRACK)
+  # ONE-STEP-AHEAD RESIDUAL CALCULATION (SUBSETTED BY TRACK AND WINDOW)
   # =========================================================================
-  subset_track_data <- function(dat, parList, mapList, uid, model_type) {
-    track_idx <- which(dat$ID == uid)
+  #
+  # Why windows?  oneStepGaussianOffMode (TMB default reverse = TRUE) starts with
+  # every observation "on" and then switches them off one at a time, from the last
+  # observation backwards, warm-starting each inner (Laplace) optimisation at the
+  # previous solution (random.start = last.par[random]). After k steps, the last k
+  # latent states (mu, vel) are no longer tied to any data. For long tracks
+  # (thousands of locations) that unobserved tail is very long. Its conditional mode
+  # under the nonlinear, raster-driven drift wanders off and leaves the covariate
+  # extent, and eventually the inner Newton optimiser fails. TMB then returns NaN,
+  # and last.par is left holding the failed Newton iterate. That iterate becomes the
+  # starting value for the next step, so every remaining (earlier) observation in the
+  # track also comes back NaN.
+  #
+  # Fix: run OSA on short overlapping windows. Within a window:
+  #   * future observations beyond the window are dropped. This is exact, because
+  #     unobserved future states integrate to one;
+  #   * the 'burnin' valid observations just before the window are treated as
+  #     'conditional'. This approximates conditioning on the full past, and the
+  #     approximation is very good once burnin covers a few velocity
+  #     autocorrelation times (1/gamma).
+  # Every unobserved tail is then at most 'window' observations long. Each window is
+  # also much smaller than the whole track, so every OSA step is far cheaper.
+  # =========================================================================
+  subset_cols_data <- function(dat, parList, mapList, cols, model_type) {
+    track_idx <- cols
 
     t_dat <- dat
     t_dat$Y <- t_dat$Y[, track_idx, drop = FALSE]
@@ -151,7 +206,6 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     if (t_dat$has_prior_mu == 1L) {
       c_global_mu <- t_dat$prior_idx_mu %/% 2L
       keep_mu <- c_global_mu %in% global_cols
-
       if (any(keep_mu)) {
         c_local_mu <- match(c_global_mu[keep_mu], global_cols) - 1L
         t_dat$prior_idx_mu <- as.integer((t_dat$prior_idx_mu[keep_mu] %% 2L) + 2L * c_local_mu)
@@ -168,7 +222,6 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     if (t_dat$has_prior_vel == 1L) {
       c_global_vel <- t_dat$prior_idx_vel %/% 2L
       keep_vel <- c_global_vel %in% global_cols
-
       if (any(keep_vel)) {
         c_local_vel <- match(c_global_vel[keep_vel], global_cols) - 1L
         t_dat$prior_idx_vel <- as.integer((t_dat$prior_idx_vel[keep_vel] %% 2L) + 2L * c_local_vel)
@@ -189,11 +242,36 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     }
 
     t_map <- mapList
-    if (!is.null(t_map$mu)) t_map$mu <- as.factor(matrix(t_map$mu, nrow = 2)[, track_idx, drop = FALSE])
-    if (!is.null(t_map$vel) && model_type == "underdamped") t_map$vel <- as.factor(matrix(t_map$vel, nrow = 2)[, track_idx, drop = FALSE])
+    if (!is.null(t_map$mu)) t_map$mu <- factor(matrix(t_map$mu, nrow = 2)[, track_idx, drop = FALSE])
+    if (!is.null(t_map$vel) && model_type == "underdamped") t_map$vel <- factor(matrix(t_map$vel, nrow = 2)[, track_idx, drop = FALSE])
 
     list(dat = t_dat, pars = t_pars, map = t_map, track_idx = track_idx)
   }
+
+  # ---- window settings ----
+  if (!is.numeric(window) || length(window) != 1 || window < 1) stop("'window' must be a positive integer")
+  window <- as.integer(window)
+  if (is.null(burnin)) {
+    med_dt <- median(dat$delta_t[dat$delta_t > 0], na.rm = TRUE)
+    if (cond$model == "underdamped") {
+      # ~5 velocity autocorrelation times (1/gamma), expressed in observations
+      # (from the full parameter list: log_gamma is absent from object$par when it is fixed via map)
+      gamma_est <- unname(exp(object$tmb_setup$parList$log_gamma))
+      if (!length(gamma_est) || !is.finite(gamma_est)) gamma_est <- unname(exp(object$par["log_gamma"]))
+      # 1.5 velocity autocorrelation times (1/gamma), expressed in observations.
+      # Truncation error: ~1e-2 at 0.5, ~1e-5 at 1 and <1e-10 at 2 autocorrelation times,
+      # versus ~1e-3 Laplace noise that OSA has anyway, so 1.5 leaves ample margin.
+      burnin <- ceiling(1.5 / (gamma_est * med_dt))
+      if (!is.finite(burnin)) burnin <- 20L
+    } else {
+      # no velocity state: the dependence on the past dies out within a few observations
+      burnin <- 20L
+    }
+    burnin <- as.integer(min(max(burnin, 20L), 500L))
+  }
+  if (!is.numeric(burnin) || length(burnin) != 1 || burnin < 1) stop("'burnin' must be a positive integer")
+  burnin <- as.integer(burnin)
+  min_window <- 5L
 
   unique_ids <- unique(data$id)
 
@@ -203,32 +281,36 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
     } else {
       oldDoPar <- doFuture::registerDoFuture()
       on.exit(with(oldDoPar, foreach::setDoPar(fun=fun, data=data, info=info)), add = TRUE)
-      future::plan(future::multisession, workers = ncores)
+      oldPlan <- future::plan(future::multisession, workers = ncores)
+      on.exit(future::plan(oldPlan), add = TRUE)
       `%loop%` <- foreach::`%dopar%`
     }
   } else {
     `%loop%` <- foreach::`%do%`
   }
 
-  message("   Calculating OSA residuals using method: '", method, "' (ncores = ", ncores, ")...")
+  message("   Calculating OSA residuals using method: '", method, "' (ncores = ", ncores,
+          ", window = ", window, ", burnin = ", burnin, ")...")
 
-  results_list <- foreach::foreach(uid = unique_ids, .packages = c("TMB", "langevinSSM"), .errorhandling = "pass") %loop% {
+  # OSA for the observations in 'eval_local' (track-local column indices), conditioning on
+  # up to 'burnin' preceding valid observations; returns a 2 x length(eval_local) matrix
+  osa_window <- function(track_idx, valid_cols, eval_local) {
+    s <- eval_local[1]
+    e <- eval_local[length(eval_local)]
+    prev_valid <- valid_cols[valid_cols < s]
+    cond_local <- utils::tail(prev_valid, burnin)
+    w0 <- if (length(cond_local)) min(cond_local) else s
+    win_local <- w0:e
+    sub_info <- subset_cols_data(dat, tmb_pars, tmb_map, track_idx[win_local], cond$model)
 
-    sub_info <- subset_track_data(dat, tmb_pars, tmb_map, uid, cond$model)
+    ev <- eval_local - w0 + 1L
+    cv <- cond_local - w0 + 1L
+    track_elements <- sort(c(2L * ev - 1L, 2L * ev))
+    cond_elements <- if (length(cv)) sort(c(2L * cv - 1L, 2L * cv)) else NULL
 
-    valid_cols <- which(sub_info$dat$isd == 1)
+    out <- matrix(NaN, 2, length(eval_local))
 
-    if (length(valid_cols) <= 1) {
-      return(list(uid = uid, error = "Not enough valid observations for OSA calculation."))
-    }
-
-    eval_cols <- valid_cols[-1]
-    cond_cols <- valid_cols[1]
-
-    track_elements <- sort(c(2 * eval_cols - 1, 2 * eval_cols))
-    cond_elements <- sort(c(2 * cond_cols - 1, 2 * cond_cols))
-
-    obj_track <- try({
+    obj_w <- try({
       TMB::MakeADFun(
         data = c(model = "langevinSSM", sub_info$dat),
         par = sub_info$pars,
@@ -238,15 +320,13 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
         silent = TRUE
       )
     }, silent = TRUE)
+    if (inherits(obj_w, "try-error")) return(out)
 
-    if (inherits(obj_track, "try-error")) return(list(uid = uid, error = paste("MakeADFun failed:", attr(obj_track, "condition")$message)))
+    obj_w$fn(par_to_pass)
 
-    obj_track$fn(par_to_pass)
-
-    message("      Processing track ID: ", uid, "...")
-    track_res <- try({
+    osa <- try({
       TMB::oneStepPredict(
-        obj = obj_track,
+        obj = obj_w,
         observation.name = "Y",
         data.term.indicator = "keep",
         method = method,
@@ -258,29 +338,64 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = "oneStepGa
       )
     }, silent = TRUE)
 
-    res_x_vec <- rep(NA_real_, length(sub_info$track_idx))
-    res_y_vec <- rep(NA_real_, length(sub_info$track_idx))
+    if (!inherits(osa, "try-error") && !is.null(osa)) {
+      out[1, ] <- osa$residual[seq(1, nrow(osa), by = 2)]
+      out[2, ] <- osa$residual[seq(2, nrow(osa), by = 2)]
+    }
+    out
+  }
 
-    if (!inherits(track_res, "try-error") && !is.null(track_res)) {
-      idx_x <- seq(1, nrow(track_res), by = 2)
-      idx_y <- seq(2, nrow(track_res), by = 2)
-      res_x_vec[eval_cols] <- track_res$residual[idx_x]
-      res_y_vec[eval_cols] <- track_res$residual[idx_y]
-      error_msg <- NULL
-    } else {
-      error_msg <- if(inherits(track_res, "try-error")) attr(track_res, "condition")$message else "oneStepPredict returned NULL"
+  # Recursive driver: if a window still yields non-finite residuals, split it and retry
+  osa_recursive <- function(track_idx, valid_cols, eval_local) {
+    r <- osa_window(track_idx, valid_cols, eval_local)
+    if (all(is.finite(r)) || length(eval_local) <= min_window) return(r)
+    h <- ceiling(length(eval_local) / 2)
+    cbind(osa_recursive(track_idx, valid_cols, eval_local[1:h]),
+          osa_recursive(track_idx, valid_cols, eval_local[(h + 1):length(eval_local)]))
+  }
+
+  results_list <- foreach::foreach(uid = unique_ids, .packages = c("TMB", "langevinSSM"), .errorhandling = "pass") %loop% {
+
+    track_idx <- which(dat$ID == uid)
+    valid_cols <- which(dat$isd[track_idx] == 1)
+
+    if (length(valid_cols) <= 1) {
+      return(list(uid = uid, error = "Not enough valid observations for OSA calculation."))
     }
 
-    list(uid = uid, track_idx = sub_info$track_idx, res_x = res_x_vec, res_y = res_y_vec, error = error_msg)
+    message("      Processing track ID: ", uid, "...")
+
+    eval_all <- valid_cols[-1]
+    chunks <- split(eval_all, ceiling(seq_along(eval_all) / window))
+
+    res_x_vec <- rep(NA_real_, length(track_idx))
+    res_y_vec <- rep(NA_real_, length(track_idx))
+
+    for (ch in chunks) {
+      r <- osa_recursive(track_idx, valid_cols, ch)
+      res_x_vec[ch] <- r[1, ]
+      res_y_vec[ch] <- r[2, ]
+    }
+
+    n_bad <- sum(!is.finite(res_x_vec[eval_all]) | !is.finite(res_y_vec[eval_all]))
+    error_msg <- NULL
+    if (n_bad == length(eval_all)) error_msg <- "oneStepPredict failed for all observations"
+
+    list(uid = uid, track_idx = track_idx, res_x = res_x_vec, res_y = res_y_vec,
+         n_bad = n_bad, error = error_msg)
   }
 
   res_x <- rep(NA_real_, ncol(dat$Y))
   res_y <- rep(NA_real_, ncol(dat$Y))
 
   for (res in results_list) {
-    if (!is.null(res$error)) {
+    if (inherits(res, "error")) {
+      warning("OSA calculation failed: ", conditionMessage(res))
+    } else if (!is.null(res$error)) {
       warning("OSA calculation failed for track ID ", res$uid, ". Error: ", res$error)
     } else {
+      if (isTRUE(res$n_bad > 0)) warning("OSA residuals could not be calculated for ", res$n_bad,
+                                         " observation(s) of track ID ", res$uid, " (returned as NaN).")
       res_x[res$track_idx] <- res$res_x
       res_y[res$track_idx] <- res$res_y
     }

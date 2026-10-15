@@ -2,7 +2,7 @@
 
 # --- Setup Shared Test Data ---
 # We use a very small track to ensure rapid execution during CRAN checks
-set.seed(42, kind = "Mersenne-Twister", normal.kind = "Inversion")
+set.seed(1, kind = "Mersenne-Twister", normal.kind = "Inversion")
 testPar <- list(beta = c(-1, 1, 0, 0), sigma = 2, gamma = 0.5)
 testMeas <- list(smaj.sd = 1.5, smin.sd = 0.75, eor.lim = c(0, 180))
 

@@ -13,9 +13,12 @@ df <- data.frame(id=factor(1), date=seq(0,1,0.1), dt=c(0, rep(0.1, 10)),
                  x.err=1, y.err=1, smaj=NA_real_, smin=NA_real_, eor=NA_real_)
 exDat <- class_dataLangevin(df)
 
+# These tracks are too short for the default (variogram) initialisation of gamma, which now returns an
+# error, so gamma is supplied: 1/median(dt) (= 10 here, 60 for the 1-minute track below), the "neutral"
+# value that initialValues() previously fell back to, so the fits are unchanged.
 # Suppress warnings to catch any Hessian ill-conditioning on the tiny track
 fit <- suppressWarnings(suppressMessages(
-  fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE, calcSE=FALSE)
+  fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1, gamma=10), silent=TRUE, calcSE=FALSE)
 ))
 
 test_that("simLangevin.fitLangevin basic functionality", {
@@ -38,7 +41,7 @@ test_that("simLangevin.fitLangevin handles POSIXt date and time.unit resolution"
   exDat_posix <- class_dataLangevin(df_posix)
 
   fit_posix <- suppressWarnings(suppressMessages(
-    fitLangevin(data=exDat_posix, spatialCovs=exCovs, par=list(sigma=1), silent=TRUE, calcSE=FALSE)
+    fitLangevin(data=exDat_posix, spatialCovs=exCovs, par=list(sigma=1, gamma=60), silent=TRUE, calcSE=FALSE)
   ))
 
   # Switched to conditional = TRUE and added suppressWarnings for the internal sdreport
@@ -53,7 +56,7 @@ test_that("simLangevin.fitLangevin handles POSIXt date and time.unit resolution"
 test_that("simLangevin.fitLangevin respects scaleFactor > 1 for all spatial units", {
   sf_val <- 1000
   fit_sf <- suppressWarnings(suppressMessages(
-    fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1), scaleFactor=sf_val, silent=TRUE, calcSE=FALSE)
+    fitLangevin(data=exDat, spatialCovs=exCovs, par=list(sigma=1, gamma=10), scaleFactor=sf_val, silent=TRUE, calcSE=FALSE)
   ))
 
   res <- suppressWarnings(suppressMessages(
@@ -152,7 +155,7 @@ test_that("simLangevin.fitLangevin inherits and applies location classes (lc) an
   attr(dat_lc, "time.unit") <- "hours"
 
   fit_lc <- suppressWarnings(suppressMessages(
-    fitLangevin(data = dat_lc, spatialCovs = exCovs, par = list(sigma = 1), silent = TRUE, calcSE=FALSE)
+    fitLangevin(data = dat_lc, spatialCovs = exCovs, par = list(sigma = 1, gamma = 10), silent = TRUE, calcSE=FALSE)
   ))
 
   set.seed(42, kind="Mersenne-Twister", normal.kind = "Inversion")
@@ -190,7 +193,7 @@ test_that("simLangevin.fitLangevin handles error ellipse (KF) measurement errors
 
   # Suppress warnings to ignore the "NaNs produced" from the tiny mock track's Hessian
   fit_ee <- suppressWarnings(suppressMessages(
-    fitLangevin(data = dat_ee, spatialCovs = exCovs, par = list(sigma = 1), silent = TRUE, calcSE=FALSE)
+    fitLangevin(data = dat_ee, spatialCovs = exCovs, par = list(sigma = 1, gamma = 10), silent = TRUE, calcSE=FALSE)
   ))
 
   set.seed(42, kind="Mersenne-Twister", normal.kind = "Inversion")
@@ -220,7 +223,7 @@ test_that("simLangevin.fitLangevin correctly inherits obs_dist = 't' from a fitt
 
   # Fit a model strictly specifying the t-distribution
   fit_t <- suppressWarnings(suppressMessages(
-    fitLangevin(data = exDat, spatialCovs = exCovs, par = list(sigma = 1, df = 3), obs_dist = "t", silent = TRUE, calcSE = FALSE)
+    fitLangevin(data = exDat, spatialCovs = exCovs, par = list(sigma = 1, gamma = 10, df = 3), obs_dist = "t", silent = TRUE, calcSE = FALSE)
   ))
 
   # Simulate from the fitted model unconditionally

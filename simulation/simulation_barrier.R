@@ -98,22 +98,11 @@ for(isim in 1:nSims){
 
   trueUD <- getUD(covs, beta=sim_pars$beta, barrier="coast_barrier", lambda=attr(sim_data,"lambda"), log=TRUE, plot=FALSE)
 
-  fit0 <- tryCatch(suppressMessages(fitLangevin(
-    data = sim_data,
-    model = model,
-    spatialCovs = covs,
-    barrier = "coast_barrier",
-    lambda = 0,
-    silent = TRUE
-  )),error=function(e) e)
-
-  lambda_max <- suggestLambda(fit0,max(sim_data$dt))
-
   fit <- tryCatch(suppressMessages(fitLangevin(
     data = sim_data,
     model = model,
     spatialCovs = covs,
-    lambda = lambda_max,
+    lambda = "estimate",
     silent = TRUE
   )),error=function(e) e)
 
@@ -139,12 +128,12 @@ for(isim in 1:nSims){
     parMat_true[isim, "lambda"] <- fit_true$conditions$lambda
   }
 
-  message(" Suggested lambda ")
+  message("\n Estimated lambda ")
   print(paste0("            ",paste0(colnames(parMat),collapse="    ")))
   print(paste0("current ",paste0(round(parMat[isim,],6),collapse=" ")))
   print(paste0("overall ", paste0(round(apply(parMat[1:isim,,drop=FALSE], 2, mean, na.rm=TRUE), 6), collapse=" ")))
 
-  message(" True lambda ")
+  message(" Tied lambda ")
   print(paste0("            ",paste0(colnames(parMat_true),collapse="    ")))
   print(paste0("current ",paste0(round(parMat_true[isim,],6),collapse=" ")))
   print(paste0("overall ", paste0(round(apply(parMat_true[1:isim,,drop=FALSE], 2, mean, na.rm=TRUE), 6), collapse=" ")))

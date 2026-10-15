@@ -42,7 +42,6 @@ export(routeTracks)
 export(simCov)
 export(simLangevin)
 export(subSampleData)
-export(suggestLambda)
 importFrom(TMB,
   MakeADFun,
   oneStepPredict,
@@ -101,6 +100,7 @@ importFrom(terra,
   as.data.frame,
   as.matrix,
   cellFromXY,
+  classify,
   compareGeom,
   crds,
   crop,
@@ -110,6 +110,7 @@ importFrom(terra,
   extract,
   global,
   ifel,
+  is.lonlat,
   mask,
   ncell,
   nlyr,

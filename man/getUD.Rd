@@ -10,6 +10,7 @@ getUD(
   beta,
   barrier = NULL,
   lambda = NULL,
+  barrierOnset = 0,
   scaleFactor = 1,
   log = TRUE,
   nSims = 0,
@@ -30,7 +31,9 @@ getUD(
 
 \item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier). If \code{fit} is provided, this is extracted automatically.}
 
-\item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically.}
+\item{lambda}{Barrier strength: a non-negative number (soft wall of that stiffness) or \code{"tied"} / \code{Inf} (hard wall: zero utilization of the restricted zone). Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically (\code{Inf} for fits with \code{lambda = "tied"}; for \code{hierLangevin} fits whose Stage I fits used \code{lambda = "estimate"}, \eqn{\lambda} is integrated over its population distribution, or each individual's \eqn{\lambda} is used, see \code{\link{hierLangevin}}).}
+
+\item{barrierOnset}{Onset length of the barrier potential (units of the coordinates, or \code{"res"}; see \code{\link{fitLangevin}}). Only used with a finite \code{lambda}. Default: \code{0}. If \code{fit} is provided, this is extracted automatically.}
 
 \item{scaleFactor}{Internal scaling factor for the coordinates and parameters (see \code{\link{fitLangevin}}). Automatically extracted if \code{fit} is provided. Default: 1 (no scaling).}
 

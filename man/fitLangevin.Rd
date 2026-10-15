@@ -11,11 +11,13 @@ fitLangevin(
   spatialCovs,
   barrier = NULL,
   par,
-  lambda = NULL,
+  lambda = "tied",
+  barrierOnset = NULL,
   prior = NULL,
   map = NULL,
   coord = c("x", "y"),
   scaleFactor = 1,
+  grad = c("quintic", "cubic", "bilinear"),
   smoothGradient = FALSE,
   npoints = 4,
   curweight = 0.5,
@@ -24,10 +26,8 @@ fitLangevin(
   silent = TRUE,
   method = "BFGS",
   optMethod = c("nlminb", "nloptr"),
-  initialInner = TRUE,
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
-  polishOptim = FALSE,
   getJointPrecision = FALSE,
   calcSE = TRUE
 )
@@ -43,13 +43,15 @@ fitLangevin(
 
 \item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).}
 
-\item{par}{List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma'').
+\item{par}{List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma''). If \code{lambda = "estimate"}, \code{par} can also include the initial barrier strength (``lambda'', natural scale; default: the stability limit used by \code{lambda = "tied"} at the median time step, see \code{\link{initialValues}}), which can be fixed using \code{map = list(lambda = factor(NA))}. ``lambda'' cannot be included in \code{par} otherwise.
 Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). All parameters are specified on their natural scale and are converted to working scale internally.
 Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, ``rho_o'' = 0, and ``df'' = 5) via \code{map}. See Details.}
 
-\item{lambda}{Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{NULL}, the function will attempt to automatically extract a penalty value if \code{data} is a simulated object created by \code{\link{simLangevin}}. Otherwise, it must be provided. See Details and \code{\link{suggestLambda}} for a strategy to determine the optimal penalty.}
+\item{lambda}{Barrier strength. One of: \code{"tied"} (default), a non-negative number (fixed), or \code{"estimate"}. With \code{"tied"} the barrier is treated as a hard wall: at every time step \eqn{t} the spring constant is set to the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed inside the likelihood from the current \code{sigma} and \code{gamma} (see Details), so \eqn{\lambda} is not a free parameter and the wall becomes harder automatically as the time step shrinks. A number fixes \eqn{\lambda} (a soft wall of known stiffness, e.g. data simulated by \code{\link{simLangevin}}); \code{"estimate"} treats \eqn{\log\lambda} as a free parameter (only identifiable when animals actually enter the restricted zone), with its starting value given by \code{par$lambda}. Numeric values, \code{par$lambda}, and the reported estimates are all on the natural scale (units of 1/distance^2 in the units of the coordinates) and do not depend on \code{scaleFactor}. If \code{NULL}, the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"tied"}.}
 
-\item{prior}{Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).}
+\item{barrierOnset}{Onset length \eqn{\ell} of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). With \code{0} the potential is \eqn{B(d) = \min(d,0)^2/2} (the penalty of Delporte et al. 2025), whose force is continuous at the boundary but whose curvature jumps from 0 to \eqn{\lambda}. With \eqn{\ell > 0} the force rises smoothly (\eqn{C^4}) from zero at the boundary over the first \eqn{\ell} of the restricted side and is thereafter the quadratic wall shifted by \eqn{\ell/2}; the allowed side is unaffected. A small positive onset (e.g., one cell) makes the Laplace approximation better behaved when many (smoothed) locations lie close to the boundary, and is a natural way to encode positional uncertainty of the boundary itself. It is not a fixed quantity and should be chosen for the species and data: for animals that should never be on the restricted side (e.g., whales at a coastline) it is a numerical device of the order of the raster resolution or coastline accuracy; for animals that legitimately use the restricted side (e.g., pinnipeds hauling out on land) a larger value (or a soft, estimated \code{lambda}) is more appropriate. Ignored without a barrier. If \code{NULL} (default), the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{0}. See Details.}
+
+\item{prior}{Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}, or \code{"log_lambda"} when \code{lambda = "estimate"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).}
 
 \item{map}{List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.}
 
@@ -57,13 +59,15 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{scaleFactor}{Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.}
 
+\item{grad}{Interpolation used for the covariate surfaces (and the barrier distance) whose gradients give the habitat force. One of \code{"quintic"} (default), \code{"cubic"} or \code{"bilinear"}. See Details.}
+
 \item{smoothGradient}{Logical indicating whether or not to smooth the gradients. See Details. Default: \code{FALSE}.}
 
 \item{npoints}{Number of smoothing points around current cell (4 = diagonal, 8 = queen neighborhood). Ignored unless \code{smoothGradient=TRUE}.}
 
 \item{curweight}{Smoothing weight of current cell location (\code{0 <= curweight < 1}). Ignored unless \code{smoothGradient=TRUE}.}
 
-\item{zetaScale}{Scale factor for smooth gradient neighborhood (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). Ignored unless \code{smoothGradient=TRUE}.}
+\item{zetaScale}{Multiplier of the smoothing radius (\code{zetaScale>1} increases and \code{zetaScale<1} decreases the neighborhood). \code{zetaScale = 1} (default) is the moment-matched radius for both models, evaluated at values of \code{sigma} and \code{gamma} derived from the data before fitting (see Details). Ignored unless \code{smoothGradient=TRUE}.}
 
 \item{hessian}{Logical indicating whether or not to calculate the Hessian at the optimum. See \code{\link[TMB]{MakeADFun}}. Default: \code{FALSE}.}
 
@@ -73,13 +77,9 @@ Any missing state process parameters are generated using \code{\link{initialValu
 
 \item{optMethod}{Character string indicating the optimization function (engine) to use for the outer optimization. Options are \code{"nlminb"} or \code{"nloptr"}. If \code{"nloptr"} is selected, the \code{nloptr} package must be installed. Default: \code{"nlminb"}.}
 
-\item{initialInner}{Logical indicating whether or not to first perform an inner optimization for the random effects (``mu'' and/or ``vel'') before optimizing over all parameters. Default: \code{TRUE}.}
-
 \item{inner.control}{List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.}
 
 \item{control}{A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}.}
-
-\item{polishOptim}{Logical indicating whether or not to perform an additional ``polishing'' optimization after the initial optimization has completed. Default: \code{FALSE}.}
 
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
 
@@ -131,9 +131,17 @@ These parameters control the scaling and correlation of measurement errors and c
   \item \strong{3. Fixed to custom values:} To fix a parameter to a specific value other than the default, include the custom value in \code{par} and explicitly map it to \code{NA} in \code{map} (e.g., \code{par = list(psi = 1.5), map = list(psi = factor(NA))}).
 }
 
+\strong{Gradient interpolation (\code{grad}):} the force is the gradient of the covariate surfaces, which are interpolated from the raster cell-centre values by an interpolating tensor-product B-spline of degree 5 (\code{"quintic"}), 3 (\code{"cubic"}) or 1 (\code{"bilinear"}). All three pass exactly through the cell values, and in all three the raster cell is looked up afresh from the current location at every evaluation of the objective. They differ in smoothness, which matters for the Laplace approximation: the inner (latent-path) problem uses the 2nd and 3rd derivatives of the surface, and TMB's gradient of the marginal likelihood the 4th. With \code{"quintic"} all of these are continuous, so the marginal likelihood and its gradient are smooth. With \code{"cubic"} the force and its first derivative are continuous but the 3rd derivative of the surface jumps at cell edges, so the marginal likelihood is slightly non-smooth; the inner Hessian is cheaper. With \code{"bilinear"} the force itself jumps at every cell edge and its derivatives within a cell are zero, which makes each inner step cheap but the inner problem non-smooth; the outer optimizer can then report false convergence and stop at different points from different starting values. \code{"bilinear"} is mainly useful for quick exploratory fits or comparison with earlier versions of the package; check its results against \code{"cubic"} or \code{"quintic"}. The estimates (in particular \code{beta}) depend somewhat on the interpolation, because the gradient of a rough raster is not uniquely defined; \code{simLangevin}, \code{predLangevin}, \code{cAIC} and \code{residuals} use the setting stored in the fit.
+
 \strong{Gradient smoothing:} Setting \code{smoothGradient=TRUE} applies the smoothing approach of Blackwell and Matthiopoulos (2024) to the gradients of the habitat selection covariates (\code{spatialCovs}), which can help reduce attenuation bias in habitat selection coefficients when observations are obtained at a coarser time resolution than the underlying continuous-time movement process.
-This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, where the weights are determined by a Gaussian kernel based on the distance between locations and the specified neighborhood parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
-The neighborhood for the underdamped model is \code{zetaScale * sqrt(2*pi) * sigma}, while the neightborhood for the overdamped model is \code{zetaScale * sigma / sqrt(2)}. See Blackwell and Matthiopoulos (2024) for more details.
+This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, with weights and neighborhood determined by the parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
+The \code{npoints} neighbours lie on a ring of radius \eqn{r} around the current location (equally spaced; weight \code{(1-curweight)/npoints} each, \code{curweight} at the centre), so the smoothed gradient is a discrete average of the gradient over the positions the animal may occupy during the interval.
+The transition density holds the force fixed at its value at the start of each interval \eqn{\Delta}, whereas in the continuous-time process it acts along the path; to second order the force averaged over the interval (weighted as in the transition mean) is \eqn{h(x) + \frac{1}{2} m \nabla^2 h(x)}, where \eqn{m} is the correspondingly weighted mean squared displacement per coordinate.
+The ring has second moment \eqn{(1-c) r^2/2} per coordinate (\eqn{c} = \code{curweight}) for both \code{npoints = 4} and \code{npoints = 8}, so it reproduces this correction when \eqn{r^* = \sqrt{2m/(1-c)}}.
+For the underdamped model, with \eqn{a = \gamma\Delta}, \deqn{m = \frac{2\sigma^2}{\gamma^2}\,\frac{a^2/2 - 2a + 3 - (3+a)e^{-a}}{a - 1 + e^{-a}},}
+so that \eqn{r^* \approx \sigma\Delta/\sqrt{3(1-c)}} when \eqn{\gamma\Delta \ll 1} (ballistic motion within the interval) and \eqn{r^* \approx \sigma\sqrt{2\Delta/(\gamma(1-c))}} when \eqn{\gamma\Delta \gg 1}. For the overdamped model \eqn{m = \sigma^2\Delta/2} and \eqn{r^* = \sigma\sqrt{\Delta/(1-c)}}; for the default \code{curweight = 0.5} this is \eqn{\sigma\sqrt{2\Delta}}, the root-mean-square two-dimensional step length, i.e. exactly the radius \eqn{\zeta\sqrt{2\delta t}} of Blackwell and Matthiopoulos (2024, eqs. 29--30).
+The radius used is \eqn{r = } \code{zetaScale} \eqn{\times\, r^*} (\code{zetaScale = 1}, the default, is the moment-matched radius for both models), computed for each interval \eqn{\Delta}. As in Blackwell and Matthiopoulos (2024), where \eqn{\zeta} is computed from the observed step lengths before fitting, \eqn{\sigma} and \eqn{\gamma} in \eqn{r^*} are fixed values derived from the data alone: the measurement-error-corrected variogram estimates of \code{\link{initialValues}} (\code{type = "variogram"}), or, if the variogram fit fails, the moment estimators \eqn{\sigma = \sqrt{\overline{|\Delta x|^2/(2\Delta)}}} (B&M's \eqn{\zeta}) and \eqn{\gamma = 1/\mathrm{median}(\Delta)}. They do not depend on \code{par} or on the parameters being estimated, so the smoothing is a fixed property of the likelihood. The values used are stored in \code{fit$conditions$smoothPar}. For the underdamped model the radius is insensitive to \eqn{\gamma} when \eqn{\gamma\Delta \ll 1}; to adjust the radius, use \code{zetaScale}.
+The ring averages over the stationary velocity distribution rather than conditioning on the latent velocity, and it corrects only the mean of the transition (not its variance), so it mainly addresses attenuation from abrupt changes in the gradient over the interval; it cannot remove the bias that arises when the observation interval is long relative to the spatial scale of the covariates. See Blackwell and Matthiopoulos (2024) for the smoothing approach.
 
 \strong{Barrier Constraints:}
 When a \code{barrier} is specified, the model restricts animal movement using a physical penalty method for stochastic differential equations (SDEs).
@@ -147,7 +155,13 @@ In Langevin dynamics, the force acting on the animal is the negative spatial gra
 
 Because \eqn{d(\boldsymbol{\mu})} is negative in the restricted zone, the equation produces a positive force that pushes the animal in the direction of the shortest path back to the unrestricted area (\eqn{\nabla d(\boldsymbol{\mu})}).
 
-The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates during optimiziation, with a corresponding selection coefficient (e.g., \code{beta_barrier} if barrier name in \code{spatialCovs} is "barrier"). Because \code{lambda} is a mathematical property of the SDE rather than a biological parameter, it cannot be safely estimated via maximum likelihood estimation. It must be provided as a fixed hyperparameter (see \code{\link{suggestLambda}} for a strategy to determine the optimal penalty).
+The \code{lambda} parameter acts as the spring constant (\eqn{\lambda}); higher values create a stiffer, harder boundary. This boundary force is added directly to the spatial gradient of the habitat covariates. In continuous time a barrier that animals never cross corresponds to \eqn{\lambda \to \infty}, but the likelihood is built from discrete-time transitions in which the force is evaluated at the start of each step, and these are only stable for \eqn{\lambda \le \lambda_{max}(\sigma, \gamma, \Delta t)} (above it a small excursion into the restricted zone is amplified at every step). \code{fitLangevin} therefore uses \code{lambda = "tied"} by default: at every step the spring constant is set to this limit, computed from the current \code{sigma} and \code{gamma}, i.e. the hardest wall the discretisation can represent. For the underdamped model, with \eqn{x = \gamma\Delta t}, \eqn{\lambda_{max} = \gamma^2 \min(\kappa_1, \kappa_2) / \sigma^2} where \eqn{\kappa_1 = (1-e^{-x})/(1-e^{-x}-x e^{-x})} (binding for \eqn{x \le 3.72}) and \eqn{\kappa_2 = 2(1+e^{-x})/[(1+e^{-x})(x - 1 + e^{-x}) - (1-e^{-x})^2]}; for the overdamped model \eqn{\lambda_{max} = 2/(\sigma^2\Delta t)}. A fixed numeric \code{lambda} describes a soft wall of known stiffness (e.g. data simulated by \code{\link{simLangevin}}), and \code{lambda = "estimate"} treats it as a free parameter, which is only identifiable if animals actually enter the restricted zone. For tied fits \code{\link{getUD}} and related functions use \eqn{\lambda = \infty} (zero utilization of the restricted zone). Because \eqn{\lambda_{max}} grows as \eqn{\Delta t} shrinks, the tied wall is only as hard as the latent time grid allows; if fitted tracks touch the barrier, adding latent time points between observations (e.g. 5--10 per interval via \code{predTimes} in \code{\link{formatData}}) makes the wall nearly hard and avoids compensating bias in \code{sigma}, \code{gamma} and \code{beta}.
+
+With \eqn{\lambda = 1/\lambda_D} this quadratic potential is the penalty \eqn{(\boldsymbol{\mu} - \pi(\boldsymbol{\mu}))/\lambda_D} of Delporte, Ditlevsen & Samson (2025, arXiv:2511.22430), where \eqn{\pi} is the projection onto the allowed domain, provided \eqn{d} is the exact Euclidean signed distance. \code{\link{prepBarrier}} computes it exactly from polygons (e.g. a vector coastline), or approximately (to within about half a cell) from a raster mask.
+
+\strong{Barrier onset:} the curvature of \eqn{\frac{1}{2}\min(d,0)^2} jumps from 0 to \eqn{\lambda} at the boundary, which can make the Laplace approximation of the random effects (the inner Hessian) badly behaved when many smoothed locations lie on or near the boundary. \code{barrierOnset} \eqn{= \ell > 0} replaces the potential on the restricted side by
+\deqn{B(d) = \ell^2 (t^7/7 - t^6/2 + t^5/2), \quad t = -d/\ell \in [0, 1], \qquad B(d) = \tfrac{1}{2} d^2 + \tfrac{1}{2}\ell d + \ell^2/7, \quad -d > \ell,}
+so that \eqn{B} and its first four derivatives vanish at the boundary, and the force \eqn{\lambda B'} rises smoothly over the first \eqn{\ell} of the restricted zone and is thereafter the quadratic spring shifted inwards by \eqn{\ell/2}. The allowed side is unchanged, and \eqn{\ell = 0} recovers the quadratic potential exactly. \eqn{\ell} is in the units of the coordinates (\code{"res"} = one cell of the barrier raster) and is a modelling choice that depends on the species and the data: for animals that do not use the restricted side (e.g. cetaceans and a coastline) a value of the order of the accuracy of the boundary (or one raster cell) is a numerical regularisation of an approximately located boundary; for animals that legitimately use the restricted side (e.g. pinnipeds hauling out on land) a larger value, or a soft, estimated \code{lambda}, is more appropriate. The value is stored with the fit and used by all downstream functions (e.g. \code{\link{getUD}}, \code{\link{simLangevin}}, \code{\link{hierLangevin}}, which requires it to be the same for all individuals).
 }
 \examples{
 # fit underdamped model with measurement error

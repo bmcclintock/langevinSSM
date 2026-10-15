@@ -74,6 +74,23 @@ Stage II fits the model:
 with \eqn{\hat S_i} treated as \strong{fixed/known} and \eqn{D} a diagonal
 matrix of between-individual variances.
 
+\strong{Barriers:} if the Stage I fits include a \code{barrier}, all
+individuals must have been fitted with the same barrier and the same
+\code{lambda} mode. With \code{lambda = "tied"} (hard wall) or a common fixed
+\code{lambda}, the barrier strength is known and is not part of Stage II.
+With \code{lambda = "estimate"}, \eqn{\log\lambda} (natural scale, i.e.
+independent of \code{scaleFactor}) is pooled like the other parameters,
+giving \code{mu_log_lambda}/\code{sd_log_lambda} (working scale),
+\code{mu_lambda} (natural scale) and individual predictions
+\code{estimates$random$lambda}. Because the barrier term of the stationary
+density, \eqn{-\lambda\min(d,0)^2/2}, is linear in \eqn{\lambda},
+\code{\link{getUD}} and \code{\link{regionProb}} then treat \eqn{\lambda}
+like a habitat selection coefficient (population-level: integrated over
+\eqn{\log\lambda \sim N(\mu_{\log\lambda}, sd_{\log\lambda}^2)}; individual-level:
+each individual's \eqn{\lambda}). Every individual must have a finite Stage I
+standard error for \code{log_lambda}; if an individual rarely enters the
+restricted zone, \eqn{\lambda} is not identifiable and hierLangevin stops.
+
 \strong{Maximum Penalized Likelihood (MPL):} Optional penalty
 (Chung, Rabe-Hesketh, Dorie, Gelman & Liu 2013, Psychometrika) can be
 applied to the population-level log standard deviations via the \code{mpl} argument to

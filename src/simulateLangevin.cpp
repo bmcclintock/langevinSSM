@@ -57,7 +57,11 @@ DataFrame simulate_langevin_cpp(int model,
                                 List raster_data,
                                 NumericMatrix initialPosition,
                                 NumericMatrix barrier_dist,
-                                double barrier_penalty) {
+                                NumericVector barrier_penalty,
+                                int spline_degree = 5,
+                                double barrier_onset = 0.0) {
+  // barrier_penalty: length 1 (same lambda on every step) or length(dt_vec) (lambda for each step,
+  // e.g. the stability limit at that step's dt for lambda = "tied")
 
   // Extract raster extent for boundary checking
   NumericVector raster_extent = raster_data["raster_extent"];
@@ -98,6 +102,16 @@ DataFrame simulate_langevin_cpp(int model,
   IntegerVector cov_offset = raster_data["cov_offset"];
   int n_covs = raster_data["n_covs"];
 
+  // Spline surfaces (same representation and degree as the TMB likelihood)
+  if (spline_degree != 1 && spline_degree != 3 && spline_degree != 5) stop("spline_degree must be 1, 3 or 5.");
+  langevin_raster::SplinePtr cov_spline = build_cov_spline(raster_vals, raster_resolution, raster_extent, spline_degree);
+  langevin_raster::SplinePtr barrier_spline;
+  bool any_barrier = false;
+  for (int k = 0; k < barrier_penalty.size(); k++) if (barrier_penalty[k] > 0.0) any_barrier = true;
+  const bool per_step_penalty = barrier_penalty.size() > 1;
+  if (per_step_penalty && barrier_penalty.size() != dt_vec.size()) stop("barrier_penalty must have length 1 or length(dt_vec).");
+  if (any_barrier) barrier_spline = build_barrier_spline(barrier_dist_arma, raster_resolution, raster_extent, spline_degree, barrier_onset);
+
   int n_points = obsPerAnimal + 1;
   int total_obs = nbAnimals * n_points;
   NumericVector ID(total_obs);
@@ -133,13 +147,10 @@ DataFrame simulate_langevin_cpp(int model,
 
       // Calculate gradients using previous position AND previous time
       arma::mat grad = extract_raster_values(mu_x[idx-1], mu_y[idx-1], time[idx-1],
-                                             raster_vals,
+                                             cov_spline,
                                              all_z_values,
                                              n_zvals_cov,
                                              cov_offset,
-                                             raster_coords,
-                                             raster_resolution,
-                                             raster_extent,
                                              n_covs);
 
       // Calculate force vector
@@ -151,7 +162,8 @@ DataFrame simulate_langevin_cpp(int model,
 
       // --- BARRIER PENALTY FORCE ---
       double h0 = h[0], h1 = h[1];
-      apply_barrier_penalty(mu_x[idx-1], mu_y[idx-1], barrier_dist_arma, raster_extent, raster_resolution, barrier_penalty, h0, h1);
+      double lambda_t = per_step_penalty ? barrier_penalty[t-1] : barrier_penalty[0];
+      apply_barrier_penalty(mu_x[idx-1], mu_y[idx-1], barrier_spline, lambda_t, h0, h1);
       h[0] = h0; h[1] = h1;
       // -----------------------------
 

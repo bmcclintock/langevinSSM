@@ -176,3 +176,105 @@ test_that("hierLangevin successfully optimizes and transfers metadata", {
   expect_equal(colnames(gamma_blup$est), c("id", "est"))
   expect_equal(as.character(gamma_blup$est$id), c("ind_1", "ind_2", "ind_3"))
 })
+
+
+# ==============================================================================
+# 3. BARRIER STRENGTH (lambda) MODES
+# ==============================================================================
+
+make_lambda_fit <- function(id, lam_nat, sf = 1, mode = "estimate", se = 0.1, beta = -1, lse = 0.3) {
+  if (mode == "estimate") {
+    pn <- c("beta_cov1", "log_sigma", "log_gamma", "log_lambda")
+    # working scale (coordinates / scaleFactor): log_sigma - log(sf), log_lambda + 2 log(sf)
+    f <- make_mock_fit(id, pn, c(beta, 1.5 - log(sf), -0.5, log(lam_nat) + 2 * log(sf)), sd_val = se,
+                       barrier = "coast", lambda = lam_nat, scaleFactor = sf)
+    f$covariance$working["log_lambda", "log_lambda"] <- lse^2
+  } else {
+    f <- make_mock_fit(id, p_names, c(beta, 1.5 - log(sf), -0.5), sd_val = se, barrier = "coast",
+                       lambda = if (mode == "tied") Inf else lam_nat, scaleFactor = sf)
+  }
+  f$conditions$lambda_mode <- mode
+  f
+}
+
+test_that("hierLangevin pools log(lambda) on the natural scale when lambda = 'estimate'", {
+  lam <- c(0.02, 0.05, 0.1, 0.2)
+  b <- c(-1.0, -1.2, -0.8, -1.1)
+  fl1 <- setNames(lapply(1:4, function(i) make_lambda_fit(paste0("ind_", i), lam[i], sf = 1, beta = b[i])), paste0("ind_", 1:4))
+  fl10 <- setNames(lapply(1:4, function(i) make_lambda_fit(paste0("ind_", i), lam[i], sf = 10, beta = b[i])), paste0("ind_", 1:4))
+  h1 <- hierLangevin(fl1, silent = TRUE)
+  h10 <- hierLangevin(fl10, silent = TRUE)
+  expect_s3_class(h1, "hierLangevin")
+  expect_equal(h1$convergence, 0)
+  expect_true(all(c("mu_log_lambda", "sd_log_lambda") %in% rownames(h1$estimates$working)))
+  expect_true("mu_lambda" %in% rownames(h1$estimates$natural))
+  expect_equal(names(h1$estimates$random), c("beta_cov1", "sigma", "gamma", "lambda"))
+  expect_equal(h1$conditions$lambda, "estimate")
+  expect_equal(h1$conditions$lambda_mode, "estimate")
+  # pooled on the natural scale: mean of log(lambda) is near mean(log(lam)) and results do not depend on scaleFactor
+  expect_equal(h1$estimates$working["mu_log_lambda", "Estimate"], mean(log(lam)), tolerance = 0.05)
+  expect_equal(h1$estimates$working$Estimate, h10$estimates$working$Estimate, tolerance = 1e-6)
+  expect_equal(h1$estimates$natural$Estimate, h10$estimates$natural$Estimate, tolerance = 1e-6)
+  expect_equal(h1$estimates$natural["mu_lambda", "Estimate"], exp(h1$estimates$working["mu_log_lambda", "Estimate"]), tolerance = 1e-8)
+  # individual lambdas shrink towards the population mean but keep their ordering
+  ind_lam <- h1$estimates$random$lambda$est$est
+  expect_true(all(ind_lam > 0))
+  expect_equal(order(ind_lam), 1:4)
+})
+
+test_that("hierLangevin requires a common lambda mode, and a common fixed value", {
+  fl <- list(a = make_lambda_fit("a", 0.05), b = make_lambda_fit("b", 0.1, mode = "tied"))
+  expect_error(hierLangevin(fl, silent = TRUE), "must use the same lambda mode")
+  fl <- list(a = make_lambda_fit("a", 0.05, mode = "fixed"), b = make_lambda_fit("b", 0.05))
+  expect_error(hierLangevin(fl, silent = TRUE), "must use the same lambda mode")
+  fl <- list(a = make_lambda_fit("a", 0.05, mode = "fixed"), b = make_lambda_fit("b", 0.1, mode = "fixed"))
+  expect_error(hierLangevin(fl, silent = TRUE), "fitted with a fixed lambda must use the same value")
+  # common fixed value and all tied are fine; lambda is not a Stage II parameter
+  fl <- list(a = make_lambda_fit("a", 0.05, mode = "fixed"), b = make_lambda_fit("b", 0.05, mode = "fixed", beta = -1.3))
+  h <- hierLangevin(fl, silent = TRUE)
+  expect_equal(h$conditions$lambda, 0.05)
+  expect_equal(h$conditions$lambda_mode, "fixed")
+  expect_false(any(grepl("lambda", rownames(h$estimates$working))))
+  fl <- list(a = make_lambda_fit("a", NA, mode = "tied"), b = make_lambda_fit("b", NA, mode = "tied", beta = -1.3))
+  h <- hierLangevin(fl, silent = TRUE)
+  expect_equal(h$conditions$lambda, Inf)
+  expect_equal(h$conditions$lambda_mode, "tied")
+})
+
+test_that("hierLangevin stops if an individual's log_lambda SE is not finite", {
+  fl <- list(a = make_lambda_fit("a", 0.05), b = make_lambda_fit("b", 0.1))
+  fl$b$covariance$working["log_lambda", "log_lambda"] <- NaN
+  expect_error(hierLangevin(fl, silent = TRUE), "standard error of log_lambda is not finite for individual 'b'")
+})
+
+test_that("getUD and regionProb integrate over the pooled lambda of a hierLangevin fit", {
+  skip_on_cran()
+  set.seed(1)
+  r <- terra::rast(nrows = 30, ncols = 30, xmin = 0, xmax = 30, ymin = 0, ymax = 30)
+  cov1 <- terra::init(r, "y") / 30; names(cov1) <- "cov1"
+  # signed distance to a vertical coast at x = 10 (restricted side: x < 10)
+  bar <- terra::init(r, "x") - 10; names(bar) <- "coast"; attr(bar, "barLangevin") <- TRUE
+  covs <- list(cov1 = cov1, coast = bar)
+  lam <- c(0.005, 0.02, 0.08)
+  fl <- setNames(lapply(1:3, function(i) make_lambda_fit(paste0("ind_", i), lam[i], beta = c(-1, -1.2, -0.8)[i], lse = 0.05)), paste0("ind_", 1:3))
+  fl <- lapply(fl, function(f) { f$signatures <- list(covs = langevinSSM:::get_covs_signature(covs)); f })
+  h <- hierLangevin(fl, silent = TRUE)
+  ud <- suppressMessages(getUD(covs, h, individual = "all", nSims = 20, log = FALSE, plot = FALSE, show_progress = FALSE))
+  land <- terra::ifel(bar <= 0, 1, 0)
+  use_land <- sapply(paste0("UD_ID_ind_", 1:3), function(nm) terra::global(ud[[nm]] * land, "sum", na.rm = TRUE)[[1]])
+  # weaker barrier (smaller lambda) -> more use of the restricted side
+  expect_true(all(diff(use_land) < 0))
+  # individual UD equals the closed form with that individual's lambda
+  b1 <- h$estimates$random$beta_cov1$est$est[1]; l1 <- h$estimates$random$lambda$est$est[1]
+  w <- terra::values(cov1)[, 1] * b1 - 0.5 * l1 * pmin(terra::values(bar)[, 1], 0)^2
+  p <- exp(w - max(w)); p <- p / sum(p)
+  expect_equal(as.numeric(terra::values(ud[["UD_ID_ind_1"]])[, 1]), p, tolerance = 1e-8)
+  # population UD averages over log(lambda) ~ N(mu, sd^2): use of land lies inside the individual range
+  pop_land <- terra::global(ud[["UD_Population"]] * land, "sum", na.rm = TRUE)[[1]]
+  expect_true(pop_land > min(use_land) && pop_land < max(use_land))
+  rp <- suppressMessages(regionProb(h, covs, mask = land, nSims = 50, individual = "ind_1", show_progress = FALSE))
+  expect_equal(rp[["ID_ind_1"]]$Point_Estimate, use_land[1], tolerance = 1e-8, ignore_attr = TRUE)
+  expect_true(is.finite(rp[["Population"]]$Point_Estimate))
+  # manual lambda = "estimate" without a pooled fit is rejected
+  expect_error(getUD(covs, beta = 1, barrier = "coast", lambda = "estimate", plot = FALSE), "only supported for hierLangevin")
+})

@@ -24,7 +24,8 @@
 #' @param fit A \code{fitLangevin} or \code{hierLangevin} object.
 #' @param beta Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier). If \code{fit} is provided, this is extracted automatically.
-#' @param lambda Numeric. The penalty weight for the barrier constraint. Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically.
+#' @param barrierOnset Onset length of the barrier potential (units of the coordinates, or \code{"res"}; see \code{\link{fitLangevin}}). Only used with a finite \code{lambda}. Default: \code{0}. If \code{fit} is provided, this is extracted automatically.
+#' @param lambda Barrier strength: a non-negative number (soft wall of that stiffness) or \code{"tied"} / \code{Inf} (hard wall: zero utilization of the restricted zone). Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically (\code{Inf} for fits with \code{lambda = "tied"}; for \code{hierLangevin} fits whose Stage I fits used \code{lambda = "estimate"}, \eqn{\lambda} is integrated over its population distribution, or each individual's \eqn{\lambda} is used, see \code{\link{hierLangevin}}).
 #' @param scaleFactor Internal scaling factor for the coordinates and parameters (see \code{\link{fitLangevin}}). Automatically extracted if \code{fit} is provided. Default: 1 (no scaling).
 #' @param log Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.
 #' @param nSims Integer. Number of draws from the covariance matrix to use for estimating Monte Carlo uncertainty in the UD. For \code{hierLangevin} objects, this dictates the number of draws from the between-individual MVN distribution used to integrate the marginal population-level UD, and \strong{must} be > 0. If \code{nSims > 0}, the returned raster stack will include additional layers for simulated SE and CV. Default: \code{0}.
@@ -43,7 +44,7 @@
 #' @importFrom stats setNames
 #' @importFrom utils setTxtProgressBar txtProgressBar
 #' @export
-getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFactor = 1, log = TRUE, nSims = 0, individual = NULL, show_progress = TRUE, plot = TRUE, maskRast = NULL, extent = NULL, normalize = FALSE) {
+getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, barrierOnset = 0, scaleFactor = 1, log = TRUE, nSims = 0, individual = NULL, show_progress = TRUE, plot = TRUE, maskRast = NULL, extent = NULL, normalize = FALSE) {
 
   if((missing(fit) & missing(beta)) | (!missing(fit) & !missing(beta))) stop("Either 'fit' or 'beta' must be provided, but not both.")
 
@@ -61,13 +62,18 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
   if(!missing(fit)) {
     if (!is.null(fit$conditions$barrier)) barrier <- fit$conditions$barrier
     if (!is.null(fit$conditions$lambda)) lambda <- fit$conditions$lambda
+    barrierOnset <- .cond_onset(fit$conditions)
     if (!is.null(fit$conditions$scaleFactor)) scaleFactor <- fit$conditions$scaleFactor
   }
 
   # Strip the barrier out to allow the length check to pass, while preserving the modified stack for calculations
-  bar_info <- .prep_barrier_raster(spatialCovs, barrier, lambda, scaleFactor)
+  bar_info <- .prep_barrier_raster(spatialCovs, barrier, lambda, scaleFactor, barrierOnset)
   spatialCovs <- bar_info$spatialCovs
   mod_spatialCovs <- bar_info$mod_spatialCovs
+  lambda_coef <- isTRUE(bar_info$lambda_coef)   # lambda pooled by hierLangevin (lambda = "estimate")
+  if (lambda_coef && (missing(fit) || !.hier_lambda_estimated(fit))) {
+    stop("lambda = \"estimate\" is only supported for hierLangevin fits whose Stage I fits used lambda = \"estimate\"; otherwise supply a numeric lambda or \"tied\".")
+  }
 
   if (!missing(beta) && length(spatialCovs) != length(beta)) {
     stop("length(spatialCovs) must equal length(beta). Note that if a barrier is specified, the barrier does not receive a beta coefficient.")
@@ -143,7 +149,7 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
       pop_cov <- diag(item$sd^2, nrow = length(item$sd))
       beta_draws <- as.matrix(MASS::mvrnorm(n_mc, item$mu, pop_cov))
 
-      if (!is.null(barrier)) beta_draws <- cbind(beta_draws, 1)
+      beta_draws <- .append_barrier_coef(beta_draws, barrier, lambda_coef)
 
       cpp_res <- simulate_ud_cpp(
         nSims = n_mc,
@@ -170,7 +176,7 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
 
     } else {
       b_vec <- if (is.list(item)) item$vec else item
-      if (!is.null(barrier)) b_vec <- c(b_vec, 1)
+      b_vec <- .append_barrier_coef(b_vec, barrier, lambda_coef)
       ud_prob <- calc_prob_ud_base(b_vec, mod_spatialCovs, maskRast)
     }
 
@@ -312,7 +318,7 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
 
               inner_cov <- diag(sd_s^2, nrow = length(sd_s))
               inner_beta_draws <- as.matrix(MASS::mvrnorm(M_inner, mu_s, inner_cov))
-              if (!is.null(barrier)) inner_beta_draws <- cbind(inner_beta_draws, 1)
+              inner_beta_draws <- .append_barrier_coef(inner_beta_draws, barrier, lambda_coef)
 
               cpp_res_s <- simulate_ud_cpp(
                 nSims = M_inner, n_cells = n_cells, n_ud_layers = n_ud_layers,
@@ -351,7 +357,7 @@ getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, scaleFa
           message("     Simulating UD uncertainty for individual: ", sub("^ID_", "", nm), "...")
         }
 
-        if (!is.null(barrier)) beta_draws <- cbind(beta_draws, 1)
+        beta_draws <- .append_barrier_coef(beta_draws, barrier, lambda_coef)
 
         cpp_res <- simulate_ud_cpp(
           nSims = nSims,

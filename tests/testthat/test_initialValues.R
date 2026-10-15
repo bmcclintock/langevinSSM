@@ -50,7 +50,7 @@ test_that("initialValues generates correct defaults for overdamped model", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- initialValues(data = dat, model = "overdamped", spatialCovs = covs)
+  par_init <- suppressMessages(initialValues(data = dat, model = "overdamped", spatialCovs = covs, type = "neutral"))
 
   # Check parameter existence
   expect_true(!is.null(par_init$beta))
@@ -74,7 +74,7 @@ test_that("initialValues generates correct defaults for underdamped model", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs))
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs, type = "neutral"))
 
   # Check parameter existence unique to underdamped
   expect_true(!is.null(par_init$gamma))
@@ -119,7 +119,7 @@ test_that("Missing coordinates in mu are linearly interpolated correctly", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs))
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs, type = "neutral"))
   mu <- par_init$mu
 
   # Check no NAs remain
@@ -138,11 +138,11 @@ test_that("Missing coordinates in mu are linearly interpolated correctly", {
   expect_equal(mu[7, 2], 12)
 })
 
-test_that("Empirical sigma and gamma accurately calculate across NA gaps", {
+test_that("Neutral sigma and gamma accurately calculate across NA gaps", {
   dat <- get_mock_dataLangevin()
   covs <- get_mock_covs()
 
-  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs))
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", spatialCovs = covs, type = "neutral"))
 
   # Mathematical manual check of the valid jumps in get_mock_dataLangevin():
   # Jump 1 (Track A): t=0 to t=2 (dt=2, dx=4, dy=0) -> R^2 = 16. Sigma^2_1 = 16 / (2*2) = 4
@@ -165,12 +165,12 @@ test_that("initialValues validates user-provided par$mu", {
 
   # wrong Dimensions (Too few rows)
   bad_mu_dim <- matrix(0, nrow = nrow(dat) - 1, ncol = 2)
-  expect_error(suppressMessages(initialValues(data = dat, par = list(mu = bad_mu_dim), spatialCovs = covs)),
+  expect_error(suppressMessages(initialValues(data = dat, par = list(mu = bad_mu_dim), spatialCovs = covs, type = "neutral")),
                "must be a matrix with the same number of rows as 'data' and 2 columns")
 
   # wrong Format (Vector instead of Matrix)
   bad_mu_vec <- rep(0, nrow(dat) * 2)
-  expect_error(suppressMessages(initialValues(data = dat, par = list(mu = bad_mu_vec), spatialCovs = covs)),
+  expect_error(suppressMessages(initialValues(data = dat, par = list(mu = bad_mu_vec), spatialCovs = covs, type = "neutral")),
                "must be a matrix")
 })
 
@@ -201,7 +201,7 @@ test_that("User-provided par$mu and par$vel override empirical estimates", {
 
   user_par <- list(mu = custom_mu, vel = custom_vel)
 
-  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", par = user_par, spatialCovs = covs))
+  par_init <- suppressMessages(initialValues(data = dat, model = "underdamped", par = user_par, spatialCovs = covs, type = "neutral"))
 
   # Ensure the custom matrices bypassed the NA-interpolation and zero-filling
   expect_equal(par_init$mu, custom_mu)
@@ -220,4 +220,67 @@ test_that("initialValues rejects gamma and vel for the overdamped model", {
   custom_vel <- matrix(0, nrow = nrow(dat), ncol = 2)
   expect_error(initialValues(data = dat, model = "overdamped", par = list(vel = custom_vel), spatialCovs = covs),
                "model = 'overdamped'")
+})
+
+test_that("Variogram initialization returns an error for tiny datasets", {
+  dat <- get_mock_dataLangevin()
+  covs <- get_mock_covs()
+  expect_error(initialValues(data = dat, model = "underdamped", spatialCovs = covs),
+               "Variogram-based initialization failed")
+  expect_error(initialValues(data = dat, model = "overdamped", spatialCovs = covs),
+               "Variogram-based initialization failed")
+  # the variogram is not needed (and so cannot fail) when sigma and gamma are supplied
+  par_v <- initialValues(data = dat, model = "underdamped", spatialCovs = covs, par = list(sigma = 2, gamma = 3))
+  expect_equal(par_v$sigma, 2)
+  expect_equal(par_v$gamma, 3)
+})
+
+test_that("Empirical initialization returns an error for tiny datasets", {
+  dat <- get_mock_dataLangevin()
+  covs <- get_mock_covs()
+  expect_error(initialValues(data = dat, model = "underdamped", spatialCovs = covs, type = "empirical"),
+               "Empirical initialization failed")
+  # not attempted when sigma and gamma are supplied
+  par_e <- initialValues(data = dat, model = "underdamped", spatialCovs = covs, type = "empirical",
+                         par = list(sigma = 2, gamma = 3))
+  expect_equal(par_e$sigma, 2)
+  expect_equal(par_e$gamma, 3)
+})
+
+test_that("Variogram initialization corrects for measurement error", {
+  # Simulate a damped harmonic oscillator (underdamped Langevin in a quadratic well)
+  # observed with large isotropic error ellipses
+  set.seed(42)
+  sigma <- 0.2; gamma <- 0.05; k <- 2 * sigma^2 / 400   # stationary location var 200 per coordinate
+  dt <- 0.5; n <- 6000
+  sim_track <- function() {
+    x <- matrix(0, n, 2); v <- matrix(rnorm(2, 0, sigma), 1, 2)
+    for (i in 2:n) {
+      v <- v + (-gamma * v - k * x[i - 1, ]) * dt + rnorm(2, 0, sigma * sqrt(2 * gamma * dt))
+      x[i, ] <- x[i - 1, ] + v * dt
+    }
+    x
+  }
+  tr <- lapply(1:2, function(i) sim_track())
+  smaj <- 4; smin <- 4   # isotropic: error variance per coordinate = 4^2 / 2 = 8
+  df <- do.call(rbind, lapply(1:2, function(i) {
+    data.frame(id = factor(i),
+               date = as.POSIXct("2023-01-01", tz = "UTC") + (0:(n - 1)) * dt * 3600,
+               dt = c(0, rep(dt, n - 1)),
+               x = tr[[i]][, 1] + rnorm(n, 0, sqrt(8)),
+               y = tr[[i]][, 2] + rnorm(n, 0, sqrt(8)),
+               smaj = smaj, smin = smin, eor = 0, x.err = NA_real_, y.err = NA_real_)
+  }))
+  attr(df, "time.unit") <- "hours"
+  class(df) <- append("dataLangevin", class(df))
+
+  par_v <- initialValues(data = df, model = "underdamped", spatialCovs = get_mock_covs())
+  par_n <- initialValues(data = df, model = "underdamped", spatialCovs = get_mock_covs(), type = "neutral")
+
+  # neutral values are dominated by measurement error
+  expect_gt(par_n$sigma / sigma, 10)
+  expect_gt(par_n$gamma / gamma, 10)
+  # variogram values are within a factor of 2 of the truth for a quadratic potential
+  expect_lt(abs(log(par_v$sigma / sigma)), log(2))
+  expect_lt(abs(log(par_v$gamma / gamma)), log(2))
 })

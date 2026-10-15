@@ -10,7 +10,7 @@ getPar(fit)
 \item{fit}{A \code{fitLangevin} object.}
 }
 \value{
-A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}) that were estimated).
+A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{lambda} (if the barrier strength was estimated, i.e. \code{lambda = "estimate"}), \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}) that were estimated).
 }
 \description{
 Extracts the fitted fixed and random effect parameter estimates from a \code{fitLangevin} object. The parameters are returned on their natural scale in the list format required for the \code{par} argument of \code{\link{fitLangevin}}.

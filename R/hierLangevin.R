@@ -31,6 +31,23 @@ class_hierLangevin <- function(x) {
 #' with \eqn{\hat S_i} treated as \strong{fixed/known} and \eqn{D} a diagonal
 #' matrix of between-individual variances.
 #'
+#' \strong{Barriers:} if the Stage I fits include a \code{barrier}, all
+#' individuals must have been fitted with the same barrier and the same
+#' \code{lambda} mode. With \code{lambda = "tied"} (hard wall) or a common fixed
+#' \code{lambda}, the barrier strength is known and is not part of Stage II.
+#' With \code{lambda = "estimate"}, \eqn{\log\lambda} (natural scale, i.e.
+#' independent of \code{scaleFactor}) is pooled like the other parameters,
+#' giving \code{mu_log_lambda}/\code{sd_log_lambda} (working scale),
+#' \code{mu_lambda} (natural scale) and individual predictions
+#' \code{estimates$random$lambda}. Because the barrier term of the stationary
+#' density, \eqn{-\lambda\min(d,0)^2/2}, is linear in \eqn{\lambda},
+#' \code{\link{getUD}} and \code{\link{regionProb}} then treat \eqn{\lambda}
+#' like a habitat selection coefficient (population-level: integrated over
+#' \eqn{\log\lambda \sim N(\mu_{\log\lambda}, sd_{\log\lambda}^2)}; individual-level:
+#' each individual's \eqn{\lambda}). Every individual must have a finite Stage I
+#' standard error for \code{log_lambda}; if an individual rarely enters the
+#' restricted zone, \eqn{\lambda} is not identifiable and hierLangevin stops.
+#'
 #' \strong{Maximum Penalized Likelihood (MPL):} Optional penalty
 #' (Chung, Rabe-Hesketh, Dorie, Gelman & Liu 2013, Psychometrika) can be
 #' applied to the population-level log standard deviations via the \code{mpl} argument to
@@ -122,8 +139,22 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
   # Extract barrier and scaling metadata to pass downstream
   base_barrier <- fit_list[[1]]$conditions$barrier
   base_lambda <- fit_list[[1]]$conditions$lambda
+  # Barrier-strength mode of each fit. All individuals must share it:
+  #  - "tied":     lambda = Inf (hard wall) for everyone; nothing to pool.
+  #  - "fixed":    a known constant, so it must be the same for everyone.
+  #  - "estimate": log(lambda) is pooled like any other working-scale parameter (random effect).
+  .lambda_mode_of <- function(f) {
+    if (is.null(f$conditions$barrier)) return("none")
+    m <- f$conditions$lambda_mode
+    if (is.null(m)) m <- if (is.numeric(f$conditions$lambda) && is.infinite(f$conditions$lambda)) "tied" else "fixed"
+    # lambda = "estimate" with map = list(lambda = factor(NA)) leaves lambda at a known value
+    if (identical(m, "estimate") && !("log_lambda" %in% rownames(f$estimates$working))) m <- "fixed"
+    m
+  }
+  base_lambda_mode <- .lambda_mode_of(fit_list[[1]])
   base_sf <- if (!is.null(fit_list[[1]]$conditions$scaleFactor)) fit_list[[1]]$conditions$scaleFactor else 1
   base_covs_sig <- fit_list[[1]]$signatures$covs
+  base_onset <- .cond_onset(fit_list[[1]]$conditions)
 
   # Initialize structures
   theta_hat <- matrix(NA_real_, n, p, dimnames = list(ids, param_names))
@@ -132,6 +163,12 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
   # Populate Stage I estimates and covariance matrices
   for (i in seq_len(n)) {
     est_i <- fit_list[[i]]$estimates$working
+    # (checked before the parameter names, which differ when only some fits estimate lambda)
+    mode_i <- .lambda_mode_of(fit_list[[i]])
+    if (!identical(mode_i, base_lambda_mode)) {
+      stop(sprintf("Individual '%s' was fitted with lambda mode \"%s\" but individual '%s' with \"%s\". All individuals must use the same lambda mode (all \"tied\", all \"estimate\", or all the same fixed value).",
+                   ids[i], mode_i, ids[1], base_lambda_mode))
+    }
     if (!identical(rownames(est_i), param_names)) {
       stop(sprintf("Working-scale parameter names for individual '%s' do not match individual '%s'. ",
                    ids[i], ids[1]),
@@ -142,8 +179,11 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
     if (!identical(fit_list[[i]]$conditions$barrier, base_barrier)) {
       stop(sprintf("Barrier argument for individual '%s' does not match individual '%s'. All individuals must be fitted with the same barrier constraint.", ids[i], ids[1]))
     }
-    if (!identical(fit_list[[i]]$conditions$lambda, base_lambda)) {
-      stop(sprintf("Lambda penalty for individual '%s' does not match individual '%s'. All individuals must be fitted with the same lambda.", ids[i], ids[1]))
+    if (base_lambda_mode != "estimate" && !identical(fit_list[[i]]$conditions$lambda, base_lambda)) {
+      stop(sprintf("Lambda penalty for individual '%s' does not match individual '%s'. All individuals fitted with a fixed lambda must use the same value.", ids[i], ids[1]))
+    }
+    if (!isTRUE(all.equal(.cond_onset(fit_list[[i]]$conditions), base_onset))) {
+      stop(sprintf("barrierOnset for individual '%s' does not match individual '%s'. All individuals must be fitted with the same barrier potential.", ids[i], ids[1]))
     }
     if (!identical(fit_list[[i]]$signatures$covs, base_covs_sig)) {
       if (!isTRUE(all.equal(fit_list[[i]]$signatures$covs, base_covs_sig, tolerance = 1e-5))) {
@@ -160,6 +200,14 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
       est_i[sigma_idx, "Estimate"] <- est_i[sigma_idx, "Estimate"] + log(sf_i)
     }
 
+    # log_lambda is on the working scale (coordinates / scaleFactor): lambda has units 1/distance^2,
+    # so lambda_w = lambda * scaleFactor^2. Put it on the natural scale, as for log_sigma (units distance).
+    # The beta's need no shift: covariates are not rescaled, so beta is dimensionless w.r.t. coordinates.
+    lambda_idx <- which(rownames(est_i) == "log_lambda")
+    if (length(lambda_idx) == 1 && sf_i != 1) {
+      est_i[lambda_idx, "Estimate"] <- est_i[lambda_idx, "Estimate"] - 2 * log(sf_i)
+    }
+
     theta_hat[i, ] <- est_i$Estimate
 
     cov_i <- fit_list[[i]]$covariance$working
@@ -168,6 +216,10 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
            "Ensure calcSE = TRUE was used for every individual fit in Stage I.")
     }
     Shat[, , i] <- as.matrix(cov_i)
+    if (length(lambda_idx) == 1 && !all(is.finite(Shat[lambda_idx, , i]))) {
+      stop(sprintf("The Stage I standard error of log_lambda is not finite for individual '%s'; the barrier strength is not identifiable for this individual (e.g. too few locations on the restricted side of the barrier). ", ids[i]),
+           "Refit all individuals with lambda = \"tied\" or a common fixed lambda, or drop this individual.")
+    }
   }
 
   # MPL alpha handling
@@ -196,8 +248,8 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
     stop("'mpl' must be FALSE, TRUE, or a numeric scalar/vector of alpha values.")
   }
 
-  # Determine which columns are log-scale movement parameters (sigma/gamma)
-  col_type <- as.integer(param_names %in% c("log_sigma", "log_gamma"))
+  # Determine which columns are log-scale parameters (sigma/gamma, and lambda when estimated)
+  col_type <- as.integer(param_names %in% c("log_sigma", "log_gamma", "log_lambda"))
 
   # data_list matches the TMB template exactly
   data_list <- list(theta_hat = theta_hat, Shat = Shat,
@@ -303,7 +355,11 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
     covariance = covariance,
     conditions = list(mpl = mpl, silent = silent, control = control,
                       model = model_type, param_names = param_names, ids = ids,
-                      barrier = base_barrier, lambda = base_lambda, scaleFactor = base_sf),
+                      barrier = base_barrier,
+                      lambda = if (identical(base_lambda_mode, "estimate")) "estimate" else base_lambda,
+                      lambda_mode = if (identical(base_lambda_mode, "none")) NULL else base_lambda_mode,
+                      barrierOnset = if (is.null(base_barrier)) NULL else base_onset,
+                      scaleFactor = base_sf),
     signatures = list(covs = base_covs_sig),
     tmb_setup = tmb_setup,
     sdreport = if (!inherits(sdr, "try-error")) sdr else NULL

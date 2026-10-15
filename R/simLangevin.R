@@ -12,7 +12,9 @@
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #'
 #' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. See \code{\link{fitLangevin}}.
-#' @param lambda Numeric. The penalty weight for the barrier constraint. Larger values create a steeper "wall" preventing locations from crossing into restricted areas. Default: \code{NULL}. Because the true generative parameters are known during simulation, leaving this as \code{NULL} allows the function to perfectly auto-calculate the optimal theoretical stability limit based on the \code{model} type, true speed parameter (\code{sigma}), and \code{timeStep}. See Details.
+#' @param barrierOnset Onset length of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). \code{0} (default) gives the quadratic potential \eqn{\min(d,0)^2/2}. See \code{\link{fitLangevin}}. Stored in \code{attr(, "barrierOnset")} so that \code{fitLangevin(barrierOnset = NULL)} uses the same value.
+#' @param lambda Barrier strength. Either \code{"tied"} (default) or a non-negative number. With \code{"tied"} the barrier is a hard wall, defined exactly as in \code{\link{fitLangevin}}: at every simulation step the spring constant is the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed from the true \code{sigma} and \code{gamma}. A number gives a soft wall of that fixed stiffness (e.g. for simulation studies of animals that do enter the restricted zone). Ignored if \code{barrier = NULL}. See Details.
+#' @param grad Interpolation used for the covariate surfaces (and the barrier distance) whose gradients give the habitat force: \code{"quintic"} (default), \code{"cubic"} or \code{"bilinear"}. See \code{\link{fitLangevin}}. When simulating from a fitted model, the fit's setting is used.
 #' @param timeStep Time step to use for the simulation. Determines the resolution of the discrete-time approximation of the continuous-time process. The smaller the \code{timeStep}, the more accurate the approximation. Ignored if \code{model} is a \code{fitLangevin} object and \code{conditional=TRUE}. Default: 0.01.
 #' @param nbAnimals Number of animals to simulate. Default: 1.
 #' @param obsPerAnimal Number of observations to simulate per animal. Default: 500.
@@ -49,16 +51,11 @@
 #' @template barrier_details
 #'
 #' @details
-#' \strong{Barrier Penalty Auto-Scaling:}
-#' When \code{lambda = NULL} and a \code{barrier} is provided, \code{simLangevin} automatically calculates the maximum theoretical stability limit for the barrier penalty based on the SDE numerical integration limits. Because the true generative speed parameter (\eqn{\sigma}) and the maximum simulation time step (\eqn{\max(\Delta t)}) are known, the optimal spring constant can be deterministically calculated to create the "hardest" possible boundary that will not cause the numerical solver to explode.
+#' \strong{Barrier strength (\code{lambda = "tied"}):}
+#' By default \code{simLangevin} uses the same rule as \code{\link{fitLangevin}}: at each simulation step the barrier spring constant is set to the stability limit \eqn{\lambda_{max}(\sigma, \gamma, \Delta t)} of the discretised SDE (see the barrier section below), i.e. the hardest wall the numerical solver can represent at that step. Because \eqn{\lambda_{max}} grows as \eqn{\Delta t} shrinks, the simulated wall is only as hard as \code{timeStep} allows; to mimic animals that never cross a barrier, simulate at a fine \code{timeStep} and use \code{subSample} to obtain the desired observation interval.
 #'
-#' For the \strong{underdamped} model, the restoring force acts on the animal's velocity. The optimal stability ceiling incorporates the friction coefficient (\eqn{\gamma}) and scales non-linearly with the time step:
-#' \deqn{\lambda = \frac{\gamma^2(1-e^{-\gamma\max(\Delta t)})}{\sigma^2(1-e^{-\gamma\max(\Delta t)}-\gamma\max(\Delta t)e^{-\gamma\max(\Delta t)})}}
+#' For tied simulations the returned object has \code{attr(, "lambda") = "tied"} (unchanged by \code{subSample}, because a hard wall remains a hard wall however often it is observed), so \code{fitLangevin(lambda = NULL)} also fits a tied barrier. For a numeric \code{lambda} the stored value is the numeric stiffness, rescaled to the observation interval when \code{subSample} is used.
 #'
-#' For the \strong{overdamped} model, the restoring force acts directly on the animal's position. The stability ceiling scales linearly with the inverse of the time step:
-#' \deqn{\lambda = \frac{2}{\sigma^2 \max(\Delta t)}}
-#'
-#' This auto-calculated value is applied during simulation and stored as a \code{lambda} attribute in the returned \code{dataLangevin} object.
 #'
 #' @return A data frame of class \code{dataLangevin} containing the simulated trajectories.
 #'
@@ -159,7 +156,9 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
                                 spatialCovs,
                                 barrier = NULL,
                                 par,
-                                lambda = NULL,
+                                lambda = "tied",
+                                barrierOnset = 0,
+                                grad = c("quintic", "cubic", "bilinear"),
                                 timeStep = 0.01,
                                 nbAnimals = 1,
                                 obsPerAnimal = 500,
@@ -169,7 +168,10 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
                                 ...) {
 
   model <- match.arg(model)
-  .validate_lambda(lambda)
+  grad <- match.arg(grad)
+  if (!missing(par) && is.list(par) && "lambda" %in% names(par)) stop("Specify the barrier strength with the 'lambda' argument, not par$lambda.")
+  tied <- .is_tied_lambda(lambda)
+  if (!tied) .validate_lambda(lambda)
   orig_spatialCovs <- spatialCovs
   obs_dist <- match.arg(obs_dist)
 
@@ -216,8 +218,10 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     if(!isTRUE(attr(barrier_sdf,"barLangevin"))) stop("barrier is not a 'barLangevin' object created by prepBarrier.")
     spatialCovs[[barrier]] <- NULL # Decouple physics constraint from habitat selection
     barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE)
+    barrierOnset <- .resolve_onset(barrierOnset, barrier_sdf)
   } else {
     barrier_dist_mat <- matrix(0, 1, 1)
+    barrierOnset <- 0
   }
 
   if (length(spatialCovs) == 0) {
@@ -267,22 +271,27 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     }
   }
 
-  # --- 3. Lambda Auto-Scaling ---
-  if (!is.null(barrier) && is.null(lambda)) {
-    max_dt <- max(dt_vec, na.rm = TRUE)
-    lambda <- .calc_lambda_limit(model, sigma, gamma, max_dt)
-    message("   Auto-scaling barrier lambda based on true simulation parameters: ", signif(lambda, 4))
+  # --- 3. Barrier strength ---
+  # "tied": hard wall, lambda_t = stability limit at each step's dt (same rule as fitLangevin)
+  if (is.null(barrier)) {
+    barrier_pen <- 0
+  } else if (tied) {
+    barrier_pen <- .stability_limit(model, sigma, gamma, dt_vec)
+    if (length(unique(barrier_pen)) == 1L) barrier_pen <- barrier_pen[1]
+    message("   Barrier: tied to the stability limit at each time step (lambda = ", signif(min(barrier_pen), 4),
+            if (length(barrier_pen) > 1) paste0(" to ", signif(max(barrier_pen), 4)) else "", ")")
+  } else {
+    barrier_pen <- lambda
   }
-
-  barrier_pen <- if (!is.null(barrier)) lambda else 0
+  lambda_ud <- if (tied) Inf else lambda   # hard wall: zero utilization of the restricted zone
 
   # --- 4. Initial Position ---
   init_pos_sim <- if (missing(initialPosition)) {
     getInitialPosition(nbAnimals = nbAnimals, spatialCovs = orig_spatialCovs, barrier = barrier,
-                       beta = beta, lambda = lambda)
+                       beta = beta, lambda = lambda_ud, barrierOnset = barrierOnset)
   } else {
     getInitialPosition(nbAnimals = nbAnimals, initialPosition = initialPosition,
-                       spatialCovs = spatialCovs, beta = beta, lambda = lambda)
+                       spatialCovs = spatialCovs, beta = beta, lambda = lambda_ud)
   }
 
   out <- simulate_langevin_cpp(
@@ -296,7 +305,9 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     raster_data = raster_data,
     initialPosition = init_pos_sim,
     barrier_dist = barrier_dist_mat,
-    barrier_penalty = barrier_pen
+    barrier_penalty = barrier_pen,
+    spline_degree = .grad_degree(grad),
+    barrier_onset = barrierOnset
   )
 
   class(out) <- c("dataLangevin", class(out))
@@ -319,20 +330,24 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   class(out) <- unique(c("simLangevin", class(out)))
 
   if (!is.null(barrier)) {
-    attr(out, "lambda") <- lambda
+    attr(out, "lambda") <- if (tied) "tied" else lambda
     attr(out, "barrier") <- barrier
+    attr(out, "barrierOnset") <- barrierOnset
   }
+  attr(out, "grad") <- grad
 
   if(!is.null(subSample)){
     orig_mean_dt <- mean(out$dt[out$dt > 0], na.rm = TRUE)
     out <- subSampleData(out, samplingRate = subSample$samplingRate, propMissing = subSample$propMissing)
     new_mean_dt <- mean(out$dt[out$dt > 0], na.rm = TRUE)
 
-    effective_lambda <- .rescale_lambda(lambda, model, sigma, gamma, orig_mean_dt, new_mean_dt)
-    attr(out, "lambda") <- effective_lambda
-
-    if(!is.null(barrier) & isTRUE(subSample$samplingRate>1)) {
-      message(sprintf("   Subsampling degraded temporal resolution. Effective lambda: %.4f", effective_lambda))
+    # a hard ("tied") wall stays a hard wall when observed less often; only a numeric (soft) lambda is rescaled
+    if (!is.null(barrier) && !tied) {
+      effective_lambda <- .rescale_lambda(lambda, model, sigma, gamma, orig_mean_dt, new_mean_dt)
+      attr(out, "lambda") <- effective_lambda
+      if (isTRUE(subSample$samplingRate > 1)) {
+        message(sprintf("   Subsampling degraded temporal resolution. Effective lambda: %.4f", effective_lambda))
+      }
     }
   }
 
@@ -391,7 +406,8 @@ simLangevin.fitLangevin <- function(model,
   lambda <- cond$lambda
   obs_dist <- ifelse(is.null(cond$obs_dist), "Gaussian", cond$obs_dist)
 
-  if(!is.null(lambda)){
+  tied <- identical(cond$lambda_mode, "tied")
+  if(!is.null(lambda) && !tied){
 
     orig_mean_dt <- mean(data$dt[data$dt > 0], na.rm = TRUE)
     new_mean_dt <- timeStep
@@ -403,15 +419,26 @@ simLangevin.fitLangevin <- function(model,
   }
 
   if (!is.null(cond$barrier)) {
-    barrier_sdf <- spatialCovs[[cond$barrier]] / scaleFactor
+    barrier_sdf <- spatialCovs[[cond$barrier]]   # build_tmb_data() converts to working units
     spatialCovs[[cond$barrier]] <- NULL
   } else {
     barrier_sdf <- NULL
   }
 
-  dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
-                        cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
-                        obs_dist, barrier_sdf = barrier_sdf, lambda = lambda)
+  if (tied) {
+    la <- .lambda_args(cond)
+    dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
+                          cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
+                          obs_dist, barrier_sdf = barrier_sdf, lambda = la$lambda, lambda_mode = la$lambda_mode,
+                          grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, fit),
+                          barrierOnset = .cond_onset(cond))
+  } else {
+    dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
+                          cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
+                          obs_dist, barrier_sdf = barrier_sdf, lambda = lambda,
+                          grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, fit),
+                          barrierOnset = .cond_onset(cond))
+  }
 
   dat <- c(dat, fit$tmb_setup$priors)
 
@@ -487,7 +514,8 @@ simLangevin.fitLangevin <- function(model,
     gamma = if(!is.null(par_drawn$log_gamma)) exp(par_drawn$log_gamma) else 1,
     psi = if(!is.null(par_drawn$l_psi)) exp(par_drawn$l_psi) else 1,
     tau = if(!is.null(par_drawn$l_tau)) exp(par_drawn$l_tau) else c(1, 1),
-    rho_o = if(!is.null(par_drawn$l_rho_o)) 2/(1 + exp(-par_drawn$l_rho_o)) - 1 else 0
+    rho_o = if(!is.null(par_drawn$l_rho_o)) 2/(1 + exp(-par_drawn$l_rho_o)) - 1 else 0,
+    df = if(!is.null(par_drawn$l_df)) exp(par_drawn$l_df) else 5
   )
 
   sigma_working <- exp(par_drawn$log_sigma)
@@ -532,6 +560,11 @@ simLangevin.fitLangevin <- function(model,
 
       raster_names <- c("raster_vals","raster_coords","raster_resolution","raster_extent","n_covs","all_z_values","n_zvals_cov","cov_offset")
 
+      sim_pen <- dat$barrier_penalty
+      if (tied && !is.null(cond$barrier)) {
+        sim_pen <- .stability_limit(cond$model, sigma_working, nat_par$gamma, full_dt_vec)
+        if (length(unique(sim_pen)) == 1L) sim_pen <- sim_pen[1]
+      }
       sim_full <- simulate_langevin_cpp(
         model = ifelse(fit$conditions$model=="underdamped", 1, 0),
         nbAnimals = 1,
@@ -543,7 +576,9 @@ simLangevin.fitLangevin <- function(model,
         raster_data = dat[raster_names],
         initialPosition = init_pos,
         barrier_dist = dat$barrier_dist,
-        barrier_penalty = dat$barrier_penalty
+        barrier_penalty = sim_pen,
+        spline_degree = dat$spline_degree,
+        barrier_onset = dat$barrier_onset
       )
 
       sim_ind <- sim_full[obs_idx, ]
@@ -593,15 +628,25 @@ simLangevin.fitLangevin <- function(model,
   class(out) <- unique(c("simLangevin", class(out)))
 
   if (!is.null(cond$barrier)) {
-    attr(out, "lambda") <- cond$lambda
+    attr(out, "lambda") <- if (tied) "tied" else cond$lambda
     attr(out, "barrier") <- cond$barrier
+    attr(out, "barrierOnset") <- .cond_onset(cond)
     attr(out, "scaleFactor") <- scaleFactor
   }
 
   return(out)
 }
 
-# --- Lambda Rescaling Helpers ---
+# --- Lambda Helpers ---
+.is_tied_lambda <- function(lambda) {
+  if (is.character(lambda)) {
+    if (length(lambda) != 1 || !identical(lambda, "tied")) stop("'lambda' must be \"tied\" or a single non-negative number.")
+    return(TRUE)
+  }
+  FALSE
+}
+
+# kappa_1 limit only (eigenvalue +1); used to rescale a numeric (soft) lambda between time steps.
 .calc_lambda_limit <- function(model, sigma, gamma, dt) {
   if (model == "overdamped") {
     return(2 / (sigma^2 * dt))
@@ -610,6 +655,17 @@ simLangevin.fitLangevin <- function(model,
     den <- (sigma^2) * (1 - exp(-gamma * dt) - (gamma * dt * exp(-gamma * dt)))
     return(num / den)
   }
+}
+
+# Exact stability limit of the frozen-force one-step map (spectral radius 1).  Equals
+# .calc_lambda_limit() for gamma*dt <= 3.72; beyond that the eigenvalue -1 condition binds.
+.stability_limit <- function(model, sigma, gamma, dt) {
+  if (model == "overdamped") return(2 / (sigma^2 * dt))
+  x <- gamma * dt; e <- exp(-x); a <- -expm1(-x)
+  k1 <- a / (a - x * e)
+  d2 <- (1 + e) * (x - a) - a^2
+  k2 <- 2 * (1 + e) / pmax(d2, 1e-12)
+  pmin(k1, k2) * gamma^2 / sigma^2
 }
 
 .rescale_lambda <- function(lambda, model, sigma, gamma, orig_mean_dt, new_mean_dt) {

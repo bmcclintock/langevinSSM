@@ -7,8 +7,54 @@
 
 using namespace density;
 
+
+// Largest barrier strength for which the frozen-force one-step map of a land excursion is stable
+// (spectral radius <= 1).  Underdamped, with x = gamma*dt, e = exp(-x), a = 1 - e, in units of
+// kappa = sigma^2 lambda / gamma^2:
+//   kappa_1 = a / (a - x e)                         (det = 1; binding for x <= 3.72)
+//   kappa_2 = 2 (1 + e) / ((1 + e)(x - a) - a^2)     (eigenvalue -1; binding for x > 3.72)
+// Overdamped: lambda = 2 / (sigma^2 dt) (one-step removal; unstable above 2x this).
+template<class Type>
+Type lambda_stability_limit(Type sigma, Type gamma, Type dt, int process_model) {
+  if (process_model != 1) return Type(2.0) / (sigma * sigma * dt);
+  Type x = gamma * dt;
+  Type e = exp(-x);
+  Type a = -expm1(-x);
+  Type k1 = a / (a - x * e);
+  Type d2 = (Type(1.0) + e) * (x - a) - a * a;
+  Type k2 = Type(2.0) * (Type(1.0) + e) / CppAD::CondExpGt(d2, Type(1e-12), d2, Type(1e-12));
+  Type k = CppAD::CondExpLt(k1, k2, k1, k2);
+  return k * gamma * gamma / (sigma * sigma);
+}
+
 #undef TMB_OBJECTIVE_PTR
 #define TMB_OBJECTIVE_PTR obj
+
+// ---------------------------------------------------------------------------
+// CDF helpers for TMB oneStepPredict(method = "cdf").
+// Both return log CDF values; the tiny offset prevents log(0) in extreme tails.
+// ---------------------------------------------------------------------------
+// log P(T <= z) and log P(T > z) for a standard Student t with nu df, via the
+// regularised incomplete beta function (AD-capable atomic pbeta):
+//   P(T > |z|) = 0.5 * I_{nu/(nu+z^2)}(nu/2, 1/2)
+template<class Type>
+void log_pt_both(Type z, Type nu, Type &logF, Type &logS)
+{
+  Type z2   = z * z;
+  Type tail = Type(0.5) * pbeta(nu / (nu + z2), Type(0.5) * nu, Type(0.5));            // P(T > |z|)
+  Type body = Type(0.5) + Type(0.5) * pbeta(z2 / (nu + z2), Type(0.5), Type(0.5) * nu); // P(T < |z|)
+  Type F = CppAD::CondExpLt(z, Type(0.0), tail, body);
+  Type S = CppAD::CondExpLt(z, Type(0.0), body, tail);
+  logF = log(F + Type(1e-300));
+  logS = log(S + Type(1e-300));
+}
+// Same for a standard normal (using symmetry to keep upper-tail precision).
+template<class Type>
+void log_pnorm_both(Type z, Type &logF, Type &logS)
+{
+  logF = log(pnorm(z) + Type(1e-300));
+  logS = log(pnorm(-z) + Type(1e-300));
+}
 
 template<class Type>
 Type langevinSSM(objective_function<Type>* obj)
@@ -31,6 +77,7 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_VECTOR(raster_resolution);  // Vector with x,y resolution
   DATA_VECTOR(raster_extent);      // Vector with xmin,xmax,ymin,ymax
   DATA_INTEGER(n_covs);            // Number of unique covariates
+  DATA_INTEGER(spline_degree);     // surface interpolation: 1 = bilinear, 3 = bicubic, 5 = quintic B-spline
   DATA_VECTOR(times);              // Absolute time array associated with 'mu' locations
   DATA_VECTOR(all_z_values);           // Vector of times representing the dynamic raster Z-slices
   DATA_IVECTOR(n_zvals_cov);       // Number of layers per covariate (1 for static, >1 for dynamic)
@@ -38,10 +85,15 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_INTEGER(smoothGradient);    // Boolean flag for using smooth gradient calculation
   DATA_VECTOR(weights);            // Vector of 5 (diagonal) or 9 (queen's) weights that sum to 1
   DATA_SCALAR(zetaScale);          // scale factor for smooth gradient neighborhood (>1 increases, <1 decreases)
+  DATA_SCALAR(smooth_sigma);       // fixed sigma (working scale) used for the smoothing radius
+  DATA_SCALAR(smooth_gamma);       // fixed gamma used for the smoothing radius (underdamped)
 
   // Barrier constraint data
   DATA_MATRIX(barrier_dist);       // Grid: Signed Distance Function (Positive = allowed, Negative = restricted)
   DATA_SCALAR(barrier_penalty);    // Tuning parameter (lambda) for the severity of the wall
+  DATA_INTEGER(lambda_mode);       // 0 = fixed (barrier_penalty); 1 = tied, lambda_t = stability limit at each step's dt; 2 = free, lambda = exp(log_lambda)
+  DATA_SCALAR(median_dt);          // median positive step, used to report a representative tied lambda
+  DATA_SCALAR(barrier_onset);      // onset length of the barrier potential (working units); 0 = B = 1/2 min(d,0)^2
 
   // for KF observation model
   DATA_VECTOR(smin);                 //  smin is the semi-minor axis length
@@ -54,6 +106,7 @@ Type langevinSSM(objective_function<Type>* obj)
   PARAMETER_VECTOR(beta);       // Vector of covariate effects
   PARAMETER(log_sigma);  // Log velocity process SD
   PARAMETER(log_gamma);  // Log friction coefficient, only used if model=1
+  PARAMETER(log_lambda); // Log barrier strength (working scale), only used if lambda_mode=2
 
   PARAMETER_MATRIX(mu);        // Locations [2 x timeSteps]
   PARAMETER_MATRIX(vel);        // Velocity innovations [2 x timeSteps], only used if model=1
@@ -78,6 +131,10 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_INTEGER(has_prior_log_gamma);
   DATA_VECTOR(prior_mean_log_gamma);
   DATA_VECTOR(prior_sd_log_gamma);
+
+  DATA_INTEGER(has_prior_log_lambda);
+  DATA_VECTOR(prior_mean_log_lambda);
+  DATA_VECTOR(prior_sd_log_lambda);
 
   DATA_INTEGER(has_prior_l_psi);
   DATA_VECTOR(prior_mean_l_psi);
@@ -140,6 +197,26 @@ Type langevinSSM(objective_function<Type>* obj)
   Type sigma_sca = exp(log_sigma);
   Type gamma = exp(log_gamma);
 
+  // Spline representations of the covariate stack and barrier distance (built from DATA once
+  // per template evaluation; evaluation is an atomic operator, so the raster cell is chosen
+  // from the current location at every tape evaluation).
+  langevin_raster::SplinePtr cov_spline = build_cov_spline(raster_vals, raster_resolution, raster_extent, spline_degree);
+  // Barrier strength.  lambda is a parameter of the drift (it enters only through the force
+  // -lambda * min(d,0) * grad d), not an additive penalty on the objective.
+  // Working scale (coordinates / scale_factor): lambda_w = lambda * scale_factor^2.  log_lambda and
+  // barrier_penalty are on the working scale; the reported lambda is on the natural scale.
+  Type lambda_w = barrier_penalty;
+  if (lambda_mode == 1) {
+    // representative (reported) value at the median step; the likelihood uses each step's own limit
+    lambda_w = lambda_stability_limit(sigma_sca, gamma, median_dt, process_model);
+  } else if (lambda_mode == 2) {
+    lambda_w = exp(log_lambda);
+  }
+  Type lambda = lambda_w / (scale_factor * scale_factor);   // natural scale (reported)
+
+  langevin_raster::SplinePtr barrier_spline;
+  if (barrier_penalty > Type(0.0) || lambda_mode > 0) barrier_spline = build_barrier_spline(barrier_dist, raster_resolution, raster_extent, spline_degree, asDouble(barrier_onset));
+
   // Process model - loop over tracks
   for(int id = 0; id < track_starts.size(); id++) {
     int start_idx = track_starts(id);
@@ -171,15 +248,13 @@ Type langevinSSM(objective_function<Type>* obj)
       if(smoothGradient) {
         grad = calculate_smooth_gradient(
           x_prev, y_prev, z_prev,
-          raster_vals, all_z_values, n_zvals_cov, cov_offset,
-          raster_coords, raster_resolution, raster_extent,
-          n_covs, weights, sigma_sca, gamma, dt_step, zetaScale, process_model
+          cov_spline, all_z_values, n_zvals_cov, cov_offset,
+          n_covs, weights, smooth_sigma, smooth_gamma, dt_step, zetaScale, process_model
         );
       } else {
         grad = extract_raster_values(
           x_prev, y_prev, z_prev,
-          raster_vals, all_z_values, n_zvals_cov, cov_offset,
-          raster_coords, raster_resolution, raster_extent, n_covs
+          cov_spline, all_z_values, n_zvals_cov, cov_offset, n_covs
         );
       }
 
@@ -193,7 +268,9 @@ Type langevinSSM(objective_function<Type>* obj)
 
       // --- BARRIER PENALTY FORCE ---
       Type h0 = h(0), h1 = h(1);
-      apply_barrier_penalty(x_prev, y_prev, barrier_dist, raster_extent, raster_resolution, barrier_penalty, h0, h1);
+      Type lambda_t = lambda_w;
+      if (lambda_mode == 1) lambda_t = lambda_stability_limit(sigma_sca, gamma, dt_step, process_model);
+      apply_barrier_penalty(x_prev, y_prev, barrier_spline, lambda_t, h0, h1);
       h(0) = h0; h(1) = h1;
       // -----------------------------
 
@@ -276,6 +353,14 @@ Type langevinSSM(objective_function<Type>* obj)
   }
 
   // l_psi
+  // log_lambda (prior on the natural scale; only used when lambda is estimated)
+  if (has_prior_log_lambda == 1 && lambda_mode == 2) {
+    if(!R_IsNA(asDouble(prior_mean_log_lambda(0)))) {
+      Type log_lambda_user = log_lambda - Type(2.0) * log(scale_factor);
+      nll -= dnorm(log_lambda_user, prior_mean_log_lambda(0), prior_sd_log_lambda(0), true);
+    }
+  }
+
   if (has_prior_l_psi == 1) {
     if(!R_IsNA(asDouble(prior_mean_l_psi(0)))) {
       nll -= dnorm(l_psi, prior_mean_l_psi(0), prior_sd_l_psi(0), true);
@@ -366,6 +451,11 @@ Type langevinSSM(objective_function<Type>* obj)
 
       Type kX = keep(0,i);
       Type kY = keep(1,i);
+      // oneStepPredict(method = "cdf") passes 3*n indicators (keep, lower, upper);
+      // the CDF terms are only recorded on the tape in that case.
+      // (the lower/upper indicators are AD variables only under method = "cdf").
+      bool osa_cdf = keep.osa_active() &&
+        (CppAD::Variable(keep.cdf_lower(0,i)) || CppAD::Variable(keep.cdf_lower(1,i)));
 
       if (obs_dist == 0) {
         // Gaussian Model
@@ -373,19 +463,39 @@ Type langevinSSM(objective_function<Type>* obj)
         Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
         Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
         nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);
+        if (osa_cdf) {
+          Type lF, lS;
+          log_pnorm_both((x_obs - mu_x) / sdX, lF, lS);
+          nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
+          log_pnorm_both((y_obs - mu_y_cond) / sd_y_cond, lF, lS);
+          nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
+        }
       } else if (obs_dist == 1) {
-        // t-distribution Model
-        if (kX == Type(1.0) && kY == Type(1.0)) {
-          Type dx = x_obs - mu_x;
-          Type dy = y_obs - mu_y;
-          Type det = varX * varY - covXY * covXY;
-          Type D = (dx*dx*varY + dy*dy*varX - Type(2.0)*dx*dy*covXY) / det;
-          Type log_dens = lgamma((df + Type(2.0))/Type(2.0)) - lgamma(df/Type(2.0)) - log(df) - log(M_PI) - Type(0.5)*log(det) - ((df + Type(2.0))/Type(2.0)) * log(Type(1.0) + D/df);
-          nll -= log_dens;
-        } else if (kX == Type(1.0) && kY == Type(0.0)) {
-          nll -= dt((x_obs - mu_x)/sdX, df, true) - log(sdX);
-        } else if (kX == Type(0.0) && kY == Type(1.0)) {
-          nll -= dt((y_obs - mu_y)/sdY, df, true) - log(sdY);
+        // Bivariate t-distribution model, written as marginal(x) * conditional(y | x)
+        // so that it is a smooth function of the OSA indicators kX and kY.
+        // (Do NOT branch on kX/kY with 'if': the branch is fixed when the AD tape is
+        // recorded, with keep = 1, so oneStepPredict could never switch data terms off.)
+        //   x            ~ t_df(mu_x, varX)
+        //   y | x        ~ t_{df+1}(mu_y + covXY/varX * dx,
+        //                           (df + dx^2/varX)/(df + 1) * (varY - covXY^2/varX))
+        // With kX = kY = 1 this equals the joint bivariate t density exactly.
+        Type dx = x_obs - mu_x;
+        Type ll_x = dt(dx / sdX, df, true) - log(sdX);
+
+        Type var_y_given_x = varY - covXY * covXY / varX;
+        Type mu_y_cond = mu_y + kX * (covXY / varX) * dx;
+        Type scale2_y = kX * ((df + dx * dx / varX) / (df + Type(1.0))) * var_y_given_x
+        + (Type(1.0) - kX) * varY;
+        Type df_y = df + kX;
+        Type ll_y = dt((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, true) - Type(0.5) * log(scale2_y);
+
+        nll -= kX * ll_x + kY * ll_y;
+        if (osa_cdf) {
+          Type lF, lS;
+          log_pt_both(dx / sdX, df, lF, lS);
+          nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
+          log_pt_both((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, lF, lS);
+          nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
         }
       }
     }
@@ -398,6 +508,7 @@ Type langevinSSM(objective_function<Type>* obj)
   ADREPORT(tau);
   ADREPORT(psi);
   if(obs_dist == 1) ADREPORT(df);
+  if(lambda_mode > 0) ADREPORT(lambda);
 
   // Backup in case sdreport fails
   REPORT(beta);
@@ -407,6 +518,7 @@ Type langevinSSM(objective_function<Type>* obj)
   REPORT(tau);
   REPORT(psi);
   if(obs_dist == 1) REPORT(df);
+  REPORT(lambda);
   REPORT(mu);
   if(process_model == 1) REPORT(vel);
 

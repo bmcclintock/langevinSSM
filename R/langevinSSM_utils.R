@@ -39,6 +39,17 @@ NULL
   }, env)
 }
 
+.onAttach <- function(library, pkgname)
+{
+  info <-utils::packageDescription(pkgname)
+  package <- info$Package
+  version <- info$Version
+  date <- info$Date
+  packageStartupMessage(
+    paste(package, version, paste("(",date, ")", sep=""))
+  )
+}
+
 #' Example formatted tracking data
 #'
 #' A \code{dataLangevin} object containing formatted movement tracks appropriate for \code{\link{fitLangevin}}..
@@ -109,7 +120,10 @@ print.fitLangevin <- function(x, ...) {
   cat("Max Log-Likelihood:", -x$objective, "\n")
   cat("Optimization time: ", round(x$elapsedTime[3], 2), "seconds\n")
 
-  if (!is.null(x$conditions$barrier) && !is.null(x$conditions$lambda)) {
+  if (identical(x$conditions$lambda_mode, "tied")) {
+    cat("Barrier penalty:    tied to the stability limit at each time step",
+        "; lambda at the median step = ", signif(x$conditions$lambda_report, 4), "\n", sep = "")
+  } else if (!is.null(x$conditions$barrier) && !is.null(x$conditions$lambda)) {
     cat("Barrier penalty:   ", signif(x$conditions$lambda, 4), "\n")
   }
   cat("\n")
@@ -296,6 +310,7 @@ summary.fitLangevin <- function(object, ...) {
 
   res <- list(
     model_type = ifelse("vel" %in% names(object$estimates$random), "Underdamped", "Overdamped"),
+    obs_dist = object$conditions$obs_dist,
     convergence = object$convergence,
     message = object$message,
     loglik = -object$objective,
@@ -324,6 +339,10 @@ print.summary.fitLangevin <- function(x, digits = 4, signif.stars = TRUE, ...) {
   cat("\nHabitat-Driven Langevin Diffusion Model\n")
   cat("=======================================\n")
   cat("Model type:       ", x$model_type, "\n")
+
+  # Determine observation distribution
+  obs_type <- x$obs_dist
+  cat("Observation model:", obs_type, "\n")
 
   conv_text <- ifelse(x$convergence == 0, "Successful", paste("Failed (Code", x$convergence, ")"))
   cat("Convergence:      ", conv_text, "\n")
@@ -685,7 +704,7 @@ verify_signatures <- function(fit, data = NULL, spatialCovs = NULL) {
   }
 }
 
-gof_tests <- function(res_df){
+gof_tests <- function(res_df, nsim = 1000){
 
   message("   Calculating goodness-of-fit tests...")
 
@@ -698,22 +717,57 @@ gof_tests <- function(res_df){
   mah <- rx^2 + ry^2
 
   if(length(rx) > 2) {
+    n <- length(rx)
     # Suppress warnings for ties, which can occasionally happen in large datasets
-    ks_x <- stats::ks.test(rx, "pnorm", mean = 0, sd = 1)
-    ks_y <- stats::ks.test(ry, "pnorm", mean = 0, sd = 1)
-    ks_mah <- stats::ks.test(mah, "pchisq", df = 2)
+    ks_x <- suppressWarnings(stats::ks.test(rx, "pnorm", mean = 0, sd = 1))
+    ks_y <- suppressWarnings(stats::ks.test(ry, "pnorm", mean = 0, sd = 1))
+    ks_mah <- suppressWarnings(stats::ks.test(mah, "pchisq", df = 2))
+
+    # KS_mah is very sensitive to a common scale error in the residuals (much more so than
+    # KS_x / KS_y), so it is split into two complementary tests:
+    #
+    # (1) Shape (KS_mah_shape): under the model mah/2 ~ Exp(1). Rescale by the sample mean
+    #     (e = mah / mean(mah)) and compute the KS distance to Exp(1). Because the scale is
+    #     estimated, Kolmogorov's null distribution does not apply (a plain ks.test on rescaled
+    #     values is far too conservative). The exponential is a scale family, so the null
+    #     distribution of this statistic does not depend on the true scale and can be simulated
+    #     exactly (Lilliefors-type Monte Carlo p-value).
+    ks_stat_exp <- function(e) {
+      e <- sort(e / mean(e)); F <- stats::pexp(e); i <- seq_along(e); m <- length(e)
+      max(max(i / m - F), max(F - (i - 1) / m))
+    }
+    D_shape <- ks_stat_exp(mah)
+    # Use a fixed internal seed so results are reproducible, without disturbing the user's RNG
+    has_seed <- exists(".Random.seed", envir = globalenv(), inherits = FALSE)
+    if (has_seed) old_seed <- get(".Random.seed", envir = globalenv(), inherits = FALSE)
+    on.exit({
+      if (has_seed) assign(".Random.seed", old_seed, envir = globalenv())
+      else if (exists(".Random.seed", envir = globalenv(), inherits = FALSE))
+        rm(".Random.seed", envir = globalenv())
+    }, add = TRUE)
+    set.seed(20240917L, kind = "Mersenne-Twister", normal.kind = "Inversion")
+    D_null <- vapply(seq_len(nsim), function(i) ks_stat_exp(stats::rexp(n)), numeric(1))
+    p_shape <- (1 + sum(D_null >= D_shape)) / (nsim + 1)
+
+    # (2) Dispersion (Disp_mah): under the model sum(mah) ~ chi-squared with 2n df.
+    #     Statistic reported is mean(mah)/2, i.e. the average residual variance (1 under the model).
+    S <- sum(mah)
+    p_disp <- min(1, 2 * min(stats::pchisq(S, 2 * n), stats::pchisq(S, 2 * n, lower.tail = FALSE)))
 
     # Box-Ljung test for autocorrelation (lag typically defaults to log(N))
-    lag_val <- max(1, floor(log(length(rx))))
+    lag_val <- max(1, floor(log(n)))
     lb_x <- stats::Box.test(rx, lag = lag_val, type = "Ljung-Box")
     lb_y <- stats::Box.test(ry, lag = lag_val, type = "Ljung-Box")
     lb_mah <- stats::Box.test(mah, lag = lag_val, type = "Ljung-Box")
 
     tests_df <- data.frame(
-      metric = c("KS_x", "KS_y", "KS_mah", "LB_x", "LB_y", "LB_mah"),
+      metric = c("KS_x", "KS_y", "KS_mah", "KS_mah_shape", "Disp_mah",
+                 "LB_x", "LB_y", "LB_mah"),
       statistic = unname(c(ks_x$statistic, ks_y$statistic, ks_mah$statistic,
+                           D_shape, mean(mah) / 2,
                            lb_x$statistic, lb_y$statistic, lb_mah$statistic)),
       p.value = unname(c(ks_x$p.value, ks_y$p.value, ks_mah$p.value,
+                         p_shape, p_disp,
                          lb_x$p.value, lb_y$p.value, lb_mah$p.value)),
       stringsAsFactors = FALSE
     )
@@ -738,6 +792,15 @@ boundsWarning <- function(fit, as_warning = TRUE) {
 }
 
 # --- Internal Validation & Processing Helpers ---
+
+# Arguments that rebuild the TMB data of a fit with the same barrier rule as the fit itself.
+.lambda_args <- function(cond) {
+  if (identical(cond$lambda_mode, "tied")) {
+    list(lambda = 0, lambda_mode = 1L)
+  } else {
+    list(lambda = cond$lambda, lambda_mode = 0L)
+  }
+}
 
 .validate_lambda <- function(lambda) {
   if (is.null(lambda)) return(invisible(NULL))
@@ -773,8 +836,10 @@ boundsWarning <- function(fit, as_warning = TRUE) {
     rn_work <- rownames(fit$estimates$working)
 
     if (is_hierLangevin) {
-      beta_idx_mu <- which(grepl("^mu_beta", rn_work))
-      beta_idx_sd <- which(grepl("^sd_beta", rn_work))
+      # lambda = "estimate": log(lambda) is pooled like a habitat coefficient and carried as the last
+      # element (see .append_barrier_coef, which exponentiates it)
+      beta_idx_mu <- c(which(grepl("^mu_beta", rn_work)), which(rn_work == "mu_log_lambda"))
+      beta_idx_sd <- c(which(grepl("^sd_beta", rn_work)), which(rn_work == "sd_log_lambda"))
 
       mu_beta_vec <- fit$estimates$working[beta_idx_mu, "Estimate"]
       sd_beta_vec <- fit$estimates$working[beta_idx_sd, "Estimate"]
@@ -802,8 +867,13 @@ boundsWarning <- function(fit, as_warning = TRUE) {
           b_vec <- numeric(length(beta_names))
           names(b_vec) <- beta_names
           for (j in seq_along(beta_names)) {
-            df_est <- fit$estimates$random[[beta_names[j]]]$est
-            b_vec[j] <- df_est[df_est[[id_col_name]] == ind, "est"]
+            if (beta_names[j] == "log_lambda") {
+              df_est <- fit$estimates$random[["lambda"]]$est
+              b_vec[j] <- log(df_est[df_est[[id_col_name]] == ind, "est"])
+            } else {
+              df_est <- fit$estimates$random[[beta_names[j]]]$est
+              b_vec[j] <- df_est[df_est[[id_col_name]] == ind, "est"]
+            }
           }
           beta_list[[paste0("ID_", ind)]] <- b_vec
         }
@@ -857,7 +927,7 @@ boundsWarning <- function(fit, as_warning = TRUE) {
   if (can_calc_se) {
     if (is_hierLangevin) {
       param_names <- gsub("^mu_", "", rownames(fit$estimates$working)[grepl("^mu_", rownames(fit$estimates$working))])
-      beta_idx_cov <- grep("^beta", param_names)
+      beta_idx_cov <- c(grep("^beta", param_names), which(param_names == "log_lambda"))
       p_total <- length(param_names)
 
       joint_cov_idx <- c(beta_idx_cov, p_total + beta_idx_cov)
@@ -886,7 +956,7 @@ boundsWarning <- function(fit, as_warning = TRUE) {
   )
 }
 
-.prep_barrier_raster <- function(spatialCovs, barrier, lambda, scaleFactor) {
+.prep_barrier_raster <- function(spatialCovs, barrier, lambda, scaleFactor, barrierOnset = 0) {
   if (is.null(barrier)) {
     return(list(spatialCovs = spatialCovs, mod_spatialCovs = spatialCovs, barrier_sdf = NULL))
   }
@@ -906,16 +976,46 @@ boundsWarning <- function(fit, as_warning = TRUE) {
   if (is.null(lambda)) {
     stop("To plot a barrier without a fitted model ('fit'), you must manually specify 'lambda'.")
   }
-  .validate_lambda(lambda)
+  if (identical(lambda, "tied")) lambda <- Inf   # hard wall (simLangevin/fitLangevin default)
+  lambda_coef <- identical(lambda, "estimate")
+  if (!lambda_coef) .validate_lambda(lambda)
 
-  penalty_rast <- terra::app(barrier_sdf, fun = function(x) {
-    x_work <- x / scaleFactor
-    ifelse(x_work <= 0, -0.5 * lambda * (x_work^2), 0)
+  onset <- .resolve_onset(barrierOnset, barrier_sdf)
+  penalty_rast <- if (lambda_coef) {
+    # hierLangevin with lambda = "estimate": the potential -lambda * B(d) is linear in lambda, so the
+    # barrier is a covariate (-B(d) on the restricted side) whose coefficient lambda varies among
+    # individuals; the coefficient is supplied with the habitat coefficients (.append_barrier_coef)
+    terra::app(barrier_sdf, fun = function(x) -.barrier_potential(x, onset))
+  } else if (is.infinite(lambda)) {
+    # hard wall (lambda = "tied" fits): zero utilization on the restricted side
+    terra::app(barrier_sdf, fun = function(x) ifelse(x <= 0, NA, 0))
+  } else terra::app(barrier_sdf, fun = function(x) {
+    # lambda is on the natural scale (1/distance^2 in the units of the coordinates), so the
+    # potential -lambda * B(d) does not depend on scaleFactor
+    -lambda * .barrier_potential(x, onset)
   })
   names(penalty_rast) <- "barrier_penalty"
   mod_spatialCovs <- c(spatialCovs_clean, penalty_rast)
 
-  list(spatialCovs = spatialCovs_clean, mod_spatialCovs = mod_spatialCovs, barrier_sdf = barrier_sdf)
+  list(spatialCovs = spatialCovs_clean, mod_spatialCovs = mod_spatialCovs, barrier_sdf = barrier_sdf,
+       lambda_coef = lambda_coef)
+}
+
+# TRUE if a hierLangevin fit pooled log(lambda) (Stage I fits with lambda = "estimate")
+.hier_lambda_estimated <- function(fit) {
+  inherits(fit, "hierLangevin") && "log_lambda" %in% fit$conditions$param_names
+}
+
+# Coefficient(s) of the barrier layer built by .prep_barrier_raster. With a known lambda the layer already
+# contains the potential, so its coefficient is 1. With lambda_coef = TRUE the last element (vector) or
+# column (matrix of draws) of b is log(lambda) and is replaced by lambda.
+.append_barrier_coef <- function(b, barrier, lambda_coef = FALSE) {
+  if (is.null(barrier)) return(b)
+  if (isTRUE(lambda_coef)) {
+    if (is.matrix(b)) b[, ncol(b)] <- exp(b[, ncol(b)]) else b[length(b)] <- exp(b[length(b)])
+    return(b)
+  }
+  if (is.matrix(b)) cbind(b, 1) else c(b, 1)
 }
 
 
@@ -1027,4 +1127,57 @@ print.hierLangevin <- function(x, ...) {
   cat("\nPopulation-level estimates (natural scale):\n")
   print(x$estimates$natural, digits = 4)
   invisible(x)
+}
+
+# Interpolation of the covariate (and barrier) rasters used for the habitat gradient.
+# Polynomial degree of the B-spline: bilinear = 1, cubic = 3, quintic = 5.
+.grad_degree <- function(grad) {
+  grad <- match.arg(grad, c("quintic", "cubic", "bilinear"))
+  switch(grad, bilinear = 1L, cubic = 3L, quintic = 5L)
+}
+
+# grad setting of a fit (fits made before the option existed used the quintic spline)
+.cond_grad <- function(cond) {
+  if (is.null(cond$grad)) "quintic" else cond$grad
+}
+
+# --- Barrier onset ---
+
+# Resolve the 'barrierOnset' argument to a non-negative number in the units of the coordinates.
+# "res" = one cell of the barrier distance raster.
+.resolve_onset <- function(barrierOnset, barrier_sdf = NULL) {
+  if (is.null(barrierOnset)) barrierOnset <- 0
+  if (is.character(barrierOnset)) {
+    if (!identical(barrierOnset, "res")) stop("'barrierOnset' must be a non-negative number or \"res\".")
+    if (is.null(barrier_sdf)) return(0)
+    barrierOnset <- terra::res(barrier_sdf)[1]
+  }
+  if (!is.numeric(barrierOnset) || length(barrierOnset) != 1 || !is.finite(barrierOnset) || barrierOnset < 0)
+    stop("'barrierOnset' must be a single non-negative number (units of the coordinates) or \"res\".")
+  as.numeric(barrierOnset)
+}
+
+# barrierOnset of a fit (fits made before the option existed used the quadratic potential)
+.cond_onset <- function(cond) {
+  if (is.null(cond$barrierOnset)) 0 else cond$barrierOnset
+}
+
+# Barrier potential B(d) (without lambda) for signed distance d (> 0 allowed, < 0 restricted).
+# onset = 0: B = min(d,0)^2 / 2. onset = l > 0: with u = -d, t = u / l,
+#   0 <= u <= l: B = l^2 (t^7/7 - t^6/2 + t^5/2)   (B, B', ..., B'''' vanish at the boundary)
+#   u >= l    : B = d^2/2 + l d/2 + l^2/7          (force u - l/2: the quadratic wall shifted by l/2)
+# Must match barrier_potential_jet() in src/TMB/include/raster_helpers.hpp.
+.barrier_potential <- function(d, onset = 0) {
+  out <- numeric(length(d))
+  out[is.na(d)] <- NA
+  neg <- !is.na(d) & d < 0
+  if (onset <= 0) {
+    out[neg] <- 0.5 * d[neg]^2
+    return(out)
+  }
+  u <- -d[neg]
+  t <- u / onset
+  out[neg] <- ifelse(t <= 1, onset^2 * (t^7 / 7 - t^6 / 2 + t^5 / 2),
+                     0.5 * u^2 - 0.5 * onset * u + onset^2 / 7)
+  out
 }

@@ -4,14 +4,28 @@
 \alias{prepBarrier}
 \title{Prepare a spatial barrier for Langevin models}
 \usage{
-prepBarrier(maskRast)
+prepBarrier(x, template = NULL, restricted = TRUE)
 }
 \arguments{
-\item{maskRast}{A \code{\link[terra]{SpatRaster-class}} object containing a binary mask. Values of \code{1} indicate allowed movement areas (e.g., water), and values of \code{0} indicate restricted areas (e.g., land).}
+\item{x}{Either a \code{\link[terra]{SpatRaster-class}} object containing a binary mask (values of \code{1} indicate allowed movement areas, e.g. water, and values of \code{0} restricted areas, e.g. land), or polygons (an \code{sf}, \code{sfc} or \code{\link[terra]{SpatVector-class}} object) delimiting the restricted (or, with \code{restricted = FALSE}, the allowed) area.}
+
+\item{template}{A \code{\link[terra]{SpatRaster-class}} defining the grid (extent, resolution and CRS) on which the SDF of polygons is computed. Required when \code{x} is polygons and ignored otherwise. Typically one of the habitat covariate rasters, so that the barrier shares their grid.}
+
+\item{restricted}{Logical. When \code{x} is polygons, do they delimit the restricted area (\code{TRUE}, default; e.g. land polygons for a marine animal) or the allowed area (\code{FALSE})?}
 }
 \value{
-A \code{\link[terra]{SpatRaster-class}} object containing the calculated signed distance field. Positive values represent distance into the allowed area; negative values represent distance into the restricted area. The object is assigned a \code{"barLangevin" = TRUE} attribute.
+A \code{\link[terra]{SpatRaster-class}} object (one layer named \code{"barrier"}) containing the signed distance field. Positive values represent distance into the allowed area; negative values represent distance into the restricted area. The object is assigned a \code{"barLangevin" = TRUE} attribute, and a \code{"barrierSource"} attribute (\code{"raster"} or \code{"polygons"}).
 }
 \description{
-Converts a binary spatial mask into a signed distance field (SDF) required for barrier constraints in the \code{langevinSSM} package. The resulting raster is tagged with a special attribute allowing downstream functions (\code{\link{fitLangevin}}, \code{\link{simLangevin}}, \code{\link{getUD}}) to automatically detect and apply the barrier penalty.
+Converts a barrier (a binary raster mask, or polygons) into the signed distance field (SDF) required for barrier constraints in the \code{langevinSSM} package. The resulting raster is tagged with a special attribute allowing downstream functions (\code{\link{fitLangevin}}, \code{\link{simLangevin}}, \code{\link{getUD}}) to automatically detect and apply the barrier penalty.
+}
+\details{
+The SDF \eqn{d} is the Euclidean distance to the boundary between the allowed and restricted areas, positive in the allowed area and negative in the restricted area. Its zero contour is the boundary itself, and \eqn{|\nabla d| = 1}. With \eqn{d} exact, the barrier force \eqn{-\lambda\min(d,0)\nabla d} is the penalization of Delporte et al. (2025), \eqn{-(x - \pi(x))/\lambda_D} with \eqn{\pi(x)} the projection onto the allowed area and \eqn{\lambda_D = 1/\lambda}.
+
+\strong{Polygons} (recommended when available, e.g. a vector coastline): the distance from every cell centre of \code{template} to the polygon boundary is computed exactly (\code{\link[sf]{st_distance}}), and the sign from polygon membership of the cell centre. The coastline is therefore represented as given, not as a raster staircase. \code{x} and \code{template} must share a projected CRS (distances in map units). Computation time grows with the number of cells and polygon vertices (roughly a minute per million cells for a detailed coastline).
+
+\strong{Raster mask}: the boundary is taken to be the cell edges between allowed and restricted cells. The distance between cell centres of opposite type is computed by \code{\link[terra]{distance}} and reduced by half a cell (\eqn{d = \mathrm{sign}(d_c)(|d_c| - r/2)}, with \eqn{r} the cell size), so that \eqn{d} is (approximately) the distance to that cell edge: \eqn{|d| = r/2} at the centres of the cells adjacent to the boundary and \eqn{|\nabla d| \approx 1} across it. Without the correction the field jumps by two cells across the boundary, which is a kink in the barrier force and an artificial steepening of it near the boundary; the interpolated zero contour (the cell edges) is the same either way. Along diagonal or irregular boundaries the cell-edge staircase is an approximation of the true boundary; supply polygons when they are available.
+}
+\references{
+Delporte, A., Ditlevsen, S. and Samson, A., 2025. Spatial constraints improve filtering of measurement noise from animal tracks. arXiv preprint arXiv:2511.22430.
 }

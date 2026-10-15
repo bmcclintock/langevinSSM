@@ -87,8 +87,7 @@ simDat_barrier <- simLangevin(par = par_barrier,
                                                       smin.sd = 0.75,
                                                       eor.lim = c(0,180)))
 
-# Because simDat_barrier is a simLangevin object, fitLangevin will automatically
-# detect and use the exact barrier penalty (lambda) that generated the data
+# Both simLangevin and fitLangevin use the "tied" hard-wall barrier by default
 fit_barrier <- fitLangevin(data = simDat_barrier,
                            spatialCovs = exampleCovs_barrier,
                            silent = TRUE)
@@ -99,20 +98,6 @@ plot(fit_barrier,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast
 
 res_barrier <- residuals(fit_barrier,simDat_barrier, exampleCovs_barrier, run_tests = TRUE, ncores=nbAnimals)
 
-
-fit0 <- fitLangevin(data = simDat_barrier,
-                           spatialCovs = exampleCovs_barrier,
-                           lambda = 0,
-                           silent = TRUE)
-
-lambda <- suggestLambda(fit0,median(simDat_barrier$dt))
-
-fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
-                    spatialCovs = exampleCovs_barrier,
-                    lambda = lambda,
-                    silent = TRUE)
-
-plot(fit_barrier_lambda,data=simDat_barrier,spatialCovs = exampleCovs_barrier, maskRast = coast_barrier)
 
 
 start_time <- as.POSIXct(paste(Sys.Date(), "00:00:00"), tz = "UTC")

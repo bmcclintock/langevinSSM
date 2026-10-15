@@ -5,7 +5,7 @@
 #'
 #' @param fit A \code{fitLangevin} object.
 #'
-#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}) that were estimated).
+#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{lambda} (if the barrier strength was estimated, i.e. \code{lambda = "estimate"}), \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}) that were estimated).
 #' @export
 getPar <- function(fit) {
 
@@ -34,6 +34,11 @@ getPar <- function(fit) {
 
   if (model == "underdamped" && "log_gamma" %in% active_pars) {
     par_out$gamma <- exp(parList$log_gamma)
+  }
+
+  # barrier strength (natural scale), only a parameter when fitted with lambda = "estimate"
+  if ("log_lambda" %in% active_pars || identical(fit$conditions$lambda_mode, "estimate")) {
+    par_out$lambda <- exp(parList$log_lambda) / scaleFactor^2
   }
 
   if ("l_psi" %in% active_pars) {

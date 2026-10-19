@@ -265,9 +265,19 @@ List measurementError_rcpp(DataFrame data,
                            double smin_sd,
                            NumericVector eor,
                            double psi,
-                           int obs_dist = 0,
-                           double df = 3.0,
-                           bool knownError = false) {
+                           IntegerVector obs_dist,
+                           NumericVector df,
+                           bool knownError = false,
+                           bool ell_power = false,
+                           double psi_maj = 1.0,
+                           double b_maj = 1.0,
+                           double b_min = 1.0,
+                           double ref_maj = 0.0,
+                           double ref_min = 0.0) {
+  // obs_dist: distribution of each observation (0 Gaussian, 1 t, 2 Huber; length n, or 1 = shared)
+  // df: shape parameter (df or k) of each observation (length n, or 1 = shared)
+  // ell_power: effective axes psi_maj * ref_maj * (smaj / ref_maj)^b_maj and psi * ref_min * (smin / ref_min)^b_min;
+  // reference lengths <= 0 are replaced by the geometric means of the axes
 
   int n = data.nrows();
   NumericVector M_rand(n);
@@ -318,25 +328,46 @@ List measurementError_rcpp(DataFrame data,
 
   double z = std::sqrt(2.0);
 
+  if (ell_power && (ref_maj <= 0.0 || ref_min <= 0.0)) {
+    double lM = 0.0, lm = 0.0;
+    int nk = 0;
+    for(int i = 0; i < n; i++) {
+      if (NumericVector::is_na(M_rand[i]) || NumericVector::is_na(m_rand[i])) continue;
+      lM += std::log(M_rand[i]); lm += std::log(m_rand[i]); nk++;
+    }
+    if (nk > 0) {
+      if (ref_maj <= 0.0) ref_maj = std::exp(lM / nk);
+      if (ref_min <= 0.0) ref_min = std::exp(lm / nk);
+    }
+  }
+
   // Apply measurement error
   for(int i = 0; i < n; i++) {
     if (NumericVector::is_na(M_rand[i])) continue; // Skip if no KF error for this row
 
+    double Ma = M_rand[i];
+    double ma = m_rand[i] * psi;
+    if (ell_power) {
+      Ma = psi_maj * ref_maj * std::pow(M_rand[i] / ref_maj, b_maj);
+      ma = psi * ref_min * std::pow(m_rand[i] / ref_min, b_min);
+    }
     double s2c = std::sin(c_rand[i]) * std::sin(c_rand[i]);
     double c2c = std::cos(c_rand[i]) * std::cos(c_rand[i]);
-    double M2 = (M_rand[i] / z) * (M_rand[i] / z);
-    double m2 = (m_rand[i] * psi / z) * (m_rand[i] * psi / z);
+    double M2 = (Ma / z) * (Ma / z);
+    double m2 = (ma / z) * (ma / z);
 
     arma::mat cov_obs(2, 2, arma::fill::zeros);
     cov_obs(0,0) = M2 * s2c + m2 * c2c;
     cov_obs(1,1) = M2 * c2c + m2 * s2c;
-    cov_obs(0,1) = (0.5 * (M_rand[i] * M_rand[i] - (m_rand[i] * psi * m_rand[i] * psi))) * std::cos(c_rand[i]) * std::sin(c_rand[i]);
+    cov_obs(0,1) = (0.5 * (Ma * Ma - ma * ma)) * std::cos(c_rand[i]) * std::sin(c_rand[i]);
     cov_obs(1,0) = cov_obs(0,1);
 
+    double df_i = df.size() == 1 ? df[0] : df[i];
     arma::vec mean = {mux[i], muy[i]};
     arma::vec new_pos;
-    if(obs_dist == 1) new_pos = rmvt(mean, cov_obs, df);
-    else if(obs_dist == 2) new_pos = rmvhyp(mean, cov_obs, df);
+    int dist_i = obs_dist.size() == 1 ? obs_dist[0] : obs_dist[i];
+    if(dist_i == 1) new_pos = rmvt(mean, cov_obs, df_i);
+    else if(dist_i == 2) new_pos = rmvhyp(mean, cov_obs, df_i);
     else new_pos = rmvnorm(mean, cov_obs);
 
     new_mux[i] = new_pos(0);
@@ -355,12 +386,13 @@ List measurementError_rcpp(DataFrame data,
 List measurementError_LS_rcpp(DataFrame data,
                               double x_sd,
                               double y_sd,
-                              double tau_x,
-                              double tau_y,
+                              NumericVector tau_x,
+                              NumericVector tau_y,
                               double rho_o,
-                              int obs_dist = 0,
-                              double df = 3.0,
+                              IntegerVector obs_dist,
+                              NumericVector df,
                               bool knownError = false) {
+  // tau_x, tau_y, obs_dist, df: values for each observation (length n, or 1 = shared)
 
   int n = data.nrows();
   NumericVector mux = data["mu.x"];
@@ -392,8 +424,9 @@ List measurementError_LS_rcpp(DataFrame data,
   for(int i = 0; i < n; i++) {
     if (NumericVector::is_na(x_err_vec[i])) continue; // Skip if no LS error for this row
 
-    double s = tau_x * x_err_vec[i];
-    double q = tau_y * y_err_vec[i];
+    double s = (tau_x.size() == 1 ? tau_x[0] : tau_x[i]) * x_err_vec[i];
+    double q = (tau_y.size() == 1 ? tau_y[0] : tau_y[i]) * y_err_vec[i];
+    double df_i = df.size() == 1 ? df[0] : df[i];
 
     arma::mat cov_obs(2, 2, arma::fill::zeros);
     cov_obs(0,0) = s * s;
@@ -403,8 +436,9 @@ List measurementError_LS_rcpp(DataFrame data,
 
     arma::vec mean = {mux[i], muy[i]};
     arma::vec new_pos;
-    if(obs_dist == 1) new_pos = rmvt(mean, cov_obs, df);
-    else if(obs_dist == 2) new_pos = rmvhyp(mean, cov_obs, df);
+    int dist_i = obs_dist.size() == 1 ? obs_dist[0] : obs_dist[i];
+    if(dist_i == 1) new_pos = rmvt(mean, cov_obs, df_i);
+    else if(dist_i == 2) new_pos = rmvhyp(mean, cov_obs, df_i);
     else new_pos = rmvnorm(mean, cov_obs);
 
     obs_x[i] = new_pos(0);

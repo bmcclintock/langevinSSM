@@ -15,7 +15,7 @@ addMeasurementError(
 \arguments{
 \item{data}{A \code{dataLangevin} object containing the true locations (columns specified by `coord`) and optionally measurement error data (e.g., `smaj`, `smin`, `eor` for KF or `x.err`, `y.err` for LS/GPS).}
 
-\item{par}{A list of parameters for the error model. For KF, this can include `psi`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2) and `rho_o`. If \code{obs_dist="t"}, then \code{par} can also include the degrees of freedom (`df`) parameter. If \code{obs_dist="Huber"}, then \code{par} can also include the threshold (`k`) parameter. See \code{\link{fitLangevin}}.}
+\item{par}{A list of parameters for the error model. For KF, this can include `psi` and the error ellipse power law parameters `psi_maj`, `b_maj` and `b_min`. For LS/GPS or EMF, this can include `tau` (as a vector of length 2, or by location class (and/or "sderr") as a 2-row matrix or named list) and `rho_o`. If (some) observations have \code{obs_dist="t"}, then \code{par} can also include the degrees of freedom (`df`) parameter. If (some) observations have \code{obs_dist="Huber"}, then \code{par} can also include the threshold (`k`) parameter. `df` and `k` can be a single value or a named vector by error type ("epar", "sderr") and/or location class. See \code{\link{fitLangevin}}.}
 
 \item{measurementError}{A list or data frame used to simulate observation error. The structure determines the error model used:
 \itemize{
@@ -27,7 +27,7 @@ You cannot provide parameters for multiple error models simultaneously. If \code
 
 \item{coord}{A character vector of length 2 specifying the column names in `data` that contain the true x and y locations (default is `c("mu.x", "mu.y")`).}
 
-\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber''.}
+\item{obs_dist}{The measurement error distribution: ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber) for all observations, or a named character vector by error type (\code{"epar"}, \code{"sderr"}) and/or location class, e.g. \code{c(epar = "Huber", sderr = "Gaussian")}. See \code{\link{fitLangevin}}.}
 }
 \value{
 A data frame with observed locations (`x`, `y`). and measurement error terms added.

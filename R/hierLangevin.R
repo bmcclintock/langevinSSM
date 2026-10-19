@@ -31,6 +31,10 @@ class_hierLangevin <- function(x) {
 #' with \eqn{\hat S_i} treated as \strong{fixed/known} and \eqn{D} a diagonal
 #' matrix of between-individual variances.
 #'
+#' \strong{Observation models:} by default (\code{params = "movement"}) only the movement
+#' and habitat selection parameters are pooled, so each individual's observation (measurement error)
+#' parameters can be estimated separately, and with a different observation model if needed.
+#'
 #' \strong{Barriers:} if the Stage I fits include a \code{barrier}, all
 #' individuals must have been fitted with the same barrier and the same
 #' \code{lambda} mode. With \code{lambda = "tied"} (hard wall) or a common fixed
@@ -78,6 +82,16 @@ class_hierLangevin <- function(x) {
 #' @param control List controlling the outer \code{\link[stats]{nlminb}}
 #' optimization. Default: \code{list(trace = 0, iter.max = 1000, eval.max = 1000)}.
 #'
+#' @param params Which Stage I working-scale parameters to pool. \code{"movement"} (default): the
+#' habitat selection coefficients (\code{beta_*}), \code{log_sigma}, \code{log_gamma} and, if estimated,
+#' \code{log_lambda}. Observation process parameters (\code{l_psi}, \code{l_tau}, \code{l_df}, etc.)
+#' are then treated as individual-specific nuisance parameters: they are not pooled, and individuals
+#' may be fitted with different observation models (e.g. a simpler one for short tracks). The pooled
+#' parameters' marginal Stage I covariance (the corresponding block of the Hessian-based covariance)
+#' is used, so their uncertainty includes that of the individual's observation parameters.
+#' \code{"all"}: pool every working-scale parameter (all individuals must then have identical
+#' working-scale parameter names). A character vector of working-scale parameter names
+#' (e.g. \code{c("beta_bathy", "log_sigma")}) pools just those, which every individual must have.
 #' @return An object of class \code{hierLangevin}, a list containing:
 #' \item{par}{The optimized outer (fixed-effect) parameter vector.}
 #' \item{objective}{The negative log-likelihood at the optimum.}
@@ -108,7 +122,7 @@ class_hierLangevin <- function(x) {
 #' @importFrom stats nlminb sd
 #' @export
 hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FALSE,
-                         control = list(trace = 0, iter.max = 1000, eval.max = 1000)) {
+                         control = list(trace = 0, iter.max = 1000, eval.max = 1000), params = "movement") {
 
   if (!is.list(fit_list) || length(fit_list) == 0 || inherits(fit_list, "fitLangevin")) {
     stop("'fit_list' must be a list containing fitted 'fitLangevin' objects.")
@@ -132,8 +146,18 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
   }
 
   # Extract parameter names and configuration from the first fit
-  param_names <- rownames(fit_list[[1]]$estimates$working)
+  .pooled_names <- function(f) {
+    nm <- rownames(f$estimates$working)
+    if (identical(params, "all")) return(nm)
+    if (identical(params, "movement")) return(nm[grepl("^beta", nm) | nm %in% c("log_sigma", "log_gamma", "log_lambda")])
+    params
+  }
+  if (!is.character(params) || length(params) == 0 || anyNA(params)) {
+    stop("'params' must be \"movement\", \"all\", or a character vector of working-scale parameter names.")
+  }
+  param_names <- .pooled_names(fit_list[[1]])
   p <- length(param_names)
+  if (p == 0) stop("No working-scale parameters to pool.")
   model_type <- fit_list[[1]]$conditions$model # Assuming fitLangevin stores the model type
 
   # Extract barrier and scaling metadata to pass downstream
@@ -162,18 +186,21 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
 
   # Populate Stage I estimates and covariance matrices
   for (i in seq_len(n)) {
-    est_i <- fit_list[[i]]$estimates$working
+    est_all_i <- fit_list[[i]]$estimates$working
     # (checked before the parameter names, which differ when only some fits estimate lambda)
     mode_i <- .lambda_mode_of(fit_list[[i]])
     if (!identical(mode_i, base_lambda_mode)) {
       stop(sprintf("Individual '%s' was fitted with lambda mode \"%s\" but individual '%s' with \"%s\". All individuals must use the same lambda mode (all \"tied\", all \"estimate\", or all the same fixed value).",
                    ids[i], mode_i, ids[1], base_lambda_mode))
     }
-    if (!identical(rownames(est_i), param_names)) {
+    if (!identical(.pooled_names(fit_list[[i]]), param_names) || !all(param_names %in% rownames(est_all_i))) {
       stop(sprintf("Working-scale parameter names for individual '%s' do not match individual '%s'. ",
                    ids[i], ids[1]),
-           "All individuals must be fitted with the exact same model and spatial covariates.")
+           if (identical(params, "all")) "With params = \"all\", all individuals must be fitted with the exact same model and spatial covariates."
+           else "All individuals must be fitted with the same movement model and spatial covariates (and have every parameter in 'params').")
     }
+    sel_i <- match(param_names, rownames(est_all_i))
+    est_i <- est_all_i[sel_i, , drop = FALSE]
 
     # Check for identical structural arguments
     if (!identical(fit_list[[i]]$conditions$barrier, base_barrier)) {
@@ -211,6 +238,7 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
     theta_hat[i, ] <- est_i$Estimate
 
     cov_i <- fit_list[[i]]$covariance$working
+    if (!is.null(cov_i) && all(dim(cov_i) == nrow(est_all_i))) cov_i <- as.matrix(cov_i)[sel_i, sel_i, drop = FALSE]
     if (is.null(cov_i) || any(dim(cov_i) != c(p, p))) {
       stop(sprintf("Working-scale covariance matrix unavailable for individual '%s'. ", ids[i]),
            "Ensure calcSE = TRUE was used for every individual fit in Stage I.")
@@ -219,6 +247,9 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
     if (length(lambda_idx) == 1 && !all(is.finite(Shat[lambda_idx, , i]))) {
       stop(sprintf("The Stage I standard error of log_lambda is not finite for individual '%s'; the barrier strength is not identifiable for this individual (e.g. too few locations on the restricted side of the barrier). ", ids[i]),
            "Refit all individuals with lambda = \"tied\" or a common fixed lambda, or drop this individual.")
+    }
+    if (!all(is.finite(Shat[, , i]))) {
+      stop(sprintf("The Stage I covariance matrix of the pooled parameters is not finite for individual '%s' (e.g. non-converged fit or singular Hessian). Refit or drop this individual.", ids[i]))
     }
   }
 
@@ -353,7 +384,7 @@ hierLangevin <- function(fit_list, mpl = FALSE, id_col_name = "id", silent = FAL
     evaluations = opt$evaluations,
     estimates = estimates,
     covariance = covariance,
-    conditions = list(mpl = mpl, silent = silent, control = control,
+    conditions = list(params = params, mpl = mpl, silent = silent, control = control,
                       model = model_type, param_names = param_names, ids = ids,
                       barrier = base_barrier,
                       lambda = if (identical(base_lambda_mode, "estimate")) "estimate" else base_lambda,

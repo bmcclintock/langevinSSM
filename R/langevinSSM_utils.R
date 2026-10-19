@@ -1,5 +1,5 @@
 #' @importFrom utils globalVariables
-utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid", "i", "split_flag", "segment","max_seg","mu.x_pr","mu.y_pr",".data","temp_x","temp_y","pr_idx","date_num"))
+utils::globalVariables(c("mu.x", "mu.y", "vel.x", "vel.y", "id", "psi", "tau", "dt", "x", "y", "smaj", "smin", "eor", "x.err", "y.err", "val", "lag", "UD", "type", "theoretical", "uid", "i", "split_flag", "segment","max_seg","mu.x_pr","mu.y_pr",".data","temp_x","temp_y","pr_idx","date_num","lower","upper"))
 
 #' Example Spatial Covariates
 #'
@@ -107,7 +107,7 @@ print.fitLangevin <- function(x, ...) {
   cat("Model type:       ", model_type, "\n")
 
   # Determine observation distribution
-  obs_type <- x$conditions$obs_dist
+  obs_type <- .fmt_obs_dist(x$conditions$obs_dist)
   cat("Observation model:", obs_type, "\n")
 
   # Convergence status
@@ -121,10 +121,10 @@ print.fitLangevin <- function(x, ...) {
   cat("Optimization time: ", round(x$elapsedTime[3], 2), "seconds\n")
 
   if (identical(x$conditions$lambda_mode, "tied")) {
-    cat("Barrier penalty:    tied to the stability limit at each time step",
-        "; lambda at the median step = ", signif(x$conditions$lambda_report, 4), "\n", sep = "")
+    cat("Barrier penalty:    tied\n")
   } else if (!is.null(x$conditions$barrier) && !is.null(x$conditions$lambda)) {
-    cat("Barrier penalty:   ", signif(x$conditions$lambda, 4), "\n")
+    if (identical(x$conditions$lambda_mode, "estimate")) cat("Barrier penalty:    estimate\n")
+    else cat("Barrier penalty:   ", signif(x$conditions$lambda, 4), "\n")
   }
   cat("\n")
 
@@ -341,7 +341,7 @@ print.summary.fitLangevin <- function(x, digits = 4, signif.stars = TRUE, ...) {
   cat("Model type:       ", x$model_type, "\n")
 
   # Determine observation distribution
-  obs_type <- x$obs_dist
+  obs_type <- .fmt_obs_dist(x$obs_dist)
   cat("Observation model:", obs_type, "\n")
 
   conv_text <- ifelse(x$convergence == 0, "Successful", paste("Failed (Code", x$convergence, ")"))
@@ -1218,7 +1218,7 @@ print.hierLangevin <- function(x, ...) {
                         cond$zetaScale, obs_dist = cond$obs_dist, barrier_sdf = barrier_sdf,
                         lambda = .lambda_args(cond)$lambda, lambda_mode = .lambda_args(cond)$lambda_mode,
                         grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, object),
-                        barrierOnset = .cond_onset(cond))
+                        barrierOnset = .cond_onset(cond), obs_spec = .cond_obs_spec(cond))
   c(dat, object$tmb_setup$priors)
 }
 

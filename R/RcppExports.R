@@ -5,11 +5,11 @@ simulate_langevin_cpp <- function(model, nbAnimals, obsPerAnimal, dt_vec, gamma,
     .Call(`_langevinSSM_simulate_langevin_cpp`, model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, barrier_penalty, spline_degree, barrier_onset)
 }
 
-measurementError_rcpp <- function(data, smaj_sd, smin_sd, eor, psi, obs_dist = 0L, df = 3.0, knownError = FALSE) {
-    .Call(`_langevinSSM_measurementError_rcpp`, data, smaj_sd, smin_sd, eor, psi, obs_dist, df, knownError)
+measurementError_rcpp <- function(data, smaj_sd, smin_sd, eor, psi, obs_dist, df, knownError = FALSE, ell_power = FALSE, psi_maj = 1.0, b_maj = 1.0, b_min = 1.0, ref_maj = 0.0, ref_min = 0.0) {
+    .Call(`_langevinSSM_measurementError_rcpp`, data, smaj_sd, smin_sd, eor, psi, obs_dist, df, knownError, ell_power, psi_maj, b_maj, b_min, ref_maj, ref_min)
 }
 
-measurementError_LS_rcpp <- function(data, x_sd, y_sd, tau_x, tau_y, rho_o, obs_dist = 0L, df = 3.0, knownError = FALSE) {
+measurementError_LS_rcpp <- function(data, x_sd, y_sd, tau_x, tau_y, rho_o, obs_dist, df, knownError = FALSE) {
     .Call(`_langevinSSM_measurementError_LS_rcpp`, data, x_sd, y_sd, tau_x, tau_y, rho_o, obs_dist, df, knownError)
 }
 

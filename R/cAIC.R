@@ -70,7 +70,8 @@ cAIC <- function(fit, data, spatialCovs, nSims = 200) {
     lambda_mode = .lambda_args(fit$conditions)$lambda_mode,
     grad = .cond_grad(fit$conditions),
     smoothPar = .cond_smoothPar(fit$conditions, fit),
-    barrierOnset = .cond_onset(fit$conditions)
+    barrierOnset = .cond_onset(fit$conditions),
+    obs_spec = .cond_obs_spec(fit$conditions)
   )
 
   dat_joint <- c(dat_joint, fit$tmb_setup$priors)

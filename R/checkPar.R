@@ -6,19 +6,31 @@ validate_obs_error <- function(par, map, dat) {
   if (!has_ee && ("psi" %in% names(par) || "psi" %in% names(map))) {
     stop("Cannot specify 'psi' in 'par' or 'map' because the data does not contain error ellipse observations.")
   }
+  if (!has_ee && any(.ell_par_names %in% c(names(par), names(map)))) {
+    stop("Cannot specify 'psi_maj', 'b_maj' or 'b_min' in 'par' or 'map' because the data does not contain error ellipse observations.")
+  }
   if (!has_ls && (any(c("tau", "rho_o") %in% names(par)) || any(c("tau", "rho_o") %in% names(map)))) {
     stop("Cannot specify 'tau' or 'rho_o' in 'par' or 'map' because the data does not contain standard error observations ('x.err', 'y.err').")
   }
-  if (dat$obs_dist!=1 && (("df" %in% names(par)) || ("df" %in% names(map)))) {
-    stop("Cannot specify 'df' in 'par' or 'map' unless obs_dist = 't'.")
+  # dat$obs_dist = any_t + 2 * any_Huber
+  if (!dat$obs_dist %in% c(1, 3) && (("df" %in% names(par)) || ("df" %in% names(map)))) {
+    stop("Cannot specify 'df' in 'par' or 'map' unless obs_dist = 't' (for at least some observations).")
   }
-  if (dat$obs_dist!=2 && (("k" %in% names(par)) || ("k" %in% names(map)))) {
-    stop("Cannot specify 'k' in 'par' or 'map' unless obs_dist = 'Huber'.")
+  if (dat$obs_dist < 2 && (("k" %in% names(par)) || ("k" %in% names(map)))) {
+    stop("Cannot specify 'k' in 'par' or 'map' unless obs_dist = 'Huber' (for at least some observations).")
   }
 }
 
 # --- Helper: Parse Bayesian Priors ---
-parse_priors <- function(par, prior, spatialCovs) {
+# Each row of 'prior' targets elements of the working-scale parameters by
+#   * the exact element name ('beta_cov1', 'l_tau_3', 'l_df_2', 'mu.x_1', ...),
+#   * a group name of a grouped observation parameter ('l_tau.G', 'l_tau.x.G', 'l_tau.x', 'l_df.B', 'l_k.epar'; see .prior_aliases()),
+#   * or the base name ('beta', 'l_tau', 'l_df', ...; all of its elements).
+# Priors are only applied to estimated parameters: a row whose elements are all fixed (by 'map', or by default because the
+# parameter is not in 'par' or not used by the model) is an error, and a base or group name only applies to the estimated
+# elements. Elements tied by 'map' are one estimated parameter and receive the prior once (with a warning if the user gave
+# them different priors).
+parse_priors <- function(par, prior, spatialCovs, map = NULL, obs_spec = NULL) {
   pr_mean <- unlist(par) * 0 + NA_real_
   pr_sd   <- unlist(par) * 0 + NA_real_
 
@@ -42,14 +54,18 @@ parse_priors <- function(par, prior, spatialCovs) {
     if (!is.data.frame(prior) || ncol(prior) != 2) {
       stop("'prior' must be a 2-column data frame with mean in col 1 and sd in col 2.")
     }
-    for (rn in rownames(prior)) {
+    base_of <- rep(names(par), lengths(par))   # working parameter of each element
+    aliases <- .prior_aliases(par, obs_spec)
+    lev <- .prior_levels(par, map)             # estimated parameter of each element (NA = fixed; "re" = random effects)
+    src <- rep(NA_integer_, length(pr_mean))   # row of 'prior' that set each element
+    for (i in seq_len(nrow(prior))) {
+      rn <- rownames(prior)[i]
       if (rn %in% nice_names) {
-        pr_mean[rn] <- prior[rn, 1]
-        pr_sd[rn]   <- prior[rn, 2]
+        idx <- match(rn, nice_names); kind <- "element"
+      } else if (rn %in% names(aliases)) {
+        idx <- aliases[[rn]]; kind <- "group"
       } else if (rn %in% names(par)) {
-        idx <- which(startsWith(nice_names, paste0(rn, "_")) | nice_names == rn)
-        pr_mean[idx] <- prior[rn, 1]
-        pr_sd[idx]   <- prior[rn, 2]
+        idx <- which(base_of == rn); kind <- "base"
       } else {
         beta_names <- nice_names[startsWith(nice_names, "beta_")]
         if (length(beta_names) == 0) {
@@ -59,11 +75,33 @@ parse_priors <- function(par, prior, spatialCovs) {
         } else {
           example_beta_str <- paste0("'", beta_names[1], "', ..., '", beta_names[length(beta_names)], "'")
         }
+        grp_str <- if (length(aliases)) paste0("\n  Groups of observation parameters for this model: ", paste0("'", names(aliases), "'", collapse = ", "), ".") else ""
         stop("Prior parameter name '", rn, "' is invalid. Acceptable base parameters for this model are: ",
              paste(names(par), collapse = ", "),
              "\n  To target specific elements, use their exact working names (e.g., ",
-             example_beta_str, ", 'mu.x_1', 'vel.y_10').")
+             example_beta_str, ", 'mu.x_1', 'vel.y_10').", grp_str)
       }
+      fixed <- is.na(lev[idx])
+      if (all(fixed)) stop(.prior_fixed_msg(rn, base_of[idx[1]], kind), call. = FALSE)
+      idx <- idx[!fixed]
+      pr_mean[idx] <- prior[i, 1]
+      pr_sd[idx]   <- prior[i, 2]
+      src[idx] <- i
+    }
+
+    # elements tied by 'map' are a single estimated parameter: apply its prior once
+    has <- !is.na(src) & !is.na(lev) & lev != "re"
+    for (L in unique(lev[has])) {
+      idx <- which(has & lev == L)
+      if (length(idx) < 2) next
+      rows <- unique(src[idx])
+      if (length(rows) > 1) {
+        warning("Elements ", paste0("'", nice_names[idx], "'", collapse = ", "), " are tied by 'map' (one estimated parameter) but ",
+                "have priors from different rows of 'prior' (", paste0("'", rownames(prior)[rows], "'", collapse = ", "),
+                "). Only the prior of '", nice_names[idx[1]], "' (from row '", rownames(prior)[src[idx[1]]], "') is used.", call. = FALSE)
+      }
+      pr_mean[idx[-1]] <- NA_real_
+      pr_sd[idx[-1]]   <- NA_real_
     }
   }
 
@@ -91,6 +129,12 @@ parse_priors <- function(par, prior, spatialCovs) {
   priors$has_prior_l_psi <- as.integer(!is.null(pr_mean_list$l_psi) && any(!is.na(pr_mean_list$l_psi)))
   priors$prior_mean_l_psi <- if (!is.null(pr_mean_list$l_psi)) as.numeric(pr_mean_list$l_psi) else NA_real_
   priors$prior_sd_l_psi   <- if (!is.null(pr_sd_list$l_psi)) as.numeric(pr_sd_list$l_psi) else NA_real_
+
+  for (nm in c("l_psi_maj", "l_b_maj", "l_b_min")) {
+    priors[[paste0("has_prior_", nm)]] <- as.integer(!is.null(pr_mean_list[[nm]]) && any(!is.na(pr_mean_list[[nm]])))
+    priors[[paste0("prior_mean_", nm)]] <- if (!is.null(pr_mean_list[[nm]])) as.numeric(pr_mean_list[[nm]]) else NA_real_
+    priors[[paste0("prior_sd_", nm)]]   <- if (!is.null(pr_sd_list[[nm]])) as.numeric(pr_sd_list[[nm]]) else NA_real_
+  }
 
   priors$has_prior_l_tau <- as.integer(!is.null(pr_mean_list$l_tau) && any(!is.na(pr_mean_list$l_tau)))
   priors$prior_mean_l_tau <- if (!is.null(pr_mean_list$l_tau)) as.numeric(pr_mean_list$l_tau) else rep(NA_real_, 2)
@@ -137,16 +181,16 @@ parse_priors <- function(par, prior, spatialCovs) {
 
 # --- Main checkPar Function ---
 # lambda_mode: 0 = fixed or no barrier, 1 = tied, 2 = estimate (par$lambda/map$lambda only allowed for 2)
-checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL, lambda_mode = 0L){
+checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL, lambda_mode = 0L, obs_spec = NULL){
 
   if(!is.list(par)) stop("par must be a list.")
-  if(!all(names(par) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df", "k"))) {
-    stop("names(par) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df', 'k')")
+  if(!all(names(par) %in% .par_names_all)) {
+    stop("names(par) is limited to c(", paste0("'", .par_names_all, "'", collapse = ","), ")")
   }
   if(!is.null(map)){
     if(!is.list(map)) stop("map must be a list.")
-    if(!all(names(map) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o", "df", "k"))) {
-      stop("names(map) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o', 'df', 'k')")
+    if(!all(names(map) %in% .par_names_all)) {
+      stop("names(map) is limited to c(", paste0("'", .par_names_all, "'", collapse = ","), ")")
     }
   } else map <- list()
 
@@ -260,16 +304,38 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     } else map$l_psi <- factor(NA)
   }
 
+  # error ellipse power law (scale of the semi-major axis and exponents of both axes); default 1, fixed
+  for (nm in .ell_par_names) {
+    wn <- paste0("l_", nm)
+    if (!is.null(par[[nm]])) {
+      if (length(par[[nm]]) != 1) stop("par$", nm, " should be of length 1.")
+      if (!is.finite(par[[nm]]) || par[[nm]] <= 0) stop("par$", nm, " should be greater than zero.")
+      par[[wn]] <- log(par[[nm]])
+      par[[nm]] <- NULL
+    } else {
+      par[[wn]] <- 0
+      if (is.null(map[[nm]])) map[[wn]] <- factor(NA)
+    }
+    if (!is.null(map[[nm]])) {
+      if (length(map[[nm]]) != 1) stop("map$", nm, " should be of length 1.")
+      map[[wn]] <- map[[nm]]
+      map[[nm]] <- NULL
+    }
+  }
+
+  # tau: a 2-vector (x, y) shared by all LS/GPS observations, or a 2-row matrix (or named list) with one
+  # column per location-class group; working parameter l_tau is the column-major vector
+  if (!is.null(map$tau)) map$tau <- .norm_tau_map(map$tau)
   if(!is.null(par$tau)){
-    if(length(par$tau) != 2) stop("par$tau should be of length 2.")
+    par$tau <- .norm_tau(par$tau)
     if(any(!is.finite(par$tau)) || any(par$tau <= 0)){
       stop("par$tau should be greater than zero.")
     }
-    par$l_tau <- log(par$tau)
+    par$l_tau <- as.vector(log(par$tau))
     par$tau <- NULL
 
     if(!is.null(map$tau)){
-      if(length(map$tau) != length(par$l_tau)) stop("map$tau should be of length 2.")
+      if(length(map$tau) != length(par$l_tau)) stop("map$tau should be of length ", length(par$l_tau), ".")
       map$l_tau <- map$tau
       map$tau <- NULL
     }
@@ -305,16 +371,18 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     } else map$l_rho_o <- factor(NA)
   }
 
+  # df: one value shared by all observations, or a named vector with one value per group
+  # (error types and/or location classes; see .obs_spec())
   if(!is.null(par$df)){
-    if(length(par$df) != 1) stop("par$df should be of length 1.")
-    if(!is.finite(par$df) || par$df <= 0){
+    if (is.list(par$df)) par$df <- unlist(par$df)
+    if(any(!is.finite(par$df)) || any(par$df <= 0)){
       stop("par$df should be greater than zero.")
     }
-    par$l_df <- log(par$df)
+    par$l_df <- unname(log(par$df))
     par$df <- NULL
 
     if(!is.null(map$df)){
-      if(length(map$df) != length(par$l_df)) stop("map$df should be of length 1.")
+      if(length(map$df) != length(par$l_df)) stop("map$df should be of length ", length(par$l_df), ".")
       map$l_df <- map$df
       map$df <- NULL
     }
@@ -327,16 +395,18 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     } else map$l_df <- factor(NA)
   }
 
+  # k: one value shared by all observations, or a named vector with one value per group
+  # (error types and/or location classes; see .obs_spec())
   if(!is.null(par$k)){
-    if(length(par$k) != 1) stop("par$k should be of length 1.")
-    if(!is.finite(par$k) || par$k <= 0){
+    if (is.list(par$k)) par$k <- unlist(par$k)
+    if(any(!is.finite(par$k)) || any(par$k <= 0)){
       stop("par$k should be greater than zero.")
     }
-    par$l_k <- log(par$k)
+    par$l_k <- unname(log(par$k))
     par$k <- NULL
 
     if(!is.null(map$k)){
-      if(length(map$k) != length(par$l_k)) stop("map$k should be of length 1.")
+      if(length(map$k) != length(par$l_k)) stop("map$k should be of length ", length(par$l_k), ".")
       map$l_k <- map$k
       map$k <- NULL
     }
@@ -390,10 +460,10 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     if(any(dim(par$vel) != dim(dat$Y))) stop("par$vel must have ", ncol(dat$Y), " rows and 2 columns")
     if(any(!is.finite(par$mu)) || any(!is.finite(par$vel))) stop("par$mu and/or par$vel must be finite")
 
-    par <- par[c("beta","log_sigma","log_gamma","log_lambda","mu","vel","l_psi","l_tau","l_rho_o","l_df","l_k")]
+    par <- par[.tmb_par_order]
   }
 
-  priors <- parse_priors(par, prior, spatialCovs)
+  priors <- parse_priors(par, prior, spatialCovs, map = map, obs_spec = obs_spec)
 
   if(!is.null(dat)){
     out <- list(par=par, map=map, re=re, priors=priors)
@@ -402,4 +472,96 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
   }
 
   return(out)
+}
+
+# Group names of grouped observation parameters that can be used in 'prior' (global element indices of unlist(par)):
+#   'l_tau.x', 'l_tau.y'                 x (y) element of tau of every group
+#   'l_tau.<g>', 'l_tau.x.<g>', 'l_tau.y.<g>'   tau of group <g> (x and y, x, y), e.g. 'l_tau.G', 'l_tau.x.3'
+#   'l_df.<g>', 'l_k.<g>'                df (k) of group <g>, e.g. 'l_df.B', 'l_k.epar'
+# '.' separates group names because positional element names ('l_tau_1', 'l_df_2') use '_' and classes include "1", "2", ...
+.prior_aliases <- function(par, obs_spec = NULL) {
+  off <- cumsum(c(0, lengths(par)))[seq_along(par)]
+  names(off) <- names(par)
+  al <- list()
+  if (!is.null(par$l_tau) && length(par$l_tau) %% 2 == 0) {
+    n <- length(par$l_tau)
+    xi <- unname(off["l_tau"]) + seq(1, n, by = 2)
+    yi <- xi + 1
+    al[["l_tau.x"]] <- xi
+    al[["l_tau.y"]] <- yi
+    labs <- obs_spec$tau_labels
+    if (!is.null(labs) && length(labs) == n / 2) {
+      for (j in seq_along(labs)) {
+        al[[paste0("l_tau.", labs[j])]] <- c(xi[j], yi[j])
+        al[[paste0("l_tau.x.", labs[j])]] <- xi[j]
+        al[[paste0("l_tau.y.", labs[j])]] <- yi[j]
+      }
+    }
+  }
+  for (nm in c("df", "k")) {
+    wn <- paste0("l_", nm)
+    labs <- obs_spec[[paste0(nm, "_labels")]]
+    if (!is.null(par[[wn]]) && !is.null(labs) && length(labs) == length(par[[wn]])) {
+      for (j in seq_along(labs)) al[[paste0(wn, ".", labs[j])]] <- unname(off[wn]) + j
+    }
+  }
+  al
+}
+
+# Estimated parameter of each element of unlist(par): "<name>:<map level>" (elements with the same value are tied),
+# NA if fixed by 'map', and "re" for the random effects (mu, vel), which are not checked.
+.prior_levels <- function(par, map = NULL) {
+  unlist(lapply(names(par), function(nm) {
+    n <- length(par[[nm]])
+    if (nm %in% c("mu", "vel")) return(rep("re", n))
+    m <- map[[nm]]
+    if (is.null(m)) return(paste0(nm, ":", seq_len(n)))
+    m <- as.character(m)
+    ifelse(is.na(m), NA_character_, paste0(nm, ":", m))
+  }), use.names = FALSE)
+}
+
+.prior_fixed_msg <- function(rn, wn, kind) {
+  what <- if (kind == "base" || identical(rn, wn)) paste0("'", wn, "'") else paste0("'", rn, "' (of '", wn, "')")
+  nat <- c(log_sigma = "sigma", log_gamma = "gamma", log_lambda = "lambda", l_psi = "psi", l_psi_maj = "psi_maj", l_b_maj = "b_maj",
+           l_b_min = "b_min", l_tau = "tau", l_rho_o = "rho_o", l_df = "df", l_k = "k", beta = "beta")[wn]
+  hint <- switch(wn,
+    l_df = " 'df' is only estimated if it is included in 'par' and some observations have obs_dist = \"t\".",
+    l_k = " 'k' is only estimated if it is included in 'par' and some observations have obs_dist = \"Huber\".",
+    l_psi_maj = , l_b_maj = , l_b_min = " The error ellipse power law parameters are only estimated if they are included in 'par'.",
+    l_psi = , l_tau = , l_rho_o = paste0(" '", nat, "' is only estimated if it is included in 'par'."),
+    log_gamma = " 'gamma' is not a parameter of the overdamped model.",
+    "")
+  paste0("A prior is specified for ", what, ", which is not estimated (fixed by 'map', or by default).", hint,
+         " Priors can only be specified for estimated parameters.")
+}
+
+# Names of the natural-scale parameters accepted in 'par' and 'map'
+.par_names_all <- c("beta","sigma","gamma","lambda","mu","vel","psi","psi_maj","b_maj","b_min","tau","rho_o","df","k")
+
+# Order of the working parameters of the TMB template
+.tmb_par_order <- c("beta","log_sigma","log_gamma","log_lambda","mu","vel","l_psi","l_psi_maj","l_b_maj","l_b_min",
+                    "l_tau","l_rho_o","l_df","l_k")
+
+# Fits saved by earlier versions lack parameters that were added to the template later (l_k for
+# obs_dist = "Huber"; l_psi_maj, l_b_maj, l_b_min for the error ellipse power law) and their prior
+# entries. Add them at their neutral values, fixed via map, so that the fit can be rebuilt with
+# the current template.
+.upgrade_tmb_setup <- function(ts) {
+  if (is.null(ts) || is.null(ts$parList) || is.null(ts$parList$mu)) return(ts)
+  defaults <- list(l_psi_maj = 0, l_b_maj = 0, l_b_min = 0, l_k = log(2))
+  missing_par <- setdiff(names(defaults), names(ts$parList))
+  if (!length(missing_par)) return(ts)
+  if (is.null(ts$map)) ts$map <- list()
+  for (nm in missing_par) {
+    ts$parList[[nm]] <- defaults[[nm]]
+    ts$map[[nm]] <- factor(NA)
+    if (!is.null(ts$priors) && is.null(ts$priors[[paste0("has_prior_", nm)]])) {
+      ts$priors[[paste0("has_prior_", nm)]] <- 0L
+      ts$priors[[paste0("prior_mean_", nm)]] <- NA_real_
+      ts$priors[[paste0("prior_sd_", nm)]] <- NA_real_
+    }
+  }
+  ts$parList <- ts$parList[c(intersect(.tmb_par_order, names(ts$parList)), setdiff(names(ts$parList), .tmb_par_order))]
+  ts
 }

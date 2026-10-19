@@ -25,7 +25,7 @@ test_that("prepBarrier on polygons gives the exact signed distance", {
   tmpl <- terra::rast(nrows = 20, ncols = 20, ext = c(0, 20, 0, 20), crs = "EPSG:32616")
   land <- sf::st_sf(geometry = sf::st_sfc(sf::st_polygon(list(rbind(c(-50, -50), c(7.3, -50), c(7.3, 70), c(-50, 70), c(-50, -50)))),
                                           crs = 32616))
-  sdf <- suppressMessages(prepBarrier(land, template = tmpl))
+  sdf <- suppressMessages(prepBarrier(land, template = tmpl, restricted = TRUE))
   expect_identical(attr(sdf, "barrierSource"), "polygons")
   xc <- terra::xFromCell(sdf, seq_len(terra::ncell(sdf)))
   expect_equal(as.numeric(terra::values(sdf)), xc - 7.3, tolerance = 1e-8)

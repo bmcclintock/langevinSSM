@@ -4,14 +4,14 @@
 \alias{prepBarrier}
 \title{Prepare a spatial barrier for Langevin models}
 \usage{
-prepBarrier(x, template = NULL, restricted = TRUE)
+prepBarrier(x, template = NULL, restricted = FALSE)
 }
 \arguments{
 \item{x}{Either a \code{\link[terra]{SpatRaster-class}} object containing a binary mask (values of \code{1} indicate allowed movement areas, e.g. water, and values of \code{0} restricted areas, e.g. land), or polygons (an \code{sf}, \code{sfc} or \code{\link[terra]{SpatVector-class}} object) delimiting the restricted (or, with \code{restricted = FALSE}, the allowed) area.}
 
 \item{template}{A \code{\link[terra]{SpatRaster-class}} defining the grid (extent, resolution and CRS) on which the SDF of polygons is computed. Required when \code{x} is polygons and ignored otherwise. Typically one of the habitat covariate rasters, so that the barrier shares their grid.}
 
-\item{restricted}{Logical. When \code{x} is polygons, do they delimit the restricted area (\code{TRUE}, default; e.g. land polygons for a marine animal) or the allowed area (\code{FALSE})?}
+\item{restricted}{Logical. When \code{x} is polygons, do they delimit the allowed area (\code{FALSE}, default) or the restricted area (\code{TRUE}; e.g. land polygons for a marine animal)?}
 }
 \value{
 A \code{\link[terra]{SpatRaster-class}} object (one layer named \code{"barrier"}) containing the signed distance field. Positive values represent distance into the allowed area; negative values represent distance into the restricted area. The object is assigned a \code{"barLangevin" = TRUE} attribute, and a \code{"barrierSource"} attribute (\code{"raster"} or \code{"polygons"}).

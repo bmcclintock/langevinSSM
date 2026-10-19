@@ -36,8 +36,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // measurementError_rcpp
-List measurementError_rcpp(DataFrame data, double smaj_sd, double smin_sd, NumericVector eor, double psi, int obs_dist, double df, bool knownError);
-RcppExport SEXP _langevinSSM_measurementError_rcpp(SEXP dataSEXP, SEXP smaj_sdSEXP, SEXP smin_sdSEXP, SEXP eorSEXP, SEXP psiSEXP, SEXP obs_distSEXP, SEXP dfSEXP, SEXP knownErrorSEXP) {
+List measurementError_rcpp(DataFrame data, double smaj_sd, double smin_sd, NumericVector eor, double psi, IntegerVector obs_dist, NumericVector df, bool knownError, bool ell_power, double psi_maj, double b_maj, double b_min, double ref_maj, double ref_min);
+RcppExport SEXP _langevinSSM_measurementError_rcpp(SEXP dataSEXP, SEXP smaj_sdSEXP, SEXP smin_sdSEXP, SEXP eorSEXP, SEXP psiSEXP, SEXP obs_distSEXP, SEXP dfSEXP, SEXP knownErrorSEXP, SEXP ell_powerSEXP, SEXP psi_majSEXP, SEXP b_majSEXP, SEXP b_minSEXP, SEXP ref_majSEXP, SEXP ref_minSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -46,15 +46,21 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type smin_sd(smin_sdSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type eor(eorSEXP);
     Rcpp::traits::input_parameter< double >::type psi(psiSEXP);
-    Rcpp::traits::input_parameter< int >::type obs_dist(obs_distSEXP);
-    Rcpp::traits::input_parameter< double >::type df(dfSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type obs_dist(obs_distSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type df(dfSEXP);
     Rcpp::traits::input_parameter< bool >::type knownError(knownErrorSEXP);
-    rcpp_result_gen = Rcpp::wrap(measurementError_rcpp(data, smaj_sd, smin_sd, eor, psi, obs_dist, df, knownError));
+    Rcpp::traits::input_parameter< bool >::type ell_power(ell_powerSEXP);
+    Rcpp::traits::input_parameter< double >::type psi_maj(psi_majSEXP);
+    Rcpp::traits::input_parameter< double >::type b_maj(b_majSEXP);
+    Rcpp::traits::input_parameter< double >::type b_min(b_minSEXP);
+    Rcpp::traits::input_parameter< double >::type ref_maj(ref_majSEXP);
+    Rcpp::traits::input_parameter< double >::type ref_min(ref_minSEXP);
+    rcpp_result_gen = Rcpp::wrap(measurementError_rcpp(data, smaj_sd, smin_sd, eor, psi, obs_dist, df, knownError, ell_power, psi_maj, b_maj, b_min, ref_maj, ref_min));
     return rcpp_result_gen;
 END_RCPP
 }
 // measurementError_LS_rcpp
-List measurementError_LS_rcpp(DataFrame data, double x_sd, double y_sd, double tau_x, double tau_y, double rho_o, int obs_dist, double df, bool knownError);
+List measurementError_LS_rcpp(DataFrame data, double x_sd, double y_sd, NumericVector tau_x, NumericVector tau_y, double rho_o, IntegerVector obs_dist, NumericVector df, bool knownError);
 RcppExport SEXP _langevinSSM_measurementError_LS_rcpp(SEXP dataSEXP, SEXP x_sdSEXP, SEXP y_sdSEXP, SEXP tau_xSEXP, SEXP tau_ySEXP, SEXP rho_oSEXP, SEXP obs_distSEXP, SEXP dfSEXP, SEXP knownErrorSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -62,11 +68,11 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< DataFrame >::type data(dataSEXP);
     Rcpp::traits::input_parameter< double >::type x_sd(x_sdSEXP);
     Rcpp::traits::input_parameter< double >::type y_sd(y_sdSEXP);
-    Rcpp::traits::input_parameter< double >::type tau_x(tau_xSEXP);
-    Rcpp::traits::input_parameter< double >::type tau_y(tau_ySEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type tau_x(tau_xSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type tau_y(tau_ySEXP);
     Rcpp::traits::input_parameter< double >::type rho_o(rho_oSEXP);
-    Rcpp::traits::input_parameter< int >::type obs_dist(obs_distSEXP);
-    Rcpp::traits::input_parameter< double >::type df(dfSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type obs_dist(obs_distSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type df(dfSEXP);
     Rcpp::traits::input_parameter< bool >::type knownError(knownErrorSEXP);
     rcpp_result_gen = Rcpp::wrap(measurementError_LS_rcpp(data, x_sd, y_sd, tau_x, tau_y, rho_o, obs_dist, df, knownError));
     return rcpp_result_gen;

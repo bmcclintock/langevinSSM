@@ -4,7 +4,7 @@
 #'
 #' @param x Either a \code{\link[terra]{SpatRaster-class}} object containing a binary mask (values of \code{1} indicate allowed movement areas, e.g. water, and values of \code{0} restricted areas, e.g. land), or polygons (an \code{sf}, \code{sfc} or \code{\link[terra]{SpatVector-class}} object) delimiting the restricted (or, with \code{restricted = FALSE}, the allowed) area.
 #' @param template A \code{\link[terra]{SpatRaster-class}} defining the grid (extent, resolution and CRS) on which the SDF of polygons is computed. Required when \code{x} is polygons and ignored otherwise. Typically one of the habitat covariate rasters, so that the barrier shares their grid.
-#' @param restricted Logical. When \code{x} is polygons, do they delimit the restricted area (\code{TRUE}, default; e.g. land polygons for a marine animal) or the allowed area (\code{FALSE})?
+#' @param restricted Logical. When \code{x} is polygons, do they delimit the allowed area (\code{FALSE}, default) or the restricted area (\code{TRUE}; e.g. land polygons for a marine animal)?
 #'
 #' @details
 #' The SDF \eqn{d} is the Euclidean distance to the boundary between the allowed and restricted areas, positive in the allowed area and negative in the restricted area. Its zero contour is the boundary itself, and \eqn{|\nabla d| = 1}. With \eqn{d} exact, the barrier force \eqn{-\lambda\min(d,0)\nabla d} is the penalization of Delporte et al. (2025), \eqn{-(x - \pi(x))/\lambda_D} with \eqn{\pi(x)} the projection onto the allowed area and \eqn{\lambda_D = 1/\lambda}.
@@ -21,7 +21,7 @@
 #' @export
 #' @importFrom stats na.omit
 #' @importFrom terra distance unique nlyr crs "crs<-" classify res ncell xyFromCell setValues rast is.lonlat
-prepBarrier <- function(x, template = NULL, restricted = TRUE) {
+prepBarrier <- function(x, template = NULL, restricted = FALSE) {
 
   if (inherits(x, c("sf", "sfc", "SpatVector"))) {
     sdf <- .sdf_polygons(x, template, restricted)

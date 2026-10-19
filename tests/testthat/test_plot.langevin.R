@@ -474,3 +474,68 @@ test_that("plot.resLangevin handles missing/invalid track IDs gracefully", {
   # It should successfully plot A, and skip C
   expect_named(p_list_mixed, c("A"))
 })
+
+# --- plot.resLangevin: 'by' and 'data' ---
+get_mock_data_lc <- function(res) {
+  data.frame(id = res$id, date = res$date, lc = rep(c("3", "2", "1", "0", "A", "B", "G", "G", "G", "G"), 10),
+             stringsAsFactors = FALSE)
+}
+
+test_that("plot.resLangevin plots by a variable taken from 'data'", {
+  res <- get_mock_resLangevin(); dat <- get_mock_data_lc(res)
+  p_list <- plot(res, by = "lc", data = dat)
+  expect_named(p_list, c("3", "2", "1", "0", "A", "B", "G"))
+  expect_s3_class(p_list$G$qq_x, "ggplot")
+  expect_equal(attr(p_list, "groups")$n, c(10, 10, 10, 10, 10, 10, 40))
+})
+
+test_that("plot.resLangevin combines levels into named groups", {
+  res <- get_mock_resLangevin(); dat <- get_mock_data_lc(res)
+  grp <- list("Argos 3/2/1" = c("3", "2", "1"), "Argos 0/A/B" = c("0", "A", "B"), GPS = "G")
+  p_list <- plot(res, by = list(lc = grp), data = dat)
+  expect_named(p_list, names(grp))
+  expect_equal(attr(p_list, "groups")$n, c(30, 30, 40))
+  expect_match(p_list[["Argos 3/2/1"]]$qq_x$labels$title, "lc: Argos 3/2/1", fixed = TRUE)
+
+  # levels not in any group are plotted separately
+  expect_message(p2 <- plot(res, by = list(lc = list(GPS = "G")), data = dat), "plotted separately")
+  expect_named(p2, c("GPS", "3", "2", "1", "0", "A", "B"))
+})
+
+test_that("plot.resLangevin plots by more than one variable", {
+  res <- get_mock_resLangevin(); dat <- get_mock_data_lc(res)
+  grp <- list(Argos = c("3", "2", "1", "0", "A", "B"), GPS = "G")
+  p_list <- plot(res, by = list("id", lc = grp), data = dat)
+  expect_named(p_list, c("Argos", "GPS"))
+  g <- attr(p_list, "groups")
+  expect_equal(names(g), c("lc", "n", "tracks"))
+  expect_equal(sum(g$n), 100)
+  expect_equal(names(plot(res, by = c("id", "lc"), data = dat))[1], "3")
+})
+
+test_that("plot.resLangevin combines 'tracks' with 'by'", {
+  res <- get_mock_resLangevin(); dat <- get_mock_data_lc(res)
+  p_list <- plot(res, by = "lc", data = dat, tracks = "B")
+  expect_true(all(attr(p_list, "groups")$id == "B"))
+  expect_equal(length(p_list), 7)
+})
+
+test_that("plot.resLangevin 'by' uses variables in the residuals without 'data'", {
+  res <- get_mock_resLangevin()
+  expect_named(plot(res, by = "id"), c("qq_x" ,   "qq_y" ,   "acf_x" ,  "acf_y" ,  "qq_mah" ,  "acf_mah"))
+})
+
+test_that("plot.resLangevin errors for unknown or invalid 'by'", {
+  res <- get_mock_resLangevin(); dat <- get_mock_data_lc(res)
+  expect_error(plot(res, by = "lc"), "not found in the resLangevin object")
+  expect_error(plot(res, by = c("id", "foo"), data = dat), "not found in the resLangevin object or in 'data': foo")
+  expect_error(plot(res, by = "lc", data = dat[-1, ]), "rows but the residuals have")
+  dat2 <- dat; dat2$id <- rev(dat2$id)
+  expect_error(plot(res, by = "lc", data = dat2), "'id' column of 'data' does not match")
+  expect_error(plot(res, by = list(lc = list(a = c("3", "2"), b = c("2", "1"))), data = dat), "more than one group")
+  expect_error(plot(res, by = list(lc = list(c("3"))), data = dat), "unique, non-empty names")
+  expect_error(plot(res, by = 3), "'by' must be")
+  expect_error(plot(res, by = c("lc", "lc"), data = dat), "Duplicated variable")
+  expect_warning(suppressMessages(plot(res, by = list(lc = list(x = c("3", "Q"))), data = dat)), "not found in the data: Q")
+  expect_warning(plot(res, data = dat), "only used with 'by'")
+})

@@ -20,9 +20,9 @@ initialValues(
 
 \item{model}{Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".}
 
-\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber''.}
+\item{obs_dist}{The measurement error distribution: ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber) for all observations, or a named character vector by error type (\code{"epar"}, \code{"sderr"}) and/or location class, e.g. \code{c(epar = "Huber", sderr = "Gaussian")}. See \code{\link{fitLangevin}}.}
 
-\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o","df","k"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
+\item{par}{A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","psi_maj","b_maj","b_min","tau","rho_o","df","k"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.}
 
 \item{spatialCovs}{A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.}
 
@@ -42,7 +42,8 @@ A list of initial parameter values, with names corresponding to the parameters u
 \item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.} If \code{vel} includes missing values (\code{NA}), these are filled in using linear interpolation.
 And, if provided in \code{par}, the following observation process parameters:
 \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
-\item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}
+\item{psi_maj, b_maj, b_min}{Numeric values for the scale of the semi-major axis and the exponents of the semi-major and semi-minor axes in the error ellipse power law (see \code{\link{fitLangevin}}).}
+\item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model, or a 2-row matrix (or named list) with one column per location class (and/or \code{"sderr"}).}
 \item{rho_o}{Numeric value for the correlation parameter in the LS/GPS error model. Must be >=0 and <1.}
 \item{df}{Numeric values for the degrees of freedom parameter for the t-distributed measurement error observation model.}
 }

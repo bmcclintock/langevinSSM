@@ -16,14 +16,17 @@
 #' @param log Logical. Indicates whether to plot the Utilization Distribution (UD) on the log scale (\code{TRUE}) or the probability scale (\code{FALSE}). For \code{plot.regLangevin}, the default is \code{FALSE}. For all other UD plotting methods, the default is \code{TRUE}. When plotting a \code{SpatRaster} that contains uncertainty metrics via \code{plotUD}, this argument also toggles the standard error layers between log-scale SE and natural-scale SE.
 #' @param extent Optional. A numeric vector of length 4 \code{c(xmin, xmax, ymin, ymax)} or a \code{\link[terra]{SpatExtent}} object defining the bounding box. If \code{NULL} (default), the extent is automatically calculated from the track data. If \code{extent} is not provided to \code{plot.fitLangevin} or \code{plot.simLangevin}, the UD is not normalized within the extent of the plot (it normalizes globally over the extent of \code{spatialCovs}).
 #' @param normalize Logical. If \code{TRUE}, the plotted utilization distribution (UD) is renormalized to the extent of the plot (either the provided \code{extent} or the automatically calculated one). If \code{FALSE} (default), the UD is normalized globally over the full extent of the provided \code{spatialCovs} regardless of the plot extent.
-#' @param data Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.
+#' @param data Optional \code{dataLangevin} object. For \code{plot.fitLangevin}, observed coordinates will be plotted beneath the estimated locations. For \code{plot.resLangevin}, the data used to compute the residuals (same rows, in the same order), from which \code{by} variables not in the residuals (e.g. \code{lc}) are taken.
 #' @param time Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.
 #' @param compact Logical indicating whether to plot all tracks on a single panel (\code{TRUE}, default) or plot each track separately (\code{FALSE}).
-#' @param tracks Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).
+#' @param tracks Optional (\code{plot.resLangevin} only). Without \code{by}: a vector of track IDs to plot separately, or \code{"all"} to plot each track individually; if \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots. With \code{by}: the track IDs to include (\code{NULL} or \code{"all"}: all tracks).
+#' @param by Optional (\code{plot.resLangevin} only). Variables by which the residuals are plotted separately. Either a character vector of variable names (e.g. \code{"lc"} or \code{c("id", "lc")}), or a list whose elements are variable names or named lists that combine levels into groups, e.g.
+#'   \code{by = list("id", lc = list("Argos 3/2/1" = c("3", "2", "1"), "Argos 0/A/B" = c("0", "A", "B"), GPS = "G"))}.
+#'   There is one set of plots per combination of the \code{by} variables other than \code{id}. If \code{by} includes \code{"id"}, each track is drawn as a separate line on the same plot (Q-Q plots against the identity line with a pointwise 95\% band, and ACFs, for the median track size); use \code{tracks} to choose the tracks. Levels not assigned to a group are plotted separately. Variables are taken from the \code{resLangevin} object (\code{id}, \code{date}) or, failing that, from \code{data}; an error is returned if a variable is in neither. Within a group, the ACF is computed over that group's residuals in time order, so its lags count observations of the group, not of the track. Default: \code{NULL}.
 #' @param maskRast \code{\link[terra]{SpatRaster-class}} object for areas to be masked out (set to \code{0}) before plotting the UD. Default: \code{NULL} (no mask).
 #' @param ... Additional arguments passed to internal plotting methods.
 #'
-#' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
+#' @return A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument. For \code{plot.resLangevin} with \code{by}, a named list (one element per combination of the \code{by} variables other than \code{id}, named by their values joined with \code{"."}) of lists of plots, with attribute \code{"groups"}: a data frame of the combinations, their number of rows and (if \code{by} includes \code{id}) of tracks. With \code{by = "id"} alone, a single list of plots.
 #'
 #' @name plot.langevin
 #' @importFrom terra as.data.frame nlyr time crop ext ifel mask trim compareGeom
@@ -313,9 +316,8 @@ plot.dataLangevin <- function(x, spatialCovs, extent = NULL, time = NULL, compac
 #' @method plot resLangevin
 #' @importFrom stats acf qnorm qchisq ppoints quantile dnorm dchisq na.omit
 #' @export
-plot.resLangevin <- function(x, tracks = NULL, ...) {
+plot.resLangevin <- function(x, tracks = NULL, by = NULL, data = NULL, ...) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
-
     stop("Package 'ggplot2' is required for plotting residuals. Please install it.")
   }
 
@@ -323,15 +325,12 @@ plot.resLangevin <- function(x, tracks = NULL, ...) {
   obs_dist <- attr(resids, "obs_dist")
   if (is.null(obs_dist)) obs_dist <- "Gaussian" # Fallback
 
-  if (is.null(tracks)) {
-    return(.generate_res_plots(resids, obs_dist = obs_dist))
-  } else {
-    if (length(tracks) == 1 && tracks[1] == "all") {
-      tracks_to_plot <- unique(resids$id)
-    } else {
-      tracks_to_plot <- tracks
-    }
+  if (!is.null(data) && is.null(by)) warning("'data' is only used with 'by'; it is ignored.", call. = FALSE)
 
+  # --- tracks only (original behaviour) ---
+  if (is.null(by)) {
+    if (is.null(tracks)) return(.generate_res_plots(resids, obs_dist = obs_dist))
+    tracks_to_plot <- if (length(tracks) == 1 && tracks[1] == "all") unique(resids$id) else tracks
     out_list <- list()
     for (trk in tracks_to_plot) {
       sub_data <- resids[resids$id == trk, ]
@@ -343,6 +342,191 @@ plot.resLangevin <- function(x, tracks = NULL, ...) {
     }
     return(out_list)
   }
+
+  # --- by: one set of plots per combination of the 'by' variables; 'id' in 'by' gives one line per track ---
+  g <- .res_by_groups(resids, by, data)
+  keep <- rep(TRUE, nrow(resids))
+  if (!is.null(tracks) && !(length(tracks) == 1 && tracks[1] == "all")) {
+    for (trk in setdiff(as.character(tracks), as.character(resids$id))) warning("No data found for track ID: ", trk, ". Skipping this track.")
+    keep <- as.character(resids$id) %in% as.character(tracks)
+  }
+  by_track <- "id" %in% names(g)
+  g_panel <- g[setdiff(names(g), "id")]
+  keep <- keep & !Reduce(`|`, lapply(g, is.na), init = rep(FALSE, nrow(resids)))
+  if (!any(keep)) return(list())
+  trk <- factor(as.character(resids$id), levels = unique(as.character(resids$id)))
+
+  make <- function(rows, suffix) {
+    if (by_track) .generate_res_plots_by_track(resids[rows, ], trk[rows], suffix, obs_dist = obs_dist)
+    else .generate_res_plots(resids[rows, ], suffix, obs_dist = obs_dist)
+  }
+  if (!length(g_panel)) return(make(which(keep), ""))   # by = "id": a single set of plots, one line per track
+
+  cell <- interaction(g_panel, sep = "\r", lex.order = TRUE, drop = TRUE)
+  cell[!keep] <- NA
+  cell <- droplevels(cell)
+  out_list <- list(); grp <- NULL
+  for (lv in levels(cell)) {
+    rows <- which(cell == lv)
+    vals <- strsplit(lv, "\r", fixed = TRUE)[[1]]
+    out_list[[paste(vals, collapse = ".")]] <- make(rows, paste0(" - ", paste0(names(g_panel), ": ", vals, collapse = ", ")))
+    z <- as.data.frame(as.list(vals), stringsAsFactors = FALSE); names(z) <- names(g_panel)
+    z$n <- length(rows); if (by_track) z$tracks <- length(unique(trk[rows])); grp <- rbind(grp, z)
+  }
+  attr(out_list, "groups") <- grp
+  out_list
+}
+
+# --- Internal helpers for plot.resLangevin(by = "id"): one line per track on each plot ---
+
+# apply f(values, track name) to each track and stack the results (tracks with too few values return NULL)
+.per_track <- function(x, track, f) {
+  s <- split(x, droplevels(track))
+  out <- do.call(rbind, lapply(names(s), function(k) { d <- f(s[[k]]); if (!is.null(d)) d$track <- k; d }))
+  if (!is.null(out)) out$track <- factor(out$track, levels = levels(droplevels(track)))
+  out
+}
+
+.make_qq_tracks <- function(x, track, title, dist = c("norm", "chisq2")) {
+  dist <- match.arg(dist)
+  q <- if (dist == "norm") stats::qnorm else function(p) stats::qchisq(p, df = 2)
+  dq <- if (dist == "norm") stats::dnorm else function(z) stats::dchisq(z, df = 2)
+  df <- .per_track(x, track, function(v) {
+    v <- sort(v[is.finite(v)]); if (length(v) < 2) return(NULL)
+    data.frame(theoretical = q(stats::ppoints(length(v))), sample = v)
+  })
+  if (is.null(df)) return(NULL)
+  # pointwise 95% band of the order statistics about the identity line, for the median track size
+  n <- max(2, round(stats::median(table(df$track)[table(df$track) > 0])))
+  p <- stats::ppoints(n); z <- q(p); se <- sqrt(p * (1 - p) / n) / dq(z)
+  band <- data.frame(theoretical = z, lower = z - 1.96 * se, upper = z + 1.96 * se)
+
+  ggplot2::ggplot(df, ggplot2::aes(x = theoretical, y = sample)) +
+    ggplot2::geom_ribbon(data = band, ggplot2::aes(x = theoretical, ymin = lower, ymax = upper), inherit.aes = FALSE, fill = "grey80", alpha = 0.7) +
+    ggplot2::geom_abline(intercept = 0, slope = 1, colour = "black") +
+    ggplot2::geom_line(ggplot2::aes(colour = track, group = track), linewidth = 0.4) +
+    ggplot2::labs(title = title, colour = "track",
+                  x = if (dist == "norm") "Theoretical Quantiles" else "Theoretical Quantiles (Chi-sq, df=2)",
+                  y = if (dist == "norm") "Sample Quantiles" else "Sample Squared Mahalan Distance") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = if (nlevels(df$track) > 30) "none" else "right")
+}
+
+.make_acf_tracks <- function(x, track, title) {
+  df <- .per_track(x, track, function(v) {
+    v <- stats::na.omit(v); if (length(v) < 3) return(NULL)
+    a <- stats::acf(v, plot = FALSE)
+    data.frame(lag = a$lag[, 1, 1], acf = a$acf[, 1, 1], n = a$n.used)
+  })
+  if (is.null(df)) return(NULL)
+  clim <- stats::qnorm(0.975) / sqrt(stats::median(df$n[df$lag == 0]))   # for the median track size
+  ggplot2::ggplot(df, ggplot2::aes(x = lag, y = acf, colour = track, group = track)) +
+    ggplot2::geom_hline(yintercept = c(0, -clim, clim), colour = c("black", "blue", "blue"), linetype = c("solid", "dashed", "dashed")) +
+    ggplot2::geom_line(linewidth = 0.4) + ggplot2::geom_point(size = 0.8) +
+    ggplot2::labs(title = title, x = "Lag", y = "ACF", colour = "track") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = if (nlevels(df$track) > 30) "none" else "right")
+}
+
+.generate_res_plots_by_track <- function(data_subset, track, title_suffix = "", obs_dist = "Gaussian") {
+  rx <- data_subset$residual.x; ry <- data_subset$residual.y
+  out <- list(
+    qq_x = .make_qq_tracks(rx, track, paste0("Normal Q-Q Plot: x residuals", title_suffix)),
+    qq_y = .make_qq_tracks(ry, track, paste0("Normal Q-Q Plot: y residuals", title_suffix)),
+    acf_x = .make_acf_tracks(rx, track, paste0("ACF: x residuals", title_suffix)),
+    acf_y = .make_acf_tracks(ry, track, paste0("ACF: y residuals", title_suffix))
+  )
+  if (.non_gaussian(obs_dist)) return(out)
+  ok <- !is.na(rx) & !is.na(ry)
+  D2 <- rx^2 + ry^2; D2[!ok] <- NA
+  c(out, list(qq_mah = .make_qq_tracks(D2, track, paste0("Mahalanobis Q-Q Plot", title_suffix), dist = "chisq2"),
+              acf_mah = .make_acf_tracks(D2, track, paste0("ACF: Mahalanobis Distance", title_suffix))))
+}
+
+# --- Internal helper for plot.resLangevin(by = ): one factor per 'by' variable, aligned with the residual rows ---
+.res_by_groups <- function(resids, by, data = NULL) {
+  if (is.character(by)) by <- as.list(by)
+  if (!is.list(by) || !length(by)) {
+    stop("'by' must be a character vector of variable names, or a list whose elements are variable names or ",
+         "named lists of level groups, e.g. by = list(\"id\", lc = list(\"Argos 3/2/1\" = c(\"3\", \"2\", \"1\"), ",
+         "\"Argos 0/A/B\" = c(\"0\", \"A\", \"B\"), GPS = \"G\")).", call. = FALSE)
+  }
+  nm <- names(by); if (is.null(nm)) nm <- rep("", length(by))
+  vars <- character(length(by)); combos <- vector("list", length(by))
+  for (i in seq_along(by)) {
+    el <- by[[i]]
+    if (is.character(el) && length(el) == 1 && nm[i] == "") {
+      vars[i] <- el
+    } else if (is.list(el) && nm[i] != "") {
+      vars[i] <- nm[i]; combos[[i]] <- el
+    } else {
+      stop("Element ", i, " of 'by' must be a single variable name, or a named list of level groups (named by the variable).", call. = FALSE)
+    }
+  }
+  if (anyNA(vars) || any(vars == "")) stop("'by' contains an empty variable name.", call. = FALSE)
+  if ("id" %in% vars && !is.null(combos[[match("id", vars)]])) {
+    stop("'id' in 'by' plots each track as a separate line and cannot be grouped; use 'tracks' to choose the tracks.", call. = FALSE)
+  }
+  if (anyDuplicated(vars)) stop("Duplicated variable(s) in 'by': ", paste(unique(vars[duplicated(vars)]), collapse = ", "), ".", call. = FALSE)
+
+  # 'data' must line up row by row with the residuals
+  if (!is.null(data)) {
+    if (!is.data.frame(data)) stop("'data' must be the dataLangevin object (or data frame) used to compute the residuals.", call. = FALSE)
+    if (nrow(data) != nrow(resids)) {
+      stop("'data' has ", nrow(data), " rows but the residuals have ", nrow(resids),
+           ". Supply the data used to compute the residuals.", call. = FALSE)
+    }
+    if ("id" %in% names(data) && !identical(as.character(data$id), as.character(resids$id))) {
+      stop("The 'id' column of 'data' does not match the residuals row by row. Supply the data used to compute the residuals.", call. = FALSE)
+    }
+    if ("date" %in% names(data) && "date" %in% names(resids) &&
+        !isTRUE(all.equal(as.numeric(data$date), as.numeric(resids$date), check.attributes = FALSE))) {
+      stop("The 'date' column of 'data' does not match the residuals row by row. Supply the data used to compute the residuals.", call. = FALSE)
+    }
+  }
+
+  found_res <- vars %in% names(resids)
+  found_dat <- if (is.null(data)) rep(FALSE, length(vars)) else vars %in% names(data)
+  missing <- vars[!found_res & !found_dat]
+  if (length(missing)) {
+    stop("'by' variable(s) not found in the resLangevin object", if (is.null(data)) " ('data' not supplied)" else " or in 'data'",
+         ": ", paste(missing, collapse = ", "), ". Available: ",
+         paste(unique(c(setdiff(names(resids), c("residual.x", "residual.y")), if (!is.null(data)) names(data))), collapse = ", "), ".", call. = FALSE)
+  }
+
+  out <- vector("list", length(vars)); names(out) <- vars
+  for (i in seq_along(vars)) {
+    v <- if (found_res[i]) resids[[vars[i]]] else data[[vars[i]]]
+    lev <- if (is.factor(v)) levels(v) else unique(as.character(v[!is.na(v)]))
+    v <- as.character(v)
+    if (!is.null(combos[[i]])) {
+      cmb <- combos[[i]]
+      if (is.null(names(cmb)) || any(names(cmb) == "") || anyDuplicated(names(cmb))) {
+        stop("The level groups for '", vars[i], "' must have unique, non-empty names.", call. = FALSE)
+      }
+      members <- lapply(cmb, as.character)
+      dup <- unique(unlist(members)[duplicated(unlist(members))])
+      if (length(dup)) stop("Level(s) of '", vars[i], "' assigned to more than one group: ", paste(dup, collapse = ", "), ".", call. = FALSE)
+      absent <- setdiff(unlist(members), v)
+      if (length(absent)) warning("Level(s) of '", vars[i], "' not found in the data: ", paste(absent, collapse = ", "), ".", call. = FALSE)
+      newv <- rep(NA_character_, length(v))
+      for (k in names(members)) newv[v %in% members[[k]]] <- k
+      rest <- setdiff(lev, unlist(members))
+      if (length(rest) && any(v %in% rest)) {
+        message("Level(s) of '", vars[i], "' not in any group are plotted separately: ", paste(rest, collapse = ", "), ".")
+        newv[v %in% rest] <- v[v %in% rest]
+      }
+      out[[i]] <- factor(newv, levels = unique(c(names(members), rest)))
+    } else {
+      out[[i]] <- factor(v, levels = lev)
+    }
+    if (all(is.na(out[[i]]))) stop("'by' variable '", vars[i], "' has only missing values.", call. = FALSE)
+    # rows without residuals (e.g. first observation, or waypoints inserted by routeTracks) are dropped silently
+    has_res <- !is.na(resids$residual.x) | !is.na(resids$residual.y)
+    n_na <- sum(is.na(out[[i]]) & has_res)
+    if (n_na) warning(n_na, " residual(s) with missing '", vars[i], "' are excluded.", call. = FALSE)
+  }
+  out
 }
 
 # --- Shared Internal Helpers for Regional Probability Plotting ---
@@ -730,7 +914,7 @@ plotUD <- function(x, log = TRUE, extent = NULL, time = NULL, ...) {
   p_acf_x <- .make_acf_plot(res_x_full, paste0("ACF: x residuals", title_suffix))
   p_acf_y <- .make_acf_plot(res_y_full, paste0("ACF: y residuals", title_suffix))
 
-  if (obs_dist %in% c("t", "Huber")) {
+  if (.non_gaussian(obs_dist)) {
     return(list(
       qq_x = p_qq_x, qq_y = p_qq_y,
       acf_x = p_acf_x, acf_y = p_acf_y

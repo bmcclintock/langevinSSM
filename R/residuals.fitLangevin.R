@@ -102,6 +102,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     dat$obs_mod[valid_locs] <- 0L
 
     dat$K <- matrix(1.0, nrow = length(dat$ID), ncol = 2)
+    dat$tau_group <- integer(length(dat$ID))
 
     # Scale pseudo-error to typical step's process standard deviation
     sigma_est <- unname(exp(object$par["log_sigma"]))
@@ -132,7 +133,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     par_to_pass <- object$par[!(names(object$par) %in% c("l_tau", "l_rho_o"))]
   }
   # ---- choose / check the OSA method ----
-  is_t <- !is.null(cond$obs_dist) && cond$obs_dist %in% c("t", "Huber") && has_measurement_error
+  is_t <- .non_gaussian(cond$obs_dist) && has_measurement_error
   gaussian_methods <- c("oneStepGaussianOffMode", "oneStepGaussian", "fullGaussian")
   if (is.null(method)) {
     method <- if (is_t) "oneStepGeneric" else "oneStepGaussianOffMode"
@@ -140,7 +141,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     method <- match.arg(method, c(gaussian_methods, "oneStepGeneric", "cdf"))
     if (is_t && method %in% gaussian_methods)
       warning("method = '", method, "' assumes a Gaussian one-step predictive distribution, but the model ",
-              "has non-Gaussian measurement error (obs_dist = '", cond$obs_dist, "'). The residuals will not be N(0,1) even ",
+              "has non-Gaussian measurement error (obs_dist = '", .fmt_obs_dist(cond$obs_dist), "'). The residuals will not be N(0,1) even ",
               "if the model is correct (inflated variance, wrong tails), and goodness-of-fit tests will be ",
               "unreliable. Use method = 'oneStepGeneric' or 'cdf' instead.", call. = FALSE)
   }
@@ -185,6 +186,10 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     t_dat$K <- t_dat$K[track_idx, , drop = FALSE]
     t_dat$isd <- t_dat$isd[track_idx]
     t_dat$obs_mod <- t_dat$obs_mod[track_idx]
+    t_dat$tau_group <- t_dat$tau_group[track_idx]
+    t_dat$dist_obs <- t_dat$dist_obs[track_idx]
+    t_dat$df_group <- t_dat$df_group[track_idx]
+    t_dat$k_group <- t_dat$k_group[track_idx]
     t_dat$ID <- t_dat$ID[track_idx]
     t_dat$nbObs <- t_dat$nbObs[track_idx]
 
@@ -402,7 +407,7 @@ residuals.fitLangevin <- function(object, data, spatialCovs, method = NULL, trac
     tests_df <- gof_tests(res_df)
 
     # Exclude Mahalanobis distance tests for the t and Huber models (D^2 is not chi^2_2 there)
-    if (!is.null(cond$obs_dist) && cond$obs_dist %in% c("t", "Huber")) {
+    if (.non_gaussian(cond$obs_dist)) {
       tests_df <- tests_df[!grepl("mah", tests_df$metric, ignore.case = TRUE), ]
     }
 

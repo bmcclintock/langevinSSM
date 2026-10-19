@@ -9,7 +9,8 @@ hierLangevin(
   mpl = FALSE,
   id_col_name = "id",
   silent = FALSE,
-  control = list(trace = 0, iter.max = 1000, eval.max = 1000)
+  control = list(trace = 0, iter.max = 1000, eval.max = 1000),
+  params = "movement"
 )
 }
 \arguments{
@@ -40,6 +41,17 @@ information. Default: \code{FALSE}.}
 
 \item{control}{List controlling the outer \code{\link[stats]{nlminb}}
 optimization. Default: \code{list(trace = 0, iter.max = 1000, eval.max = 1000)}.}
+
+\item{params}{Which Stage I working-scale parameters to pool. \code{"movement"} (default): the
+habitat selection coefficients (\code{beta_*}), \code{log_sigma}, \code{log_gamma} and, if estimated,
+\code{log_lambda}. Observation process parameters (\code{l_psi}, \code{l_tau}, \code{l_df}, etc.)
+are then treated as individual-specific nuisance parameters: they are not pooled, and individuals
+may be fitted with different observation models (e.g. a simpler one for short tracks). The pooled
+parameters' marginal Stage I covariance (the corresponding block of the Hessian-based covariance)
+is used, so their uncertainty includes that of the individual's observation parameters.
+\code{"all"}: pool every working-scale parameter (all individuals must then have identical
+working-scale parameter names). A character vector of working-scale parameter names
+(e.g. \code{c("beta_bathy", "log_sigma")}) pools just those, which every individual must have.}
 }
 \value{
 An object of class \code{hierLangevin}, a list containing:
@@ -73,6 +85,10 @@ Stage II fits the model:
 \deqn{\hat\theta_i \sim \mathrm{MVN}(\mu + u_i, \hat S_i), \quad u_i \sim \mathrm{N}(0, D)}
 with \eqn{\hat S_i} treated as \strong{fixed/known} and \eqn{D} a diagonal
 matrix of between-individual variances.
+
+\strong{Observation models:} by default (\code{params = "movement"}) only the movement
+and habitat selection parameters are pooled, so each individual's observation (measurement error)
+parameters can be estimated separately, and with a different observation model if needed.
 
 \strong{Barriers:} if the Stage I fits include a \code{barrier}, all
 individuals must have been fitted with the same barrier and the same

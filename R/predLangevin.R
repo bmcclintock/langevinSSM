@@ -34,13 +34,18 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   )
   if (fit$conditions$model == "underdamped") par_mle$gamma <- exp(parList$log_gamma)
 
+  # all observation parameters that differ from the defaults (estimated or fixed by the user) are frozen at their
+  # values in the fit, with the same location-class / observation-type groups
+  spec <- .cond_obs_spec(fit$conditions)
   parNames <- names(fit$par)
-  if ("l_psi" %in% parNames) par_mle$psi <- exp(parList$l_psi)
-  if ("l_tau" %in% parNames) par_mle$tau <- exp(parList$l_tau)
-  if ("l_rho_o" %in% parNames) par_mle$rho_o <- 2 / (1 + exp(-parList$l_rho_o)) - 1
-  obs_dist <- if (is.null(fit$conditions$obs_dist)) "Gaussian" else fit$conditions$obs_dist
-  if (obs_dist == "t" && !is.null(parList$l_df)) par_mle$df <- exp(parList$l_df)
-  if (obs_dist == "Huber" && !is.null(parList$l_k)) par_mle$k <- exp(parList$l_k)
+  free_or_set <- function(wn, default) wn %in% parNames || (!is.null(parList[[wn]]) && any(abs(parList[[wn]] - default) > 0))
+  if (free_or_set("l_psi", 0)) par_mle$psi <- exp(parList$l_psi)
+  if (isTRUE(spec$ell_power)) for (nm in .ell_par_names) par_mle[[nm]] <- exp(parList[[paste0("l_", nm)]])
+  if (free_or_set("l_tau", 0) || !is.null(spec$tau_labels)) par_mle$tau <- .label_obs_par("tau", exp(parList$l_tau), spec)
+  if (free_or_set("l_rho_o", 0)) par_mle$rho_o <- 2 / (1 + exp(-parList$l_rho_o)) - 1
+  obs_dist <- .norm_obs_dist(fit$conditions$obs_dist)
+  if ("t" %in% obs_dist && !is.null(parList$l_df)) par_mle$df <- .label_obs_par("df", exp(parList$l_df), spec)
+  if ("Huber" %in% obs_dist && !is.null(parList$l_k)) par_mle$k <- .label_obs_par("k", exp(parList$l_k), spec)
 
   if (!is.null(args$par$mu)) par_mle$mu <- args$par$mu
   if (fit$conditions$model == "underdamped" && !is.null(args$par$vel)) {
@@ -53,10 +58,11 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   )
   if (fit$conditions$model == "underdamped") map$gamma <- factor(NA)
   if ("psi" %in% names(par_mle)) map$psi <- factor(NA)
+  for (nm in .ell_par_names) if (nm %in% names(par_mle)) map[[nm]] <- factor(NA)
   if ("tau" %in% names(par_mle)) map$tau <- factor(rep(NA, length(par_mle$tau)))
   if ("rho_o" %in% names(par_mle)) map$rho_o <- factor(NA)
-  if ("df" %in% names(par_mle)) map$df <- factor(NA)
-  if ("k" %in% names(par_mle)) map$k <- factor(NA)
+  if ("df" %in% names(par_mle)) map$df <- factor(rep(NA, length(par_mle$df)))
+  if ("k" %in% names(par_mle)) map$k <- factor(rep(NA, length(par_mle$k)))
 
   if (!is.null(args$map$mu)) map$mu <- args$map$mu
   if (!is.null(args$map$vel)) map$vel <- args$map$vel
@@ -64,6 +70,8 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   args$data <- data
   # reuse the fit's smoothing radius rather than re-deriving it from the padded prediction data
   if (isTRUE(fit$conditions$smoothGradient)) attr(args$data, "smoothPar") <- .cond_smoothPar(fit$conditions, fit)
+  # reuse the fit's reference lengths of the error ellipse power law
+  if (isTRUE(spec$ell_power)) attr(args$data, "ell_ref") <- spec$ell_ref
   args$spatialCovs <- spatialCovs
   args$model <- fit$conditions$model
   args$obs_dist <- obs_dist
@@ -83,7 +91,13 @@ predLangevin <- function(fit, data, spatialCovs, ...) {
   args$npoints <- fit$conditions$npoints
   args$curweight <- fit$conditions$curweight
   args$zetaScale <- fit$conditions$zetaScale
-  args$prior <- fit$conditions$prior
+  # all fixed effects are frozen, so only priors on the random effects (mu, vel) apply
+  pr <- fit$conditions$prior
+  if (!is.null(pr)) {
+    pr <- pr[grepl("^(mu|vel)($|\\.)", rownames(pr)), , drop = FALSE]
+    if (!nrow(pr)) pr <- NULL
+  }
+  args$prior <- pr
 
   message("   Running post-hoc prediction via TMB inner optimization...")
 

@@ -7,11 +7,11 @@
 #' @param model Can be either a character string specifying the model to simulate from scratch (\code{"underdamped"} or \code{"overdamped"}), or a fitted Langevin model object of class \code{fitLangevin} (as returned by \code{\link{fitLangevin}}).
 #' @param ... Additional arguments passed to the specific methods.
 #'
-#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber; see \code{\link{fitLangevin}}).
+#' @param obs_dist The measurement error distribution: ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber) for all observations, or a named character vector by error type (\code{"epar"}, \code{"sderr"}) and/or location class, e.g. \code{c(epar = "Huber", sderr = "Gaussian")}. See \code{\link{fitLangevin}}.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #'
-#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. If \code{obs_dist = "Huber"}, this can also include \code{k}. See \code{\link{fitLangevin}}.
+#' @param par List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{psi_maj}, \code{b_maj}, \code{b_min} (error ellipses), \code{tau} (which can be specified by location class when \code{measurementError} is an EMF data frame), and \code{rho_o}. If (some) observations have \code{obs_dist = "t"}, this can also include \code{df}; if \code{obs_dist = "Huber"}, \code{k} (either can be given by error type and/or location class). See \code{\link{fitLangevin}}.
 #' @param barrierOnset Onset length of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). \code{0} (default) gives the quadratic potential \eqn{\min(d,0)^2/2}. See \code{\link{fitLangevin}}. Stored in \code{attr(, "barrierOnset")} so that \code{fitLangevin(barrierOnset = NULL)} uses the same value.
 #' @param lambda Barrier strength. Either \code{"tied"} (default) or a non-negative number. With \code{"tied"} the barrier is a hard wall, defined exactly as in \code{\link{fitLangevin}}: at every simulation step the spring constant is the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed from the true \code{sigma} and \code{gamma}. A number gives a soft wall of that fixed stiffness (e.g. for simulation studies of animals that do enter the restricted zone). Ignored if \code{barrier = NULL}. See Details.
 #' @param grad Interpolation used for the covariate surfaces (and the barrier distance) whose gradients give the habitat force: \code{"quintic"} (default), \code{"cubic"} or \code{"bilinear"}. See \code{\link{fitLangevin}}. When simulating from a fitted model, the fit's setting is used.
@@ -173,14 +173,14 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   tied <- .is_tied_lambda(lambda)
   if (!tied) .validate_lambda(lambda)
   orig_spatialCovs <- spatialCovs
-  obs_dist <- match.arg(obs_dist)
+  obs_dist <- .norm_obs_dist(obs_dist)
 
   # --- 1. Pre-Validate Observation Error Parameters vs Measurement Error Structure ---
   if (!is.null(measurementError)) {
     if (is.data.frame(measurementError)) {
       # Data frame implies Location Quality Classes (EMF), which maps to LS
-      if ("psi" %in% names(par)) {
-        stop("Cannot specify 'psi' in 'par' because 'measurementError' is a data frame configured for EMF, which generates LS/GPS observations, not error ellipses.")
+      if (any(c("psi", .ell_par_names) %in% names(par))) {
+        stop("Cannot specify 'psi', 'psi_maj', 'b_maj' or 'b_min' in 'par' because 'measurementError' is a data frame configured for EMF, which generates LS/GPS observations, not error ellipses.")
       }
     } else if (is.list(measurementError)) {
       has_KF_sim <- all(c("smaj.sd", "smin.sd") %in% names(measurementError))
@@ -190,8 +190,8 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
         stop("Cannot provide both Argos KF (smaj.sd, smin.sd) and LS/GPS (x.sd, y.sd) error parameters in 'measurementError'.")
       }
 
-      if (has_LS_sim && ("psi" %in% names(par))) {
-        stop("Cannot specify 'psi' in 'par' because the 'measurementError' list is configured for LS/GPS observations (x.sd, y.sd), not error ellipses.")
+      if (has_LS_sim && any(c("psi", .ell_par_names) %in% names(par))) {
+        stop("Cannot specify 'psi', 'psi_maj', 'b_maj' or 'b_min' in 'par' because the 'measurementError' list is configured for LS/GPS observations (x.sd, y.sd), not error ellipses.")
       }
 
       if (has_KF_sim && any(c("tau", "rho_o") %in% names(par))) {
@@ -200,16 +200,16 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     }
   } else {
     # If measurementError is NULL, no errors will be generated.
-    if (any(c("psi", "tau", "rho_o") %in% names(par))) {
-      stop("Cannot specify observation error parameters ('psi', 'tau', 'rho_o') in 'par' when 'measurementError = NULL'.")
+    if (any(c("psi", .ell_par_names, "tau", "rho_o") %in% names(par))) {
+      stop("Cannot specify observation error parameters ('psi', 'psi_maj', 'b_maj', 'b_min', 'tau', 'rho_o') in 'par' when 'measurementError = NULL'.")
     }
   }
 
-  if (obs_dist != "t" && "df" %in% names(par)) {
-    stop("Cannot specify 'df' in 'par' unless obs_dist = 't'.")
+  if (!"t" %in% obs_dist && "df" %in% names(par)) {
+    stop("Cannot specify 'df' in 'par' unless obs_dist = 't' (for at least some observations).")
   }
-  if (obs_dist != "Huber" && "k" %in% names(par)) {
-    stop("Cannot specify 'k' in 'par' unless obs_dist = 'Huber'.")
+  if (!"Huber" %in% obs_dist && "k" %in% names(par)) {
+    stop("Cannot specify 'k' in 'par' unless obs_dist = 'Huber' (for at least some observations).")
   }
   # ---------------------------------------------------------------------------------
 
@@ -237,6 +237,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   if(!is.finite(obsPerAnimal) || obsPerAnimal < 1) stop("obsPerAnimal should be at least 1.")
   if(!is.finite(timeStep) || timeStep <= 0) stop("timeStep should be greater than zero.")
 
+  obs_par <- par[intersect(names(par), c("psi", .ell_par_names, "tau", "rho_o", "df", "k"))]   # natural scale, with any location-class groups
   par <- checkPar(par, model, spatialCovs = spatialCovs)$par
   gamma <- if(!is.null(par$log_gamma)) exp(par$log_gamma) else 1
   sigma <- exp(par$log_sigma)
@@ -316,7 +317,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
   class(out) <- c("dataLangevin", class(out))
 
   if(!is.null(measurementError)) {
-    out <- addMeasurementError(out, par, measurementError = measurementError, obs_dist = obs_dist)
+    out <- addMeasurementError(out, obs_par, measurementError = measurementError, obs_dist = obs_dist)
   } else {
     out <- out %>% dplyr::mutate(x = mu.x, y = mu.y, smaj = NA, smin = NA, eor = NA, x.err = NA, y.err = NA)
   }
@@ -407,7 +408,7 @@ simLangevin.fitLangevin <- function(model,
   coord <- cond$coord
   scaleFactor <- cond$scaleFactor
   lambda <- cond$lambda
-  obs_dist <- ifelse(is.null(cond$obs_dist), "Gaussian", cond$obs_dist)
+  obs_dist <- .norm_obs_dist(cond$obs_dist)
 
   tied <- identical(cond$lambda_mode, "tied")
   if(!is.null(lambda) && !tied){
@@ -434,13 +435,13 @@ simLangevin.fitLangevin <- function(model,
                           cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
                           obs_dist, barrier_sdf = barrier_sdf, lambda = la$lambda, lambda_mode = la$lambda_mode,
                           grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, fit),
-                          barrierOnset = .cond_onset(cond))
+                          barrierOnset = .cond_onset(cond), obs_spec = .cond_obs_spec(cond))
   } else {
     dat <- build_tmb_data(data, spatialCovs, cond$model, coord, scaleFactor,
                           cond$smoothGradient, cond$npoints, cond$curweight, cond$zetaScale,
                           obs_dist, barrier_sdf = barrier_sdf, lambda = lambda,
                           grad = .cond_grad(cond), smoothPar = .cond_smoothPar(cond, fit),
-                          barrierOnset = .cond_onset(cond))
+                          barrierOnset = .cond_onset(cond), obs_spec = .cond_obs_spec(cond))
   }
 
   dat <- c(dat, fit$tmb_setup$priors)
@@ -511,16 +512,21 @@ simLangevin.fitLangevin <- function(model,
   vel_working <- if (fit$conditions$model == "underdamped") t(matrix(par_drawn$vel, nrow = 2)) else NULL
 
   # Construct natural parameters using the scaled sigma
+  spec <- .cond_obs_spec(cond)
   nat_par <- list(
     beta = par_drawn$beta,
     sigma = exp(par_drawn$log_sigma) * scaleFactor, # original scale sigma
     gamma = if(!is.null(par_drawn$log_gamma)) exp(par_drawn$log_gamma) else 1,
     psi = if(!is.null(par_drawn$l_psi)) exp(par_drawn$l_psi) else 1,
-    tau = if(!is.null(par_drawn$l_tau)) exp(par_drawn$l_tau) else c(1, 1),
+    tau = .label_obs_par("tau", if(!is.null(par_drawn$l_tau)) exp(par_drawn$l_tau) else c(1, 1), spec),
     rho_o = if(!is.null(par_drawn$l_rho_o)) 2/(1 + exp(-par_drawn$l_rho_o)) - 1 else 0,
-    df = if(!is.null(par_drawn$l_df)) exp(par_drawn$l_df) else 5,
-    k = if(!is.null(par_drawn$l_k)) exp(par_drawn$l_k) else 2
+    df = .label_obs_par("df", if(!is.null(par_drawn$l_df)) exp(par_drawn$l_df) else 5, spec),
+    k = .label_obs_par("k", if(!is.null(par_drawn$l_k)) exp(par_drawn$l_k) else 2, spec)
   )
+  if (isTRUE(spec$ell_power)) {
+    for (nm in .ell_par_names) nat_par[[nm]] <- exp(par_drawn[[paste0("l_", nm)]])
+    attr(nat_par, "ell_ref") <- spec$ell_ref
+  }
 
   sigma_working <- exp(par_drawn$log_sigma)
 

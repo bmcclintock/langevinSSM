@@ -4,8 +4,8 @@
 #'
 #' @param data A data frame of class \code{dataLangevin} containing the formatted tracking data. See \code{\link{formatData}}.
 #' @param model Character string specifying the movement model to be fitted. Must be either "underdamped" or "overdamped". Default: "underdamped".
-#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber''.
-#' @param par A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o","df","k"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.
+#' @param obs_dist The measurement error distribution: ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber) for all observations, or a named character vector by error type (\code{"epar"}, \code{"sderr"}) and/or location class, e.g. \code{c(epar = "Huber", sderr = "Gaussian")}. See \code{\link{fitLangevin}}.
+#' @param par A list of initial parameter values. The names of the list should be a subset of c("beta","sigma","gamma","lambda","mu","vel","psi","psi_maj","b_maj","b_min","tau","rho_o","df","k"). If a parameter is not included in the list, an empirical estimate will be used as the initial value. See Details. Default: NULL.
 #' @param spatialCovs A list of \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates to be included in the model. The order of the covariates in the list should match the order of the coefficients in \code{par$beta}.
 #' @param coord Character vector of length 2 specifying the column names for the coordinates in the \code{data} data frame. Default: c("x", "y").
 #' @param type Character string indicating the initialization strategy for the movement parameters \code{sigma} and \code{gamma}. Can be "variogram" (default), "neutral", or "empirical". See Details.
@@ -19,7 +19,8 @@
 #' \item{vel}{Numeric matrix of initial values for the true velocities of the animals (only for the underdamped model). Should have the same number of rows as the number of observations in the data and 2 columns for the x and y velocity components.} If \code{vel} includes missing values (\code{NA}), these are filled in using linear interpolation.
 #' And, if provided in \code{par}, the following observation process parameters:
 #' \item{psi}{Numeric value for the scaling factor of the Argos KF error ellipse model.}
-#' \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model.}
+#' \item{psi_maj, b_maj, b_min}{Numeric values for the scale of the semi-major axis and the exponents of the semi-major and semi-minor axes in the error ellipse power law (see \code{\link{fitLangevin}}).}
+#' \item{tau}{Numeric vector of length 2 for the scaling factors of the x and y standard deviations in the LS/GPS error model, or a 2-row matrix (or named list) with one column per location class (and/or \code{"sderr"}).}
 #' \item{rho_o}{Numeric value for the correlation parameter in the LS/GPS error model. Must be >=0 and <1.}
 #' \item{df}{Numeric values for the degrees of freedom parameter for the t-distributed measurement error observation model.}
 #' @details
@@ -50,14 +51,14 @@
 initialValues <- function(data, model=c("underdamped","overdamped"), obs_dist = c("Gaussian", "t", "Huber"), par, spatialCovs, coord = c("x","y"), type = c("variogram", "neutral", "empirical"), lambda = NULL){
 
   model <- match.arg(model)
-  obs_dist <- match.arg(obs_dist)
+  obs_dist <- .norm_obs_dist(obs_dist)
   type <- match.arg(type)
   estimate_lambda <- identical(lambda, "estimate")
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
   if(!missing(par)){
     if(!is.list(par)) stop("par must be a list.")
-    else if(!all(names(par) %in% c("beta","sigma","gamma","lambda","mu","vel","psi","tau","rho_o","df","k"))) stop("names(par) is limited to c('beta','sigma','gamma','lambda','mu','vel','psi','tau','rho_o','df','k')")
+    else if(!all(names(par) %in% .par_names_all)) stop("names(par) is limited to c(", paste0("'", .par_names_all, "'", collapse = ","), ")")
 
     if (!estimate_lambda && "lambda" %in% names(par)) {
       stop("Cannot specify par$lambda unless a barrier is specified and lambda = \"estimate\".")
@@ -66,8 +67,8 @@ initialValues <- function(data, model=c("underdamped","overdamped"), obs_dist = 
     has_ee <- any(!is.na(data$smaj))
     has_ls <- any(!is.na(data$x.err))
 
-    if (!has_ee && "psi" %in% names(par)) {
-      stop("Cannot specify par$psi because the data do not contain error ellipse observations ('smaj', 'smin', 'eor').")
+    if (!has_ee && any(c("psi", .ell_par_names) %in% names(par))) {
+      stop("Cannot specify par$psi, par$psi_maj, par$b_maj or par$b_min because the data do not contain error ellipse observations ('smaj', 'smin', 'eor').")
     }
     if (!has_ls && any(c("tau", "rho_o") %in% names(par))) {
       stop("Cannot specify par$tau or par$rho_o because the data do not contain standard error observations ('x.err', 'y.err').")
@@ -75,11 +76,11 @@ initialValues <- function(data, model=c("underdamped","overdamped"), obs_dist = 
     if (model == "overdamped" && any(c("gamma", "vel") %in% names(par))) {
       stop("Cannot specify par$gamma or par$vel when model = 'overdamped'.")
     }
-    if (obs_dist!="t" && (("df" %in% names(par)))) {
-      stop("Cannot specify 'df' in 'par' unless obs_dist = 't'.")
+    if (!"t" %in% obs_dist && (("df" %in% names(par)))) {
+      stop("Cannot specify 'df' in 'par' unless obs_dist = 't' (for at least some observations).")
     }
-    if (obs_dist!="Huber" && (("k" %in% names(par)))) {
-      stop("Cannot specify 'k' in 'par' unless obs_dist = 'Huber'.")
+    if (!"Huber" %in% obs_dist && (("k" %in% names(par)))) {
+      stop("Cannot specify 'k' in 'par' unless obs_dist = 'Huber' (for at least some observations).")
     }
   } else par <- list()
 

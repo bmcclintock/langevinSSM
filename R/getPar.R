@@ -5,7 +5,7 @@
 #'
 #' @param fit A \code{fitLangevin} object.
 #'
-#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{lambda} (if the barrier strength was estimated, i.e. \code{lambda = "estimate"}), \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{tau}, \code{rho_o}, \code{df}, \code{k}) that were estimated).
+#' @return A list of natural scale parameter estimates (e.g., \code{beta}, \code{sigma}, \code{gamma}, \code{lambda} (if the barrier strength was estimated, i.e. \code{lambda = "estimate"}), \code{mu}, \code{vel} and any observation error parameters (e.g., \code{psi}, \code{psi_maj}, \code{b_maj}, \code{b_min}, \code{tau}, \code{rho_o}, \code{df}, \code{k}) that were estimated). Parameters specified by location class (or observation type) in \code{\link{fitLangevin}} are returned in the same form: \code{tau} as a 2-row matrix with one column per location class, \code{df} or \code{k} as a named vector.
 #' @export
 getPar <- function(fit) {
 
@@ -41,20 +41,24 @@ getPar <- function(fit) {
     par_out$lambda <- exp(parList$log_lambda) / scaleFactor^2
   }
 
+  spec <- .cond_obs_spec(fit$conditions)
   if ("l_psi" %in% active_pars) {
     par_out$psi <- exp(parList$l_psi)
   }
+  for (nm in .ell_par_names) {
+    if (paste0("l_", nm) %in% active_pars) par_out[[nm]] <- exp(parList[[paste0("l_", nm)]])
+  }
   if ("l_tau" %in% active_pars) {
-    par_out$tau <- exp(parList$l_tau)
+    par_out$tau <- .label_obs_par("tau", exp(parList$l_tau), spec)
   }
   if ("l_rho_o" %in% active_pars) {
     par_out$rho_o <- 2 / (1 + exp(-parList$l_rho_o)) - 1
   }
   if ("l_df" %in% active_pars) {
-    par_out$df <- exp(parList$l_df)
+    par_out$df <- .label_obs_par("df", exp(parList$l_df), spec)
   }
   if ("l_k" %in% active_pars) {
-    par_out$k <- exp(parList$l_k)
+    par_out$k <- .label_obs_par("k", exp(parList$l_k), spec)
   }
 
   par_out$mu <- unname(as.matrix(t(parList$mu) * scaleFactor))

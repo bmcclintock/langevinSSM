@@ -278,3 +278,37 @@ test_that("getUD and regionProb integrate over the pooled lambda of a hierLangev
   # manual lambda = "estimate" without a pooled fit is rejected
   expect_error(getUD(covs, beta = 1, barrier = "coast", lambda = "estimate", plot = FALSE), "only supported for hierLangevin")
 })
+
+test_that("hierLangevin pools movement parameters only by default, allowing different observation models", {
+  mv <- c("beta_cov1", "log_sigma", "log_gamma")
+  mk <- function(id, obs, vals, cov_extra = 0.3) {
+    nm <- c(mv, obs); p <- length(nm)
+    S <- diag(c(rep(0.1^2, 3), rep(0.2^2, length(obs))), p); S[1, 4] <- S[4, 1] <- 0.01 * cov_extra
+    dimnames(S) <- list(nm, nm)
+    structure(list(estimates = list(working = data.frame(Estimate = c(vals, rep(0.1, length(obs))), row.names = nm)),
+                   covariance = list(working = S),
+                   conditions = list(model = "underdamped", ids = id, barrier = "coast", lambda = 100, scaleFactor = 1000)),
+              class = "fitLangevin")
+  }
+  fl <- list(a = mk("a", c("l_psi", "l_tau", "l_df"), c(-1.0, 1.5, -0.5)),
+             b = mk("b", c("l_psi", "l_tau"),         c(-1.2, 1.6, -0.4)),
+             c = mk("c", c("l_tau"),                  c(-0.8, 1.4, -0.6)))
+  h <- suppressWarnings(hierLangevin(fl, silent = TRUE))
+  expect_s3_class(h, "hierLangevin")
+  expect_equal(h$conditions$param_names, mv)
+  expect_equal(rownames(h$estimates$working), c(paste0("mu_", mv), paste0("sd_", mv)))
+  # pooling only the movement block is identical to fitting fits that contain only that block
+  strip <- lapply(fl, function(f) { f$estimates$working <- f$estimates$working[mv, , drop = FALSE]
+                                    f$covariance$working <- f$covariance$working[mv, mv]; f })
+  h2 <- suppressWarnings(hierLangevin(strip, silent = TRUE))
+  expect_equal(h$estimates$working, h2$estimates$working, tolerance = 1e-8)
+  # "all" requires identical observation models
+  expect_error(hierLangevin(fl, params = "all", silent = TRUE), "do not match")
+  # explicit subset
+  h3 <- suppressWarnings(hierLangevin(fl, params = c("beta_cov1", "log_sigma"), silent = TRUE))
+  expect_equal(h3$conditions$param_names, c("beta_cov1", "log_sigma"))
+  expect_error(hierLangevin(fl, params = c("log_sigma", "l_df"), silent = TRUE), "do not match")
+  # non-finite Stage I covariance is caught
+  bad <- fl; bad$b$covariance$working[2, 2] <- NaN
+  expect_error(hierLangevin(bad, silent = TRUE), "not finite")
+})

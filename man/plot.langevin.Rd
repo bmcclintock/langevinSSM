@@ -46,7 +46,7 @@
   ...
 )
 
-\method{plot}{resLangevin}(x, tracks = NULL, ...)
+\method{plot}{resLangevin}(x, tracks = NULL, by = NULL, data = NULL, ...)
 
 \method{plot}{regLangevin}(x, extent = NULL, log = FALSE, ...)
 
@@ -63,7 +63,7 @@ plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 
 \item{normalize}{Logical. If \code{TRUE}, the plotted utilization distribution (UD) is renormalized to the extent of the plot (either the provided \code{extent} or the automatically calculated one). If \code{FALSE} (default), the UD is normalized globally over the full extent of the provided \code{spatialCovs} regardless of the plot extent.}
 
-\item{data}{Optional \code{dataLangevin} object (for \code{fitLangevin} only). If provided, observed coordinates will be plotted beneath the estimated locations.}
+\item{data}{Optional \code{dataLangevin} object. For \code{plot.fitLangevin}, observed coordinates will be plotted beneath the estimated locations. For \code{plot.resLangevin}, the data used to compute the residuals (same rows, in the same order), from which \code{by} variables not in the residuals (e.g. \code{lc}) are taken.}
 
 \item{time}{Optional. Indicates which layer(s) of a dynamic UD or covariate to plot. Can be a numeric index, a layer name, or a \code{POSIXct}/\code{Date} object. If \code{NULL} (default), all layers are plotted.}
 
@@ -75,10 +75,14 @@ plotUD(x, log = TRUE, extent = NULL, time = NULL, ...)
 
 \item{beta}{Optional numeric vector of habitat selection coefficients (for \code{simLangevin} only). Must match the length of \code{spatialCovs} minus the barrier (if present). If provided, plots the UD instead of individual covariates.}
 
-\item{tracks}{Optional. Vector of track IDs to plot separately, or \code{"all"} to plot each track individually. If \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots (used only for \code{plot.resLangevin}).}
+\item{tracks}{Optional (\code{plot.resLangevin} only). Without \code{by}: a vector of track IDs to plot separately, or \code{"all"} to plot each track individually; if \code{NULL} (default), residuals for all tracks are aggregated into a single set of plots. With \code{by}: the track IDs to include (\code{NULL} or \code{"all"}: all tracks).}
+
+\item{by}{Optional (\code{plot.resLangevin} only). Variables by which the residuals are plotted separately. Either a character vector of variable names (e.g. \code{"lc"} or \code{c("id", "lc")}), or a list whose elements are variable names or named lists that combine levels into groups, e.g.
+\code{by = list("id", lc = list("Argos 3/2/1" = c("3", "2", "1"), "Argos 0/A/B" = c("0", "A", "B"), GPS = "G"))}.
+There is one set of plots per combination of the \code{by} variables other than \code{id}. If \code{by} includes \code{"id"}, each track is drawn as a separate line on the same plot (Q-Q plots against the identity line with a pointwise 95\% band, and ACFs, for the median track size); use \code{tracks} to choose the tracks. Levels not assigned to a group are plotted separately. Variables are taken from the \code{resLangevin} object (\code{id}, \code{date}) or, failing that, from \code{data}; an error is returned if a variable is in neither. Within a group, the ACF is computed over that group's residuals in time order, so its lags count observations of the group, not of the track. Default: \code{NULL}.}
 }
 \value{
-A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument.
+A \code{\link[ggplot2]{ggplot}} object, or a list of \code{ggplot} objects depending on the input type and \code{compact} or \code{tracks} argument. For \code{plot.resLangevin} with \code{by}, a named list (one element per combination of the \code{by} variables other than \code{id}, named by their values joined with \code{"."}) of lists of plots, with attribute \code{"groups"}: a data frame of the combinations, their number of rows and (if \code{by} includes \code{id}) of tracks. With \code{by = "id"} alone, a single list of plots.
 }
 \description{
 These methods plot objects associated with the \code{langevinSSM} package using \code{ggplot2}.

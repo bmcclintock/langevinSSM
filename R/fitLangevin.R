@@ -1,4 +1,4 @@
-build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = NULL, lambda = NULL, lambda_mode = 0L, grad = "quintic", smoothPar = NULL, barrierOnset = 0) {
+build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = NULL, lambda = NULL, lambda_mode = 0L, grad = "quintic", smoothPar = NULL, barrierOnset = 0, obs_spec = NULL) {
   if (!is.null(barrier_sdf)) {
     barrier_dist_mat <- terra::as.matrix(barrier_sdf, wide = TRUE) / scaleFactor
     # lambda is on the natural scale; the template works in coordinates / scaleFactor (lambda * scaleFactor^2)
@@ -20,7 +20,7 @@ build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothG
 
   dat <- list(
     process_model = ifelse(model == "underdamped", 1, 0),
-    obs_dist = match(obs_dist, c("Gaussian", "t", "Huber")) - 1L,
+    obs_dist = .obs_dist_flag(obs_dist),
     Y = t(data[, coord]) / scaleFactor,
     times = track_times,
     delta_t = data$dt
@@ -54,13 +54,15 @@ build_tmb_data <- function(data, spatialCovs, model, coord, scaleFactor, smoothG
   pos_dt <- dat$delta_t[dat$delta_t > 1.e-6]
   dat$median_dt <- if (length(pos_dt)) stats::median(pos_dt) else 1
   dat$spline_degree <- .grad_degree(grad)
+  # distribution of each observation, observation groups (tau, df, k) and error ellipse power law
+  dat <- c(dat, .obs_spec_data(obs_spec, data, coord, scaleFactor, obs_dist))
   dat <- c(dat, raster_data)
 
   return(dat)
 }
 
 # --- Helper: Extract and Format TMB Estimates ---
-extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFactor, spatialCovs, getJointPrecision) {
+extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFactor, spatialCovs, getJointPrecision, obs_spec = NULL) {
   estimates <- list()
   covariance <- list()
 
@@ -82,7 +84,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 
     # 2. natural scale
     rep_vals <- obj$report()
-    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi","df","k")
+    nat_names <- c("beta", "sigma", "gamma", "rho_o", "tau", "psi", "psi_maj", "b_maj", "b_min", "df", "k")
     if (isTRUE(obj$env$data$lambda_mode > 0)) nat_names <- c(nat_names, "lambda")
     existing_names <- nat_names[nat_names %in% names(rep_vals)]
     nat_list <- lapply(existing_names, function(nm) rep_vals[[nm]])
@@ -185,10 +187,23 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
         }
       }
 
-      # 2. Map Tau Names: tau_1 and tau_2
+      # 2. Map Tau Names: tau_1 and tau_2 (shared), or tau_<class>_1 and tau_<class>_2 by location class
       tau_idx <- which(rn == "tau" | grepl("^tau(_|[.])", rn))
-      if (length(tau_idx) == 2) {
+      tl <- obs_spec$tau_labels
+      if (est_type == "natural" && !is.null(tl) && length(tau_idx) == 2 * length(tl)) {
+        rn[tau_idx] <- paste0("tau_", rep(tl, each = 2), "_", 1:2)
+      } else if (length(tau_idx) == 2) {
         rn[tau_idx] <- c("tau_1", "tau_2")
+      }
+
+      # 3. df / k by group (error type or location class)
+      if (est_type == "natural") {
+        for (nm in c("df", "k")) {
+          gl <- obs_spec[[paste0(nm, "_labels")]]
+          if (is.null(gl)) next
+          idx <- which(rn == nm | grepl(paste0("^", nm, "[._][0-9]+$"), rn))
+          if (length(idx) == length(gl)) rn[idx] <- paste0(nm, "_", gl)
+        }
       }
 
       rownames(estimates[[est_type]]) <- rn
@@ -204,15 +219,15 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'
 #' @param data \code{dataLangevin} object. See \code{\link{formatData}}.
 #' @param model Character string indicating which Langevin diffusion model to fit (``underdamped'', or ``overdamped''). Default: ``underdamped''.
-#' @param obs_dist Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber; see Details).
+#' @param obs_dist The measurement error distribution: ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber; see Details) for all observations, or a named character vector (or list) giving the distribution by error type and/or location quality class, e.g. \code{c(epar = "Huber", sderr = "Gaussian")} or \code{c(sderr = "Gaussian", B = "t")}. The names are those used by \code{\link{formatData}}: \code{"epar"} (observations with an error ellipse), \code{"sderr"} (observations with x- and y-axis standard errors), and the location classes (\code{"3"}, \code{"2"}, \code{"1"}, \code{"0"}, \code{"A"}, \code{"B"}, \code{"Z"}, \code{"G"}, \code{"GL"}). See ``Distributions and parameters by error type or location class'' in Details.
 #' @param spatialCovs List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).
 #' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma''). If \code{lambda = "estimate"}, \code{par} can also include the initial barrier strength (``lambda'', natural scale; default: the stability limit used by \code{lambda = "tied"} at the median time step, see \code{\link{initialValues}}), which can be fixed using \code{map = list(lambda = factor(NA))}. ``lambda'' cannot be included in \code{par} otherwise.
-#' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). If \code{obs_dist = "Huber"}, they include the threshold (``k''). All parameters are specified on their natural scale and are converted to working scale internally.
-#' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = 1, ``tau'' = 1, ``rho_o'' = 0, ``df'' = 5, and ``k'' = 2) via \code{map}. See Details.
-#' @param lambda Barrier strength. One of: \code{"tied"} (default), a non-negative number (fixed), or \code{"estimate"}. With \code{"tied"} the barrier is treated as a hard wall: at every time step \eqn{t} the spring constant is set to the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed inside the likelihood from the current \code{sigma} and \code{gamma} (see Details), so \eqn{\lambda} is not a free parameter and the wall becomes harder automatically as the time step shrinks. A number fixes \eqn{\lambda} (a soft wall of known stiffness, e.g. data simulated by \code{\link{simLangevin}}); \code{"estimate"} treats \eqn{\log\lambda} as a free parameter (only identifiable when observed locations actually enter the restricted zone), with its starting value given by \code{par$lambda}. Numeric values, \code{par$lambda}, and the reported estimates are all on the natural scale (units of 1/distance^2 in the units of the coordinates) and do not depend on \code{scaleFactor}. If \code{NULL}, the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"tied"}.
+#' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), the scale of the semi-major axis and the exponents of the semi-major and semi-minor axes of the error ellipse power law (``psi_maj'', ``b_maj'', ``b_min''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If (some) observations have \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). If (some) observations have \code{obs_dist = "Huber"}, they include the threshold (``k''). ``tau'', ``df'' and ``k'' can be shared or specified by error type and/or location class (see Details). All parameters are specified on their natural scale and are converted to working scale internally.
+#' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = ``psi_maj'' = ``b_maj'' = ``b_min'' = 1, ``tau'' = 1, ``rho_o'' = 0, ``df'' = 5, and ``k'' = 2, all shared by every observation) via \code{map}. See Details.
+#' @param lambda Barrier strength. One of: \code{"tied"} (default), a non-negative number (fixed), or \code{"estimate"}. With \code{"tied"} the barrier is treated as a hard wall: at every time step \eqn{t} the spring constant is set to the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed inside the likelihood from the current \code{sigma} and \code{gamma} (see Details), so \eqn{\lambda} is not a free parameter and the wall becomes harder automatically as the time step shrinks. A number fixes \eqn{\lambda} (a soft wall of known stiffness, e.g. data simulated by \code{\link{simLangevin}}); \code{"estimate"} treats \eqn{\log\lambda} as a free parameter (only identifiable when animals actually enter the restricted zone), with its starting value given by \code{par$lambda}. Numeric values, \code{par$lambda}, and the reported estimates are all on the natural scale (units of 1/distance^2 in the units of the coordinates) and do not depend on \code{scaleFactor}. If \code{NULL}, the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"tied"}.
 #' @param barrierOnset Onset length \eqn{\ell} of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). With \code{0} the potential is \eqn{B(d) = \min(d,0)^2/2} (the penalty of Delporte et al. 2025), whose force is continuous at the boundary but whose curvature jumps from 0 to \eqn{\lambda}. With \eqn{\ell > 0} the force rises smoothly (\eqn{C^4}) from zero at the boundary over the first \eqn{\ell} of the restricted side and is thereafter the quadratic wall shifted by \eqn{\ell/2}; the allowed side is unaffected. A small positive onset (e.g., one cell) makes the Laplace approximation better behaved when many (smoothed) locations lie close to the boundary, and is a natural way to encode positional uncertainty of the boundary itself. It is not a fixed quantity and should be chosen for the species and data: for animals that should never be on the restricted side (e.g., whales at a coastline) it is a numerical device of the order of the raster resolution or coastline accuracy; for animals that legitimately use the restricted side (e.g., pinnipeds hauling out on land) a larger value (or a soft, estimated \code{lambda}) is more appropriate. Ignored without a barrier. If \code{NULL} (default), the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{0}. See Details.
-#' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}, or \code{"log_lambda"} when \code{lambda = "estimate"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Default: \code{NULL} (no priors).
+#' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}, or \code{"log_lambda"} when \code{lambda = "estimate"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Observation process parameters use their working scale names (\code{"l_psi"}, \code{"l_psi_maj"}, \code{"l_b_maj"}, \code{"l_b_min"}, \code{"l_tau"}, \code{"l_rho_o"}, \code{"l_df"}, \code{"l_k"}). Elements of grouped observation parameters (see Details) can be targeted by position (e.g., \code{"l_tau_3"}, the x element of the second \code{tau} group, or \code{"l_df_2"}) or by group name, using \code{"."} as separator: \code{"l_tau.G"} (x and y elements of the \code{tau} of location class G), \code{"l_tau.x.G"} or \code{"l_tau.y.G"} (one element), \code{"l_tau.x"} or \code{"l_tau.y"} (the x or y element of every group), \code{"l_df.B"}, \code{"l_k.epar"}. Priors can only be specified for estimated parameters: a row whose parameter (or element) is fixed, either by \code{map} or by default because it is not included in \code{par} or not used by the model (e.g., \code{"l_df"} without t-distributed observations, or \code{"l_b_maj"} without the error ellipse power law), is an error, and a base or group name only applies to its estimated elements. Elements tied by \code{map} (e.g., \code{map = list(tau = factor(c(1, 1)))}) are a single estimated parameter and receive the prior once; if their rows of \code{prior} differ, the prior of the first element is used with a warning. Default: \code{NULL} (no priors).
 #' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
 #' @param coord Character vector identifying the coordinate names for the location data. Default: \code{c("x","y")}.
 #' @param scaleFactor Internal scaling factor for the coordinates and parameters. In some cases, setting \code{scaleFactor>1} can help with optimization.
@@ -251,9 +266,10 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' or a bivariate Student's t-distribution (\code{obs_dist = "t"}) to better handle heavy-tailed observation outliers:
 #' \deqn{(x,y) \sim t_{\nu}((\mu_x,\mu_y), \Sigma),}
 #' where \eqn{(x,y)} are the observed locations, \eqn{(\mu_x,\mu_y)} are the true (latent) locations, \eqn{\Sigma} is the observation error covariance matrix, and \eqn{\nu} represents the degrees of freedom (\code{df} parameter).
+#'
 #' or a bivariate pseudo-Huber (hyperbolic) distribution (\code{obs_dist = "Huber"}):
 #' \deqn{f(x,y) = \frac{\exp\{-k\sqrt{k^2 + d^2} + k^2\}}{2\pi|\Sigma|^{1/2}(1 + 1/k^2)}, \qquad d^2 = (x-\mu_x, y-\mu_y)\Sigma^{-1}(x-\mu_x, y-\mu_y)^\top,}
-#' which is approximately Gaussian for Mahalanobis distances \eqn{d \ll k} and has exponential (Laplace-like) tails for \eqn{d \gg k}, so outliers have bounded influence on the latent locations. The threshold \eqn{k > 0} (\code{k} parameter) can be estimated; as \eqn{k \to \infty} the model tends to the Gaussian. Unlike the t-distribution, \eqn{-\log f} is a convex function of \eqn{(\mu_x,\mu_y)}. The observation model therefore never makes the inner (latent state) optimization non-convex. The tails are lighter than those of the t-distribution, so very large outliers are down-weighted less strongly.
+#' which is approximately Gaussian for Mahalanobis distances \eqn{d \ll k} and has exponential (Laplace-like) tails for \eqn{d \gg k}, so outliers have bounded influence on the latent locations. The threshold \eqn{k > 0} (\code{k} parameter) can be estimated; as \eqn{k \to \infty} the model tends to the Gaussian. Unlike the t-distribution, \eqn{-\log f} is a convex function of \eqn{(\mu_x,\mu_y)}. The observation model therefore never makes the inner optimization non-convex. The tails are lighter than those of the t-distribution, so very large outliers are down-weighted less strongly.
 #' \itemize{
 #'   \item \strong{Error Ellipse Model (Argos Kalman Filter):} This model is used when error ellipse data (\code{smaj}, \code{smin}, and \code{eor}) are present for an observation. The (optional) observation process parameter \code{psi} acts as a scaling multiplier specifically on the semi-minor axis (\code{smin}) to account for uncertainty in the error ellipse.
 #'   For the error ellipse model, \eqn{\Sigma} is derived from the semi-major axis, semi-minor axis, and error ellipse orientation (see McClintock et al. 2015), with \eqn{\psi} (\code{psi}) scaling the semi-minor axis:
@@ -266,15 +282,35 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' }
 #' Whenever a coordinate is \code{NA} (either present in the original dataset or introduced via the \code{predTimes} argument in \code{\link{formatData}}), \code{fitLangevin} skips the evaluation of the observation error model for that time step. Instead, it relies solely on the Langevin diffusion state process model to predict the true (latent) location.
 #'
-#' \strong{Observation Process Parameters (\code{psi}, \code{tau}, \code{rho_o}, \code{df}):}
+#' \strong{Error ellipse power law (\code{psi_maj}, \code{b_maj}, \code{b_min}):}
+#' Argos Kalman filter error ellipses are often poorly calibrated: the realised error does not grow in proportion to the reported axes (large ellipses overstate and small ellipses understate the error). The reported axes can therefore be replaced by
+#' \deqn{M^* = \psi_{maj}\, M_0 (M/M_0)^{b_{maj}}, \qquad m^* = \psi\, m_0 (m/m_0)^{b_{min}},}
+#' in \eqn{\Sigma} above, where \eqn{M_0} and \eqn{m_0} are fixed reference lengths (the geometric means of the reported semi-major and semi-minor axes, stored in \code{fit$conditions$obs_spec$ell_ref}), so that \eqn{\psi_{maj}} and \eqn{\psi} are the scale factors of a typical ellipse and do not depend on the units of the coordinates or on \code{scaleFactor}. With \eqn{\psi_{maj} = b_{maj} = b_{min} = 1} (the default) this is the model above. An exponent below 1 means the realised error grows less than proportionally with the reported axis. Any of the three parameters can be estimated by including it in \code{par} (e.g., \code{par = list(psi = 1, psi_maj = 1, b_maj = 1, b_min = 1)}); including any of them switches on the power law (\code{psi} then scales the semi-minor axis at its reference length). They require error ellipse observations with \code{smaj > 0} and \code{smin > 0}.
+#'
+#' \strong{Distributions and parameters by error type or location class (\code{obs_dist}, \code{tau}, \code{df}, \code{k}):}
+#' By default one distribution (\code{obs_dist}), one \code{tau} (x and y; for observations with x- and y-axis errors), and one \code{df} or \code{k} are shared by all observations. Each of these can instead be given as a named vector (or list), with the names used by \code{\link{formatData}}:
+#' \itemize{
+#'   \item \code{"epar"}: observations with an error ellipse (\code{smaj}, \code{smin}, \code{eor}; e.g. Argos Kalman filter);
+#'   \item \code{"sderr"}: observations with x- and y-axis standard errors (\code{x.err}, \code{y.err}; e.g. GPS, Argos least squares, or errors filled from \code{emf} by location class);
+#'   \item a location quality class (\code{"3"}, \code{"2"}, \code{"1"}, \code{"0"}, \code{"A"}, \code{"B"}, \code{"Z"}, \code{"G"}, \code{"GL"}; the \code{lc} column).
+#' }
+#' An observation uses the entry for its location class if there is one, and otherwise the entry for its error type. The error types alone therefore suffice for data without location classes, and a few classes can be singled out without listing all of them. Every observation with measurement error must be covered (an error is returned otherwise). Examples:
+#' \itemize{
+#'   \item \code{obs_dist = c(epar = "Huber", sderr = "Gaussian")}: Gaussian GPS (x/y-error) and pseudo-Huber error ellipse observations.
+#'   \item \code{obs_dist = c(sderr = "Gaussian", "0" = "t", A = "t", B = "t")}, with \code{par = list(df = c(sderr = 10, B = 3))}: Gaussian errors except for location classes 0, A and B, which are t-distributed, with one \code{df} for classes 0 and A and another for B. (\code{df} and \code{k} groups only cover the observations that use the t and pseudo-Huber distributions, respectively; here \code{"sderr"} is the fallback entry for the t-distributed observations of classes 0 and A.)
+#'   \item \code{par = list(tau = list("3" = 1, "2" = 1, "1" = 1, "0" = 1, A = 1, B = 1, G = 1))}: one error scale per location class for observations with x- and y-axis errors (e.g. Argos least squares), as an estimated alternative to error multiplication factors from \code{\link{getEMF}}. \code{tau} only applies to \code{"sderr"} observations, so its names are location classes and \code{"sderr"} (the fallback). It can also be given as a 2-row matrix (rows x and y) with one named column per group. A list element of length 1 is used for both x and y.
+#' }
+#' Groups can be tied or fixed with \code{map} in the usual way, one entry per element in the same order (for \code{tau}, column by column, i.e. x then y for each class; a named list with one entry of length 1 or 2 per class is also accepted). For example, \code{map = list(tau = factor(c(1, 1, 2, 2, 3, 3)))} for three classes estimates one \code{tau} per class shared by x and y. Groups without observations should be fixed (a warning is given otherwise, because they are not identifiable). Estimates are reported as \code{tau_<class>_1}, \code{tau_<class>_2}, \code{df_<group>} and \code{k_<group>}, and \code{\link{getPar}} returns them in the same form as \code{par}.
+#'
+#' \strong{Observation Process Parameters (\code{psi}, \code{psi_maj}, \code{b_maj}, \code{b_min}, \code{tau}, \code{rho_o}, \code{df}, \code{k}):}
 #' These parameters control the scaling and correlation of measurement errors and can be specified via \code{par} and \code{map}:
 #' \itemize{
-#'   \item \strong{1. Fixed at defaults:} If observation process parameters are omitted from \code{par}, the model automatically fixes them to neutral values: \code{psi = 1} (no scaling semi-minor axis), \code{tau = c(1, 1)} (no scaling of \code{x.err} or \code{y.err}), and \code{rho_o = 0} (no correlation between x- and y-axis errors). When \code{obs_dist="t"}, the default is a robust, heavy-tailed \code{df = 5}. When \code{obs_dist="Huber"}, the default is \code{k = 2}.
+#'   \item \strong{1. Fixed at defaults:} If observation process parameters are omitted from \code{par}, the model automatically fixes them to neutral values: \code{psi = 1} (no scaling semi-minor axis), \code{psi_maj = b_maj = b_min = 1} (error ellipse axes as reported), \code{tau = c(1, 1)} (no scaling of \code{x.err} or \code{y.err}), and \code{rho_o = 0} (no correlation between x- and y-axis errors). When \code{obs_dist="t"}, the default is a robust, heavy-tailed \code{df = 5}. When \code{obs_dist="Huber"}, the default is \code{k = 2}.
 #'   \item \strong{2. Estimated from data:} To estimate one or more of these parameters, include them in \code{par} with an initial starting value (e.g., \code{par = list(psi = 1.2)}).
 #'   \item \strong{3. Fixed to custom values:} To fix a parameter to a specific value other than the default, include the custom value in \code{par} and explicitly map it to \code{NA} in \code{map} (e.g., \code{par = list(psi = 1.5), map = list(psi = factor(NA))}).
 #' }
 #'
-#' \strong{Gradient interpolation (\code{grad}):} the force is the gradient of the covariate surfaces, which are interpolated from the raster cell-center values by an interpolating tensor-product B-spline of degree 5 (\code{"quintic"}), 3 (\code{"cubic"}) or 1 (\code{"bilinear"}). All three pass exactly through the cell values, and in all three the raster cell is looked up afresh from the current location at every evaluation of the objective. They differ in smoothness, which matters for the Laplace approximation: the inner (latent-path) problem uses the 2nd and 3rd derivatives of the surface, and TMB's gradient of the marginal likelihood the 4th. With \code{"quintic"} all of these are continuous, so the marginal likelihood and its gradient are smooth. With \code{"cubic"} the force and its first derivative are continuous but the 3rd derivative of the surface jumps at cell edges, so the marginal likelihood is slightly non-smooth; the inner Hessian is cheaper. With \code{"bilinear"} the force itself jumps at every cell edge and its derivatives within a cell are zero, which makes each inner step cheap but the inner problem non-smooth. \code{"bilinear"} is mainly useful for quick exploratory fits; check its results against \code{"cubic"} or \code{"quintic"}. The estimates (in particular \code{beta}) depend somewhat on the interpolation, because the gradient of a rough raster is not uniquely defined; \code{simLangevin}, \code{predLangevin}, \code{cAIC} and \code{residuals} use the setting stored in the fit.
+#' \strong{Gradient interpolation (\code{grad}):} the force is the gradient of the covariate surfaces, which are interpolated from the raster cell-centre values by an interpolating tensor-product B-spline of degree 5 (\code{"quintic"}), 3 (\code{"cubic"}) or 1 (\code{"bilinear"}). All three pass exactly through the cell values, and in all three the raster cell is looked up afresh from the current location at every evaluation of the objective. They differ in smoothness, which matters for the Laplace approximation: the inner (latent-path) problem uses the 2nd and 3rd derivatives of the surface, and TMB's gradient of the marginal likelihood the 4th. With \code{"quintic"} all of these are continuous, so the marginal likelihood and its gradient are smooth. With \code{"cubic"} the force and its first derivative are continuous but the 3rd derivative of the surface jumps at cell edges, so the marginal likelihood is slightly non-smooth; the inner Hessian is cheaper. With \code{"bilinear"} the force itself jumps at every cell edge and its derivatives within a cell are zero, which makes each inner step cheap but the inner problem non-smooth; the outer optimizer can then report false convergence and stop at different points from different starting values. \code{"bilinear"} is mainly useful for quick exploratory fits or comparison with earlier versions of the package; check its results against \code{"cubic"} or \code{"quintic"}. The estimates (in particular \code{beta}) depend somewhat on the interpolation, because the gradient of a rough raster is not uniquely defined; \code{simLangevin}, \code{predLangevin}, \code{cAIC} and \code{residuals} use the setting stored in the fit.
 #'
 #' \strong{Gradient smoothing:} Setting \code{smoothGradient=TRUE} applies the smoothing approach of Blackwell and Matthiopoulos (2024) to the gradients of the habitat selection covariates (\code{spatialCovs}), which can help reduce attenuation bias in habitat selection coefficients when observations are obtained at a coarser time resolution than the underlying continuous-time movement process.
 #' This approach smooths the gradient at each location by taking a weighted average of the gradients at neighboring locations, with weights and neighborhood determined by the parameters (\code{npoints}, \code{curweight}, and \code{zetaScale}).
@@ -366,7 +402,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
   data <- class_dataLangevin(data)
 
   model <- match.arg(model)
-  obs_dist <- match.arg(obs_dist)
+  obs_dist <- .norm_obs_dist(obs_dist)
   optMethod <- match.arg(optMethod)
 
   if (optMethod == "nloptr" && !requireNamespace("nloptr", quietly = TRUE)) {
@@ -432,13 +468,16 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
     .smooth_par_data(data, model, obs_dist, spatialCovs, coord)   # attribute: set internally by predLangevin()
   par <- initialValues(data, model, obs_dist, par, spatialCovs, coord, lambda = if (lambda_mode == 2L) "estimate" else NULL)
 
-  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = barrier_sdf, lambda = lambda, lambda_mode = lambda_mode, grad = grad, smoothPar = smoothPar, barrierOnset = barrierOnset)
+  # observation groups (tau by location class, df/k by location class or observation type) and error ellipse power law
+  obs_spec <- .obs_spec(par, map, data, obs_dist, coord)
+
+  dat <- build_tmb_data(data, spatialCovs, model, coord, scaleFactor, smoothGradient, npoints, curweight, zetaScale, obs_dist, barrier_sdf = barrier_sdf, lambda = lambda, lambda_mode = lambda_mode, grad = grad, smoothPar = smoothPar, barrierOnset = barrierOnset, obs_spec = obs_spec)
 
   if (lambda_mode != 2L && !is.null(prior) && "log_lambda" %in% rownames(prior)) {
     stop("A prior on 'log_lambda' can only be specified when a barrier is specified and lambda = \"estimate\".")
   }
   origprior <- prior
-  cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior, lambda_mode=lambda_mode)
+  cp <- checkPar(par, model, map, dat=dat, spatialCovs=spatialCovs, prior=prior, lambda_mode=lambda_mode, obs_spec=obs_spec)
   tmbpar <- cp$par
   tmbmap <- cp$map
   re <- cp$re
@@ -526,7 +565,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
     sdreport_out <- structure(list(), class = "skip_se")
   }
 
-  extracted <- extract_tmb_estimates(fit, obj2, sdreport_out, re, tmbmap, data, scaleFactor, spatialCovs, getJointPrecision)
+  extracted <- extract_tmb_estimates(fit, obj2, sdreport_out, re, tmbmap, data, scaleFactor, spatialCovs, getJointPrecision, obs_spec = obs_spec)
   fit$estimates <- extracted$estimates
   fit$covariance <- extracted$covariance
 
@@ -570,7 +609,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
               if (calcSE) paste0("; relative SE ", ifelse(is.finite(lse), signif(lse, 2), "NaN")) else "",
               "). Consider fixing lambda or using lambda = \"tied\".", call. = FALSE)
   }
-  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, grad = grad, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, smoothPar = smoothPar, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda_est, lambda_mode = if (is.null(barrier)) NULL else c("fixed","tied","estimate")[lambda_mode + 1L], lambda_report = lambda_report, barrierOnset = if (is.null(barrier)) NULL else barrierOnset, calcSE = calcSE)
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, grad = grad, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, smoothPar = smoothPar, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda_est, lambda_mode = if (is.null(barrier)) NULL else c("fixed","tied","estimate")[lambda_mode + 1L], lambda_report = lambda_report, barrierOnset = if (is.null(barrier)) NULL else barrierOnset, calcSE = calcSE, obs_spec = obs_spec)
 
   boundsWarning(fit)
 

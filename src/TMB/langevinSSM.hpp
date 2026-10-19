@@ -148,7 +148,7 @@ template<class Type>
 Type langevinSSM(objective_function<Type>* obj)
 {
   DATA_INTEGER(process_model);      // 0 = overdamped, 1 = underdamped
-  DATA_INTEGER(obs_dist);           // 0 = Gaussian, 1 = t-distribution, 2 = pseudo-Huber (bivariate hyperbolic)
+  DATA_INTEGER(obs_dist);           // any_t + 2 * any_Huber: which tail parameters are used (reporting only)
   DATA_ARRAY(Y);           // Array of observed locations
   DATA_ARRAY_INDICATOR(keep, Y); // used for TMB oneStepPredict bivariate decomposition
   DATA_VECTOR(delta_t);          // Time steps
@@ -189,6 +189,17 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_VECTOR(eor);                 //  eor is the orientation of the error ellipse
   // for LS/GPS observation model
   DATA_MATRIX(K);                 // error weighting factors for LS obs model
+  // observation groups (0-based): tau group of each LS/GPS observation (column of tau) and
+  // tail group of each observation (element of df or k); all 0 when the parameters are shared
+  DATA_IVECTOR(tau_group);
+  DATA_IVECTOR(dist_obs);   // distribution of each observation: 0 = Gaussian, 1 = t, 2 = pseudo-Huber (bivariate hyperbolic)
+  DATA_IVECTOR(df_group);   // df group of each observation (t)
+  DATA_IVECTOR(k_group);    // k group of each observation (Huber)
+  // reference lengths (working units) of the error ellipse power law
+  //   smaj_eff = psi_maj * ref_maj * (smaj / ref_maj)^b_maj,  smin_eff = psi * ref_min * (smin / ref_min)^b_min
+  DATA_INTEGER(ell_power);         // 1 = use the power law (psi_maj, b_maj, b_min); 0 = axes as reported (smin scaled by psi)
+  DATA_SCALAR(ell_ref_maj);
+  DATA_SCALAR(ell_ref_min);
 
   // Process parameters (simplified)
   PARAMETER_VECTOR(beta);       // Vector of covariate effects
@@ -202,11 +213,14 @@ Type langevinSSM(objective_function<Type>* obj)
   // OBSERVATION PARAMETERS
   // for KF OBS MODEL
   PARAMETER(l_psi); 				    // error SD scaling parameter to account for possible uncertainty in Argos error ellipse variables
+  PARAMETER(l_psi_maj);         // log scale of the semi-major axis (power law)
+  PARAMETER(l_b_maj);           // log exponent of the semi-major axis (power law)
+  PARAMETER(l_b_min);           // log exponent of the semi-minor axis (power law)
   // for LS/GPS OBS MODEL
-  PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale)
+  PARAMETER_VECTOR(l_tau);     	// error dispersion for LS obs model (log scale); (x, y) for each tau group
   PARAMETER(l_rho_o);           // measurement error correlation b/w x,y
-  PARAMETER(l_df);       // Log degrees of freedom for t-distribution
-  PARAMETER(l_k);        // Log threshold k of the pseudo-Huber observation model
+  PARAMETER_VECTOR(l_df);       // Log degrees of freedom for t-distribution (one per tail group)
+  PARAMETER_VECTOR(l_k);        // Log threshold k of the pseudo-Huber observation model (one per tail group)
 
   // PRIOR INPUTS
   DATA_INTEGER(has_prior_beta);
@@ -228,6 +242,18 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_INTEGER(has_prior_l_psi);
   DATA_VECTOR(prior_mean_l_psi);
   DATA_VECTOR(prior_sd_l_psi);
+
+  DATA_INTEGER(has_prior_l_psi_maj);
+  DATA_VECTOR(prior_mean_l_psi_maj);
+  DATA_VECTOR(prior_sd_l_psi_maj);
+
+  DATA_INTEGER(has_prior_l_b_maj);
+  DATA_VECTOR(prior_mean_l_b_maj);
+  DATA_VECTOR(prior_sd_l_b_maj);
+
+  DATA_INTEGER(has_prior_l_b_min);
+  DATA_VECTOR(prior_mean_l_b_min);
+  DATA_VECTOR(prior_sd_l_b_min);
 
   DATA_INTEGER(has_prior_l_tau);
   DATA_VECTOR(prior_mean_l_tau);
@@ -256,10 +282,13 @@ Type langevinSSM(objective_function<Type>* obj)
   DATA_VECTOR(prior_sd_vel_val);
 
   Type psi = exp(l_psi);
+  Type psi_maj = exp(l_psi_maj);
+  Type b_maj = exp(l_b_maj);
+  Type b_min = exp(l_b_min);
   vector<Type> tau = exp(l_tau);
   Type rho_o = Type(2.0) / (Type(1.0) + exp(-l_rho_o)) - Type(1.0);
-  Type df = exp(l_df);
-  Type k = exp(l_k);
+  vector<Type> df = exp(l_df);
+  vector<Type> k = exp(l_k);
 
   Type nll = 0.0;
 
@@ -462,6 +491,16 @@ Type langevinSSM(objective_function<Type>* obj)
   }
 
   // l_tau
+  if (has_prior_l_psi_maj == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_psi_maj(0)))) nll -= dnorm(l_psi_maj, prior_mean_l_psi_maj(0), prior_sd_l_psi_maj(0), true);
+  }
+  if (has_prior_l_b_maj == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_b_maj(0)))) nll -= dnorm(l_b_maj, prior_mean_l_b_maj(0), prior_sd_l_b_maj(0), true);
+  }
+  if (has_prior_l_b_min == 1) {
+    if(!R_IsNA(asDouble(prior_mean_l_b_min(0)))) nll -= dnorm(l_b_min, prior_mean_l_b_min(0), prior_sd_l_b_min(0), true);
+  }
+
   if (has_prior_l_tau == 1) {
     for(int i=0; i<l_tau.size(); i++){
       if(!R_IsNA(asDouble(prior_mean_l_tau(i)))) {
@@ -479,12 +518,16 @@ Type langevinSSM(objective_function<Type>* obj)
 
   // l_df
   if (has_prior_l_df == 1) {
-    if(!R_IsNA(asDouble(prior_mean_l_df(0)))) nll -= dnorm(l_df, prior_mean_l_df(0), prior_sd_l_df(0), true);
+    for(int i=0; i<l_df.size(); i++){
+      if(!R_IsNA(asDouble(prior_mean_l_df(i)))) nll -= dnorm(l_df(i), prior_mean_l_df(i), prior_sd_l_df(i), true);
+    }
   }
 
   // l_k
   if (has_prior_l_k == 1) {
-    if(!R_IsNA(asDouble(prior_mean_l_k(0)))) nll -= dnorm(l_k, prior_mean_l_k(0), prior_sd_l_k(0), true);
+    for(int i=0; i<l_k.size(); i++){
+      if(!R_IsNA(asDouble(prior_mean_l_k(i)))) nll -= dnorm(l_k(i), prior_mean_l_k(i), prior_sd_l_k(i), true);
+    }
   }
 
   // mu
@@ -515,23 +558,31 @@ Type langevinSSM(objective_function<Type>* obj)
       matrix<Type> cov_obs(2, 2);
       cov_obs.setZero();
       if(obs_mod(i) == 0) {
-        // Argos Least Squares and GPS observations
-        Type s = tau(0) * K(i,0);
-        Type q = tau(1) * K(i,1);
+        // Argos Least Squares and GPS observations (tau of the observation's tau group)
+        int g = tau_group(i);
+        Type s = tau(2 * g) * K(i,0);
+        Type q = tau(2 * g + 1) * K(i,1);
         cov_obs(0,0) = s * s;
         cov_obs(1,1) = q * q;
         cov_obs(0,1) = s * q * rho_o;
         cov_obs(1,0) = cov_obs(0,1);
       } else if(obs_mod(i) == 1) {
         // Argos Kalman Filter observations
+        // Effective axes: power law relative to the reference lengths (identity when psi_maj = b_maj = b_min = 1)
+        Type Ma = smaj(i);
+        Type ma = smin(i) * psi;
+        if (ell_power == 1) {
+          Ma = psi_maj * ell_ref_maj * exp(b_maj * log(smaj(i) / ell_ref_maj));
+          ma = psi * ell_ref_min * exp(b_min * log(smin(i) / ell_ref_min));
+        }
         Type z = sqrt(Type(2.0));
         Type s2c = sin(eor(i)) * sin(eor(i));
         Type c2c = cos(eor(i)) * cos(eor(i));
-        Type M2  = (smaj(i) / z) * (smaj(i) / z);
-        Type m2 = (smin(i) * psi / z) * (smin(i) * psi / z);
+        Type M2  = (Ma / z) * (Ma / z);
+        Type m2 = (ma / z) * (ma / z);
         cov_obs(0,0) = (M2 * s2c + m2 * c2c);
         cov_obs(1,1) = (M2 * c2c + m2 * s2c);
-        cov_obs(0,1) = (0.5 * (smaj(i) * smaj(i) - (smin(i) * psi * smin(i) * psi))) * cos(eor(i)) * sin(eor(i));
+        cov_obs(0,1) = (0.5 * (Ma * Ma - ma * ma)) * cos(eor(i)) * sin(eor(i));
         cov_obs(1,0) = cov_obs(0,1);
       }
 
@@ -556,7 +607,11 @@ Type langevinSSM(objective_function<Type>* obj)
       bool osa_cdf = keep.osa_active() &&
         (CppAD::Variable(keep.cdf_lower(0,i)) || CppAD::Variable(keep.cdf_lower(1,i)));
 
-      if (obs_dist == 0) {
+      Type df_i = df(df_group(i));   // tail parameters of the observation's groups
+      Type k_i = k(k_group(i));
+      int dist_i = dist_obs(i);
+
+      if (dist_i == 0) {
         // Gaussian Model
         nll -= kX * dnorm(x_obs, mu_x, sdX, true);
         Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
@@ -569,34 +624,34 @@ Type langevinSSM(objective_function<Type>* obj)
           log_pnorm_both((y_obs - mu_y_cond) / sd_y_cond, lF, lS);
           nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
         }
-      } else if (obs_dist == 1) {
+      } else if (dist_i == 1) {
         // Bivariate t-distribution model, written as marginal(x) * conditional(y | x)
         // so that it is a smooth function of the OSA indicators kX and kY.
         // (Do NOT branch on kX/kY with 'if': the branch is fixed when the AD tape is
         // recorded, with keep = 1, so oneStepPredict could never switch data terms off.)
         //   x            ~ t_df(mu_x, varX)
-        //   y | x        ~ t_{df+1}(mu_y + covXY/varX * dx,
-        //                           (df + dx^2/varX)/(df + 1) * (varY - covXY^2/varX))
+        //   y | x        ~ t_{df_i+1}(mu_y + covXY/varX * dx,
+        //                           (df_i + dx^2/varX)/(df_i + 1) * (varY - covXY^2/varX))
         // With kX = kY = 1 this equals the joint bivariate t density exactly.
         Type dx = x_obs - mu_x;
-        Type ll_x = dt(dx / sdX, df, true) - log(sdX);
+        Type ll_x = dt(dx / sdX, df_i, true) - log(sdX);
 
         Type var_y_given_x = varY - covXY * covXY / varX;
         Type mu_y_cond = mu_y + kX * (covXY / varX) * dx;
-        Type scale2_y = kX * ((df + dx * dx / varX) / (df + Type(1.0))) * var_y_given_x
+        Type scale2_y = kX * ((df_i + dx * dx / varX) / (df_i + Type(1.0))) * var_y_given_x
         + (Type(1.0) - kX) * varY;
-        Type df_y = df + kX;
+        Type df_y = df_i + kX;
         Type ll_y = dt((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, true) - Type(0.5) * log(scale2_y);
 
         nll -= kX * ll_x + kY * ll_y;
         if (osa_cdf) {
           Type lF, lS;
-          log_pt_both(dx / sdX, df, lF, lS);
+          log_pt_both(dx / sdX, df_i, lF, lS);
           nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
           log_pt_both((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, lF, lS);
           nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
         }
-      } else if (obs_dist == 2) {
+      } else if (dist_i == 2) {
         // Pseudo-Huber model (bivariate hyperbolic distribution):
         //   -log f = k sqrt(k^2 + d2) - k^2 + log(2 pi) + 1/2 log|Sigma| + log(1 + 1/k^2),
         // with d2 = r' Sigma^-1 r and r = obs - mu. It is quadratic (Gaussian) for d << k and
@@ -614,8 +669,8 @@ Type langevinSSM(objective_function<Type>* obj)
         Type var_y_given_x = varY - covXY * covXY / varX;
         Type det = varX * var_y_given_x;
         Type d2 = dx * dx / varX + pow(dy - (covXY / varX) * dx, 2) / var_y_given_x;
-        Type k2 = k * k;
-        Type ll_joint = -(k * sqrt(k2 + d2) - k2) - log(Type(2.0 * M_PI)) - Type(0.5) * log(det) -
+        Type k2 = k_i * k_i;
+        Type ll_joint = -(k_i * sqrt(k2 + d2) - k2) - log(Type(2.0 * M_PI)) - Type(0.5) * log(det) -
           log(Type(1.0) + Type(1.0) / k2);
         if (!keep.osa_active()) {
           nll -= ll_joint;
@@ -649,8 +704,13 @@ Type langevinSSM(objective_function<Type>* obj)
   ADREPORT(rho_o);
   ADREPORT(tau);
   ADREPORT(psi);
-  if(obs_dist == 1) ADREPORT(df);
-  if(obs_dist == 2) ADREPORT(k);
+  if(ell_power == 1) {
+    ADREPORT(psi_maj);
+    ADREPORT(b_maj);
+    ADREPORT(b_min);
+  }
+  if(obs_dist == 1 || obs_dist == 3) ADREPORT(df);
+  if(obs_dist >= 2) ADREPORT(k);
   if(lambda_mode > 0) ADREPORT(lambda);
 
   // Backup in case sdreport fails
@@ -660,8 +720,13 @@ Type langevinSSM(objective_function<Type>* obj)
   REPORT(rho_o);
   REPORT(tau);
   REPORT(psi);
-  if(obs_dist == 1) REPORT(df);
-  if(obs_dist == 2) REPORT(k);
+  if(ell_power == 1) {
+    REPORT(psi_maj);
+    REPORT(b_maj);
+    REPORT(b_min);
+  }
+  if(obs_dist == 1 || obs_dist == 3) REPORT(df);
+  if(obs_dist >= 2) REPORT(k);
   REPORT(lambda);
   REPORT(mu);
   if(process_model == 1) REPORT(vel);

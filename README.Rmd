@@ -193,7 +193,7 @@ plot(reg_prob, log = TRUE)
 
 ### Spatial constraints (i.e., barriers)
 
-To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas). When included in `spatialCovs` and identified by the `barrier` argument in `simLangevin` and `fitLangevin`, the SDF is then included as part of a penalty term with strength `lambda`:
+To include barriers to movement (e.g., land for marine animals), the `prepBarrier` function can be used to create a signed distance field (SDF) from a binary raster mask (where 1 indicates allowed movement areas and 0 indicates restricted movement areas) or polygons (as `sf', `sfc', or `SpatVector-class' objects). When included in `spatialCovs` and identified by the `barrier` argument in `simLangevin` and `fitLangevin`, the SDF is then included as part of a penalty term with strength `lambda`:
 ```{r barrier, eval=TRUE, echo=-19}
 # create a dummy barrier mask (left half restricted = 0, right half allowed = 1)
 coast_barrier <- exampleCovs[[1]]
@@ -211,7 +211,7 @@ exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier
 # add a beta coefficient for d2c to the parameter list
 # negative value indicates slight attraction to the "coast"
 par_barrier <- par
-par_barrier$beta <- c(par_barrier$beta, -0.1)
+par_barrier$beta <- c(par_barrier$beta, -0.15)
 
 # simulate the data
 set.seed(10,kind="Mersenne-Twister",normal.kind="Inversion")
@@ -219,41 +219,36 @@ simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
                               barrier = "coast_barrier",
-                              measurementError = list(smaj.sd = 1.5,
-                                                      smin.sd = 0.75,
+                              measurementError = list(smaj.sd = 4,
+                                                      smin.sd = 1,
                                                       eor.lim = c(0,180)))
 
-# actual penalty (lambda)
-attr(simDat_barrier,"lambda")
-
-# Because by default lambda=NULL and simDat_barrier is a simLangevin object, 
-# fitLangevin will automatically detect and use the exact barrier penalty (lambda) 
-# that generated the data
 fit_barrier <- fitLangevin(data = simDat_barrier,
-                           spatialCovs = exampleCovs_barrier)
+                           spatialCovs = exampleCovs_barrier,
+                           lambda = 4.003)
 fit_barrier
 
 plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,
                   maskRast = coast_barrier)
 
-# if lambda is not known, suggestLanbda can provide a ballpark estimate
+# if lambda is not known, it can be tied to the movement parameters or estimated
 
-# first fit baseline model with no barrier penalty
-fit0 <- fitLangevin(data = simDat_barrier,
-                    spatialCovs = exampleCovs_barrier,
-                    lambda = 0)
+fit_barrier_tied <- fitLangevin(data = simDat_barrier,
+                                spatialCovs = exampleCovs_barrier,
+                                lambda = "tied")
+fit_barrier_tied
 
-lambda <- suggestLambda(fit0,max_dt = median(simDat_barrier$dt))
+plot(fit_barrier_tied, data = simDat_barrier,
+                       spatialCovs = exampleCovs_barrier,
+                       maskRast = coast_barrier)
 
-lambda
+fit_barrier_est <- fitLangevin(data = simDat_barrier,
+                               spatialCovs = exampleCovs_barrier,
+                               lambda = "estimate")
+fit_barrier_est
 
-fit_barrier_lambda <- fitLangevin(data = simDat_barrier,
-                                  spatialCovs = exampleCovs_barrier,
-                                  lambda = lambda)
-fit_barrier_lambda
-
-plot(fit_barrier_lambda, data = simDat_barrier,
+plot(fit_barrier_est, data = simDat_barrier,
                          spatialCovs = exampleCovs_barrier,
                          maskRast = coast_barrier)
 ```

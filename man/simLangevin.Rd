@@ -41,13 +41,13 @@ simLangevin(model, ...)
 
 \item{...}{Additional arguments passed to the specific methods.}
 
-\item{obs_dist}{Character string specifying the measurement error observation distribution. Can be ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber; see \code{\link{fitLangevin}}).}
+\item{obs_dist}{The measurement error distribution: ``Gaussian'' (default), ``t'', or ``Huber'' (pseudo-Huber) for all observations, or a named character vector by error type (\code{"epar"}, \code{"sderr"}) and/or location class, e.g. \code{c(epar = "Huber", sderr = "Gaussian")}. See \code{\link{fitLangevin}}.}
 
 \item{spatialCovs}{List of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates. The covariates must be on the same spatial grid and have the same spatial extent.}
 
 \item{barrier}{Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier).}
 
-\item{par}{List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{tau}, and \code{rho_o}. If \code{obs_dist = "t"}, this can also include \code{df}. If \code{obs_dist = "Huber"}, this can also include \code{k}. See \code{\link{fitLangevin}}.}
+\item{par}{List of parameters. For the "underdamped" model, this must include \code{beta} (a vector of length equal to the number of covariates), \code{sigma} (speed parameter), and \code{gamma} (friction parameter). For the "overdamped" model, this must include \code{beta} and \code{sigma}. If \code{measurementError} is specified, optional observation process parameters include \code{psi}, \code{psi_maj}, \code{b_maj}, \code{b_min} (error ellipses), \code{tau} (which can be specified by location class when \code{measurementError} is an EMF data frame), and \code{rho_o}. If (some) observations have \code{obs_dist = "t"}, this can also include \code{df}; if \code{obs_dist = "Huber"}, \code{k} (either can be given by error type and/or location class). See \code{\link{fitLangevin}}.}
 
 \item{lambda}{Barrier strength. Either \code{"tied"} (default) or a non-negative number. With \code{"tied"} the barrier is a hard wall, defined exactly as in \code{\link{fitLangevin}}: at every simulation step the spring constant is the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed from the true \code{sigma} and \code{gamma}. A number gives a soft wall of that fixed stiffness (e.g. for simulation studies of animals that do enter the restricted zone). Ignored if \code{barrier = NULL}. See Details.}
 

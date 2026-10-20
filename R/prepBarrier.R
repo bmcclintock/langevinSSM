@@ -41,6 +41,18 @@ prepBarrier <- function(x, template = NULL, restricted = FALSE) {
   return(sdf)
 }
 
+# Signed distance field from any barrier input accepted by prepBarrier(), for maskLeakage() and maskBuffer():
+# a prepBarrier() result (returned as is, so a large SDF need not be recomputed), a binary raster mask, or polygons
+.barrier_sdf <- function(x, template = NULL, restricted = FALSE, argname = "x") {
+  if (inherits(x, "SpatRaster") && isTRUE(attr(x, "barLangevin"))) {
+    if (terra::nlyr(x) > 1) stop("Barrier rasters must be static (single layer).")
+    return(list(sdf = x, src = "barrier"))
+  }
+  if (inherits(x, c("sf", "sfc", "SpatVector"))) return(list(sdf = .sdf_polygons(x, template, restricted), src = "polygons"))
+  if (inherits(x, "SpatRaster")) return(list(sdf = .sdf_mask(x), src = "raster"))
+  stop(sprintf("'%s' must be a terra::SpatRaster mask, polygons (sf, sfc or terra::SpatVector), or the output of prepBarrier().", argname))
+}
+
 # Signed distance to the cell-edge boundary of a binary mask (1 = allowed, 0 = restricted)
 .sdf_mask <- function(maskRast) {
   if (terra::nlyr(maskRast) > 1) {

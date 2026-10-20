@@ -2,19 +2,31 @@
 % Please edit documentation in R/maskBuffer.R
 \name{maskBuffer}
 \alias{maskBuffer}
-\title{Buffer a binary mask by a specified number of grid cells}
+\title{Buffer a barrier mask by a specified number of grid cells}
 \usage{
-maskBuffer(maskRast, bufferCells)
+maskBuffer(maskRast, bufferCells, template = NULL, restricted = FALSE)
 }
 \arguments{
-\item{maskRast}{A SpatRaster binary mask (1 = allowed, 0 = restricted).}
+\item{maskRast}{Either a \code{\link[terra]{SpatRaster-class}} binary mask (1 = allowed, 0 = restricted), polygons (an \code{sf}, \code{sfc} or \code{\link[terra]{SpatVector-class}} object; see \code{restricted}), or the signed distance field returned by \code{\link{prepBarrier}} (identified by its \code{"barLangevin"} attribute).}
 
 \item{bufferCells}{Integer. The number of grid cells to expand the boundary by.}
+
+\item{template}{A \code{\link[terra]{SpatRaster-class}} defining the grid of the returned mask. Required when \code{maskRast} is polygons and ignored otherwise (see \code{\link{prepBarrier}}).}
+
+\item{restricted}{Logical. When \code{maskRast} is polygons, do they delimit the allowed area (\code{FALSE}, default) or the restricted area (\code{TRUE}; e.g. land polygons for a marine animal)? As in \code{\link{prepBarrier}}.}
 }
 \value{
-A SpatRaster binary mask with the padded coastline.
+A SpatRaster binary mask (1 = allowed, 0 = restricted) with the padded boundary, on the grid of \code{maskRast} (or of \code{template} for polygons).
 }
 \description{
 Expands the restricted areas (0s) into the allowed areas (1s) to create
-a padding zone along the boundary.
+a padding zone along the boundary. Like \code{\link{prepBarrier}}, the barrier can be supplied as a binary raster mask or as polygons.
+}
+\details{
+The buffer distance is \code{bufferCells} times the cell size (\eqn{b r}). The buffering uses the signed distance field (SDF) \eqn{d} of \code{\link{prepBarrier}}:
+\itemize{
+  \item \strong{Raster mask}: an allowed cell stays allowed if the distance between its centre and the centre of the nearest restricted cell is greater than \eqn{b r}, i.e. \eqn{d + r/2 > b r} (\eqn{d} is measured to the cell edge). Cells that are \code{NA} in the mask remain \code{NA}.
+  \item \strong{Polygons}: a cell of \code{template} is allowed if its centre lies in the allowed area more than \eqn{b r} from the polygon boundary (\eqn{d > b r}, with \eqn{d} exact).
+  \item \strong{prepBarrier() output}: as for polygons (\eqn{d > b r}). Supplying the SDF avoids recomputing it.
+}
 }

@@ -12,17 +12,19 @@ maskLeakage(
   coord = c("mu.x", "mu.y"),
   psi = 1,
   tau = c(1, 1),
-  rho_o = 0
+  rho_o = 0,
+  template = NULL,
+  restricted = FALSE
 )
 }
 \arguments{
 \item{x}{A \code{fitLangevin}, \code{simLangevin}, or \code{dataLangevin} object.}
 
-\item{maskRast}{A SpatRaster binary mask (1 = allowed, 0 = restricted).}
+\item{maskRast}{The barrier, supplied as for \code{\link{prepBarrier}}: either a \code{\link[terra]{SpatRaster-class}} binary mask (1 = allowed, 0 = restricted), or polygons (an \code{sf}, \code{sfc} or \code{\link[terra]{SpatVector-class}} object; see \code{restricted} and \code{template}). The signed distance field returned by \code{\link{prepBarrier}} (identified by its \code{"barLangevin"} attribute) is also accepted, which avoids recomputing it.}
 
 \item{level}{Numeric between 0 and 1. The proportion of the observation's spatial density that must fall within the restricted area to be considered a leak. Default is 0.999 (meaning 99.9\% of the density must be restricted).}
 
-\item{tolerance}{Numeric. A buffer distance (in the spatial units of the raster). Density falling within this distance of allowed cells is not flagged as a leakage. Default is 0.}
+\item{tolerance}{Numeric. A buffer distance (in the spatial units of the raster or polygons). Density falling within this distance of the allowed area is not flagged as a leakage. Default is 0.}
 
 \item{coord}{Character vector of length 2 specifying the names of the coordinate columns in \code{x} (e.g., c("mu.x", "mu.y"), c("x", "y")). Default is c("mu.x", "mu.y").}
 
@@ -31,6 +33,10 @@ maskLeakage(
 \item{tau}{Numeric vector of length 2. Scaling multipliers for the x- and y-axis standard deviations of LS/GPS observations. Used only when \code{x} is a \code{dataLangevin} object. Default is c(1, 1).}
 
 \item{rho_o}{Numeric between -1 and 1. Correlation between the x- and y-axis errors for LS/GPS observations. Used only when \code{x} is a \code{dataLangevin} object. Default is 0.}
+
+\item{template}{A \code{\link[terra]{SpatRaster-class}} defining the grid on which the density is evaluated when \code{maskRast} is polygons (see \code{\link{prepBarrier}}). Required for polygons and ignored otherwise.}
+
+\item{restricted}{Logical. When \code{maskRast} is polygons, do they delimit the allowed area (\code{FALSE}, default) or the restricted area (\code{TRUE}; e.g. land polygons for a marine animal)? As in \code{\link{prepBarrier}}.}
 }
 \value{
 A list containing two data frames:
@@ -58,5 +64,7 @@ Evaluates the proportion and severity of track locations that cross into restric
 based on the bivariate normal probability density of the observation error or estimated uncertainty for the true locations.
 }
 \details{
+The barrier is converted to a signed distance field (SDF) \eqn{d} by \code{\link{prepBarrier}} (positive in the allowed area). The density is evaluated on the cells of its grid: a cell is restricted if \eqn{d < -}\code{tolerance} at its centre. With a raster mask and \code{tolerance = 0}, the mask itself is used. The leakage depth is \eqn{-d} at the location. For polygons, \eqn{d} is the exact distance from each cell centre of \code{template} to the polygon boundary. Computing it for a large \code{template} can take a long time, so when calling \code{maskLeakage} repeatedly, compute \code{prepBarrier(polygons, template)} once and pass the result.
+
 If \code{x} is a \code{fitLangevin} object that was optimized with \code{getJointPrecision = TRUE}, the function extracts the covariance between the latent x and y coordinates by solving the sparse Cholesky factorization of the joint precision matrix.
 }

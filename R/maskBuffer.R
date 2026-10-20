@@ -1,30 +1,47 @@
-#' Buffer a binary mask by a specified number of grid cells
+#' Buffer a barrier mask by a specified number of grid cells
 #'
 #' Expands the restricted areas (0s) into the allowed areas (1s) to create
-#' a padding zone along the boundary.
+#' a padding zone along the boundary. Like \code{\link{prepBarrier}}, the barrier can be supplied as a binary raster mask or as polygons.
 #'
-#' @param maskRast A SpatRaster binary mask (1 = allowed, 0 = restricted).
+#' @param maskRast Either a \code{\link[terra]{SpatRaster-class}} binary mask (1 = allowed, 0 = restricted), polygons (an \code{sf}, \code{sfc} or \code{\link[terra]{SpatVector-class}} object; see \code{restricted}), or the signed distance field returned by \code{\link{prepBarrier}} (identified by its \code{"barLangevin"} attribute).
 #' @param bufferCells Integer. The number of grid cells to expand the boundary by.
-#' @return A SpatRaster binary mask with the padded coastline.
-#' @importFrom terra distance
+#' @param template A \code{\link[terra]{SpatRaster-class}} defining the grid of the returned mask. Required when \code{maskRast} is polygons and ignored otherwise (see \code{\link{prepBarrier}}).
+#' @param restricted Logical. When \code{maskRast} is polygons, do they delimit the allowed area (\code{FALSE}, default) or the restricted area (\code{TRUE}; e.g. land polygons for a marine animal)? As in \code{\link{prepBarrier}}.
+#'
+#' @details
+#' The buffer distance is \code{bufferCells} times the cell size (\eqn{b r}). The buffering uses the signed distance field (SDF) \eqn{d} of \code{\link{prepBarrier}}:
+#' \itemize{
+#'   \item \strong{Raster mask}: an allowed cell stays allowed if the distance between its centre and the centre of the nearest restricted cell is greater than \eqn{b r}, i.e. \eqn{d + r/2 > b r} (\eqn{d} is measured to the cell edge). Cells that are \code{NA} in the mask remain \code{NA}.
+#'   \item \strong{Polygons}: a cell of \code{template} is allowed if its centre lies in the allowed area more than \eqn{b r} from the polygon boundary (\eqn{d > b r}, with \eqn{d} exact).
+#'   \item \strong{prepBarrier() output}: as for polygons (\eqn{d > b r}). Supplying the SDF avoids recomputing it.
+#' }
+#'
+#' @return A SpatRaster binary mask (1 = allowed, 0 = restricted) with the padded boundary, on the grid of \code{maskRast} (or of \code{template} for polygons).
 #' @export
-maskBuffer <- function(maskRast, bufferCells) {
+maskBuffer <- function(maskRast, bufferCells, template = NULL, restricted = FALSE) {
 
-  if (!inherits(maskRast, "SpatRaster")) stop("'maskRast' must be a SpatRaster")
+  if (missing(maskRast)) stop("'maskRast' must be provided.")
   if(!is.numeric(bufferCells) || length(bufferCells) != 1 || bufferCells < 0) stop("'bufferCells' must be a single non-negative numeric value.")
 
-  if (bufferCells <= 0) return(maskRast)
+  bar <- .barrier_sdf(maskRast, template, restricted, argname = "maskRast")
+  sdf <- bar$sdf
 
-  cell_res <- terra::res(maskRast)[1]
+  cell_res <- terra::res(sdf)[1]
   buffer_dist <- bufferCells * cell_res
 
-  message(sprintf("   Buffering mask by %d cells (%g spatial units)...",
-                  bufferCells, buffer_dist))
+  if (bufferCells > 0) {
+    message(sprintf("   Buffering mask by %g cells (%g spatial units)...", bufferCells, buffer_dist))
+  }
 
-  dist_to_land <- terra::distance(maskRast, target = 1)
-
-  buffered_mask <- terra::ifel(dist_to_land > buffer_dist, 1, 0)
-  names(buffered_mask) <- names(maskRast)
+  if (bar$src == "raster") {
+    # centre-to-centre distance to the nearest restricted cell = d + r/2
+    buffered_mask <- terra::ifel(sdf + cell_res / 2 > buffer_dist, 1, 0)
+    buffered_mask <- terra::mask(buffered_mask, maskRast)
+    names(buffered_mask) <- names(maskRast)
+  } else {
+    buffered_mask <- terra::ifel(sdf > buffer_dist, 1, 0)
+    names(buffered_mask) <- "mask"
+  }
 
   return(buffered_mask)
 }

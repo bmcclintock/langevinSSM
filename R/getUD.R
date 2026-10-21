@@ -24,7 +24,7 @@
 #' @param fit A \code{fitLangevin} or \code{hierLangevin} object.
 #' @param beta Numeric vector of habitat selection coefficients for the spatial covariates. The order of the coefficients must match the order of the covariates in \code{spatialCovs}.
 #' @param barrier Character string. The name of the barrier in \code{spatialCovs} that is represented as a signed distance field (see \code{\link{prepBarrier}}). If provided, this raster is exclusively used for the barrier penalty and is not included in the habitat selection covariates. Default: \code{NULL} (no barrier). If \code{fit} is provided, this is extracted automatically.
-#' @param barrierOnset Onset length of the barrier potential (units of the coordinates, or \code{"res"}; see \code{\link{fitLangevin}}). Only used with a finite \code{lambda}. Default: \code{0}. If \code{fit} is provided, this is extracted automatically.
+#' @param barrierOnset Onset length of the barrier potential (units of the coordinates, or \code{"res"}; see \code{\link{fitLangevin}}). Only used with a finite \code{lambda}. Default: \code{"res"} (one cell of the barrier raster), the default of \code{\link{fitLangevin}} and \code{\link{simLangevin}}. If \code{fit} is provided, this is extracted automatically.
 #' @param lambda Barrier strength: a non-negative number (soft wall of that stiffness) or \code{"tied"} / \code{Inf} (hard wall: zero utilization of the restricted zone). Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically (\code{Inf} for fits with \code{lambda = "tied"}; for \code{hierLangevin} fits whose Stage I fits used \code{lambda = "estimate"}, \eqn{\lambda} is integrated over its population distribution, or each individual's \eqn{\lambda} is used, see \code{\link{hierLangevin}}).
 #' @param scaleFactor Internal scaling factor for the coordinates and parameters (see \code{\link{fitLangevin}}). Automatically extracted if \code{fit} is provided. Default: 1 (no scaling).
 #' @param log Logical indicating whether or not to return the log of the utilization distribution. Default: \code{TRUE}.
@@ -44,7 +44,7 @@
 #' @importFrom stats setNames
 #' @importFrom utils setTxtProgressBar txtProgressBar
 #' @export
-getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, barrierOnset = 0, scaleFactor = 1, log = TRUE, nSims = 0, individual = NULL, show_progress = TRUE, plot = TRUE, maskRast = NULL, extent = NULL, normalize = FALSE) {
+getUD <- function(spatialCovs, fit, beta, barrier = NULL, lambda = NULL, barrierOnset = "res", scaleFactor = 1, log = TRUE, nSims = 0, individual = NULL, show_progress = TRUE, plot = TRUE, maskRast = NULL, extent = NULL, normalize = FALSE) {
 
   if((missing(fit) & missing(beta)) | (!missing(fit) & !missing(beta))) stop("Either 'fit' or 'beta' must be provided, but not both.")
 

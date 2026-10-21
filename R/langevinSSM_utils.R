@@ -976,7 +976,7 @@ boundsWarning <- function(fit, as_warning = TRUE) {
   )
 }
 
-.prep_barrier_raster <- function(spatialCovs, barrier, lambda, scaleFactor, barrierOnset = 0) {
+.prep_barrier_raster <- function(spatialCovs, barrier, lambda, scaleFactor, barrierOnset = "res") {
   if (is.null(barrier)) {
     return(list(spatialCovs = spatialCovs, mod_spatialCovs = spatialCovs, barrier_sdf = NULL))
   }

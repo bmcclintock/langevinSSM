@@ -10,7 +10,7 @@ getUD(
   beta,
   barrier = NULL,
   lambda = NULL,
-  barrierOnset = 0,
+  barrierOnset = "res",
   scaleFactor = 1,
   log = TRUE,
   nSims = 0,
@@ -33,7 +33,7 @@ getUD(
 
 \item{lambda}{Barrier strength: a non-negative number (soft wall of that stiffness) or \code{"tied"} / \code{Inf} (hard wall: zero utilization of the restricted zone). Default: \code{NULL}. If \code{fit} is provided, this is extracted automatically (\code{Inf} for fits with \code{lambda = "tied"}; for \code{hierLangevin} fits whose Stage I fits used \code{lambda = "estimate"}, \eqn{\lambda} is integrated over its population distribution, or each individual's \eqn{\lambda} is used, see \code{\link{hierLangevin}}).}
 
-\item{barrierOnset}{Onset length of the barrier potential (units of the coordinates, or \code{"res"}; see \code{\link{fitLangevin}}). Only used with a finite \code{lambda}. Default: \code{0}. If \code{fit} is provided, this is extracted automatically.}
+\item{barrierOnset}{Onset length of the barrier potential (units of the coordinates, or \code{"res"}; see \code{\link{fitLangevin}}). Only used with a finite \code{lambda}. Default: \code{"res"} (one cell of the barrier raster), the default of \code{\link{fitLangevin}} and \code{\link{simLangevin}}. If \code{fit} is provided, this is extracted automatically.}
 
 \item{scaleFactor}{Internal scaling factor for the coordinates and parameters (see \code{\link{fitLangevin}}). Automatically extracted if \code{fit} is provided. Default: 1 (no scaling).}
 

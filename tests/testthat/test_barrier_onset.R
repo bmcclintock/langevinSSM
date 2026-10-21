@@ -107,3 +107,23 @@ test_that("the onset changes the likelihood only through restricted-side locatio
   expect_equal(f0$objective, f1$objective, tolerance = 1e-6)
   expect_equal(f1$conditions$barrierOnset, 50)
 })
+
+test_that("barrierOnset defaults to one raster cell in simLangevin and fitLangevin", {
+  covs <- make_onset_covs()
+  expect_identical(formals(langevinSSM:::simLangevin.default)$barrierOnset, "res")
+  expect_identical(formals(getUD)$barrierOnset, "res")
+  set.seed(3)
+  sim <- suppressMessages(simLangevin(model = "overdamped", spatialCovs = covs, barrier = "coast_barrier",
+                                      par = list(beta = 0.5, sigma = 20), lambda = 0.01,
+                                      timeStep = 1, obsPerAnimal = 40,
+                                      initialPosition = matrix(c(-500, 0), 1)))
+  expect_equal(attr(sim, "barrierOnset"), 50)
+  # data without a stored onset (e.g. real data): fitLangevin falls back to one cell
+  attr(sim, "barrierOnset") <- NULL
+  fit <- suppressWarnings(suppressMessages(fitLangevin(sim, model = "overdamped", spatialCovs = covs, lambda = 0.01,
+                                                       par = list(beta = 0.5, sigma = 20), calcSE = FALSE)))
+  expect_equal(fit$conditions$barrierOnset, 50)
+  fit0 <- suppressWarnings(suppressMessages(fitLangevin(sim, model = "overdamped", spatialCovs = covs, lambda = 0.01,
+                                                        barrierOnset = 0, par = list(beta = 0.5, sigma = 20), calcSE = FALSE)))
+  expect_equal(fit0$conditions$barrierOnset, 0)
+})

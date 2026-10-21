@@ -1,5 +1,5 @@
 #' @importFrom terra ncell values xyFromCell cellFromXY
-getInitialPosition <- function(nbAnimals, initialPosition, spatialCovs, barrier = NULL, beta, lambda = NULL, replace = FALSE, barrierOnset = 0) {
+getInitialPosition <- function(nbAnimals, initialPosition, spatialCovs, barrier = NULL, beta, lambda = NULL, replace = FALSE, barrierOnset = "res") {
 
   if (missing(initialPosition)) {
     message("   Randomly drawing initial positions from UD...")

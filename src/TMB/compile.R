@@ -1,10 +1,7 @@
 tmb_name <- "langevinSSM_TMBExports"
-tmb_flags <- commandArgs(trailingOnly = TRUE)
+tmb_flags <- paste(commandArgs(trailingOnly = TRUE), collapse = " ")
 
 if(file.exists(paste0(tmb_name, ".cpp"))) {
-  if(length(tmb_flags) == 0) tmb_flags <- ""
-
-  tmb_flags <- paste(tmb_flags, "-g0")
 
   options(tmb.ad.framework = "TMBad")
 

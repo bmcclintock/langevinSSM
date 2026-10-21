@@ -170,7 +170,7 @@ fit_over
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2565.345 
-#> Optimization time:  0.66 seconds
+#> Optimization time:  0.51 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
@@ -202,13 +202,13 @@ fit_under
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -2052.928 
-#> Optimization time:  1.67 seconds
+#> Optimization time:  1.31 seconds
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>           Estimate Std. Error
 #> beta_cov1  -4.3847      1.209
-#> beta_cov2   5.6774      1.480
+#> beta_cov2   5.6774      1.479
 #> beta_cov3   5.4978      1.420
 #> beta_d2c   -0.2021      0.191
 #> sigma       4.7914      0.561
@@ -265,19 +265,19 @@ plot(fit_under, spatialCovs = exampleCovs, data = exampleDat)
 # fixed effect estimates
 coef(fit_under) 
 #>  beta_cov1  beta_cov2  beta_cov3   beta_d2c      sigma      gamma      rho_o 
-#> -4.3846853  5.6773953  5.4977716 -0.2021206  4.7914372  0.4205945  0.0000000 
+#> -4.3846853  5.6773952  5.4977715 -0.2021206  4.7914373  0.4205945  0.0000000 
 #>      tau_1      tau_2        psi 
 #>  1.0000000  1.0000000  1.0000000
 
 # confidence intervals for fixed effects
 confint(fit_under) 
 #>                2.5 %     97.5 %
-#> beta_cov1 -6.7542762 -2.0150945
-#> beta_cov2  2.7775995  8.5771911
-#> beta_cov3  2.7136445  8.2818987
-#> beta_d2c  -0.5758764  0.1716353
-#> sigma      3.6914830  5.8913915
-#> gamma      0.2203201  0.6208689
+#> beta_cov1 -6.7542786 -2.0150919
+#> beta_cov2  2.7776339  8.5771565
+#> beta_cov3  2.7136846  8.2818584
+#> beta_d2c  -0.5758763  0.1716352
+#> sigma      3.6914953  5.8913793
+#> gamma      0.2203229  0.6208660
 #> rho_o      0.0000000  0.0000000
 #> tau_1      1.0000000  1.0000000
 #> tau_2      1.0000000  1.0000000
@@ -318,12 +318,12 @@ res_under
 #> ---- Goodness-of-Fit Tests ----
 #>        metric   statistic    p.value     effect
 #>          KS_x  0.01551682 0.86380215 0.01551682
-#>          KS_y  0.02147667 0.49469495 0.02147667
+#>          KS_y  0.02147667 0.49469490 0.02147667
 #>  KS_mah_shape  0.01045172 0.98601399 0.01045172
-#>      Disp_mah  1.03983111 0.12609172 0.03983111
-#>          LB_x 29.02794604 0.04803859 0.03761503
-#>          LB_y  9.32341333 0.95177335 0.03351905
-#>        LB_mah 13.96188585 0.73157248 0.06221109
+#>      Disp_mah  1.03983111 0.12609173 0.03983111
+#>          LB_x 29.02794608 0.04803859 0.03761503
+#>          LB_y  9.32341334 0.95177335 0.03351905
+#>        LB_mah 13.96188581 0.73157248 0.06221109
 #> With many residuals, judge the effect size, not only the p-value. See ?residuals.fitLangevin.
 #> -------------------------------
 #> 
@@ -470,7 +470,6 @@ names(coast_barrier) <- "coast_barrier"
 # maskBuffer adds 1 cell buffer to barrier
 exampleCovs_barrier <- exampleCovs
 maskBuff <- maskBuffer(coast_barrier,bufferCells=1)
-#> Warning: [distance] unknown CRS. Results can be wrong
 exampleCovs_barrier$coast_barrier <- prepBarrier(maskBuff)
 exampleCovs_barrier$d2coast <- exampleCovs_barrier$coast_barrier
 
@@ -499,7 +498,7 @@ fit_barrier
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -3760.144 
-#> Optimization time:  1.73 seconds
+#> Optimization time:  1.37 seconds
 #> Barrier penalty:    4.003 
 #> 
 #> Parameter Estimates (Natural Scale):
@@ -539,7 +538,7 @@ fit_barrier_tied
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -3759.641 
-#> Optimization time:  1.73 seconds
+#> Optimization time:  1.28 seconds
 #> Barrier penalty:    tied
 #> 
 #> Parameter Estimates (Natural Scale):
@@ -578,7 +577,7 @@ fit_barrier_est
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
 #> Max Log-Likelihood: -3759.607 
-#> Optimization time:  1.94 seconds
+#> Optimization time:  1.37 seconds
 #> Barrier penalty:    estimate
 #> 
 #> Parameter Estimates (Natural Scale):

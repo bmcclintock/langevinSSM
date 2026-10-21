@@ -128,6 +128,34 @@ inline void bspline_weights(int deg, double t, int K, double w[SPLINE_WMAX][SPLI
   }
 }
 
+// Compile-time (fully unrolled) version of bspline_weights() for a fixed degree, used by the jet
+// evaluation.  Same table, same summation order (acc = 0 + c0 t^0 + c1 t^1 + ...), so the weights are
+// bit-identical to bspline_weights(); only the loop control is removed.  Requires K <= DEG.
+template<int M> struct BsplineDot {
+  static inline double f(const double* c, const double* tp) { return BsplineDot<M - 1>::f(c, tp) + c[M - 1] * tp[M - 1]; }
+};
+template<> struct BsplineDot<0> { static inline double f(const double*, const double*) { return 0.0; } };
+
+template<int DEG> inline const BsplineDerivTable& bspline_table() { static const BsplineDerivTable T(DEG); return T; }
+
+template<int DEG, int N> struct BsplineOrder {
+  static inline void run(const BsplineDerivTable& T, const double* tp, int K, double w[SPLINE_WMAX][SPLINE_WMAX]) {
+    if (N > K) return;
+    for (int k = 0; k <= DEG; k++) w[N][k] = BsplineDot<DEG - N + 1>::f(T.D[N][k], tp);
+    BsplineOrder<DEG, N + 1>::run(T, tp, K, w);
+  }
+};
+template<int DEG> struct BsplineOrder<DEG, DEG + 1> {
+  static inline void run(const BsplineDerivTable&, const double*, int, double[SPLINE_WMAX][SPLINE_WMAX]) {}
+};
+
+template<int DEG>
+inline void bspline_weights_fixed(const BsplineDerivTable& T, double t, int K, double w[SPLINE_WMAX][SPLINE_WMAX]) {
+  double tp[DEG + 1]; tp[0] = 1.0;
+  for (int m = 1; m <= DEG; m++) tp[m] = tp[m - 1] * t;
+  BsplineOrder<DEG, 0>::run(T, tp, K, w);
+}
+
 // Whole-sample symmetric (mirror) boundary extension of an index into [0, n-1].
 inline int mirror_index(int k, int n) {
   if (n == 1) return 0;
@@ -215,12 +243,12 @@ struct SplineTable {
         for (int k = 1; k < w; k++) m = std::min(m, coef[(size_t) r * ncol + mirror_index(c + lo + k, ncol)]);
         rmin[(size_t) r * ncol + c] = m;
       }
-    for (int r = 0; r < nrow; r++)
-      for (int c = 0; c < ncol; c++) {
-        double m = rmin[(size_t) mirror_index(r + lo, nrow) * ncol + c];
-        for (int k = 1; k < w; k++) m = std::min(m, rmin[(size_t) mirror_index(r + lo + k, nrow) * ncol + c]);
-        neg_cell[(size_t) r * ncol + c] = m < 0.0;
-      }
+      for (int r = 0; r < nrow; r++)
+        for (int c = 0; c < ncol; c++) {
+          double m = rmin[(size_t) mirror_index(r + lo, nrow) * ncol + c];
+          for (int k = 1; k < w; k++) m = std::min(m, rmin[(size_t) mirror_index(r + lo + k, nrow) * ncol + c]);
+          neg_cell[(size_t) r * ncol + c] = m < 0.0;
+        }
   }
   // False only if the surface is certainly >= 0 on the cell containing (x, y) (layer 0, clamped).
   bool maybe_negative(double x, double y) const {
@@ -260,9 +288,9 @@ struct SplineTable {
   // -------------------------------------------------------------------------
   void eval_jet(const int* layers, int nl, double x, double y, int k0, int k1, double* out) const {
     switch (degree) {
-      case 1: eval_jet_w<2>(layers, nl, x, y, k0, k1, out); break;
-      case 3: eval_jet_w<4>(layers, nl, x, y, k0, k1, out); break;
-      default: eval_jet_w<6>(layers, nl, x, y, k0, k1, out); break;
+    case 1: eval_jet_w<2>(layers, nl, x, y, k0, k1, out); break;
+    case 3: eval_jet_w<4>(layers, nl, x, y, k0, k1, out); break;
+    default: eval_jet_w<6>(layers, nl, x, y, k0, k1, out); break;
     }
   }
 
@@ -292,8 +320,9 @@ struct SplineTable {
     if (deg == 1) { if (i0 > ncol - 2 && ncol > 1) i0 = ncol - 2; if (j0 > nrow - 2 && nrow > 1) j0 = nrow - 2; }
     double tu = u - i0, tv = v - j0;
     double wu[SPLINE_WMAX][SPLINE_WMAX], wv[SPLINE_WMAX][SPLINE_WMAX];
-    bspline_weights(deg, tu, K, wu);
-    bspline_weights(deg, tv, K, wv);
+    const BsplineDerivTable& BT = bspline_table<WW - 1>();
+    bspline_weights_fixed<WW - 1>(BT, tu, K, wu);
+    bspline_weights_fixed<WW - 1>(BT, tv, K, wv);
     double su = 1.0, sv = 1.0;
     for (int n = 0; n <= K; n++) {
       bool zu = outu && n > 0, zv = outv && n > 0;
@@ -444,13 +473,32 @@ inline std::vector<double> spline_jet(const SplinePtr& tab, const std::vector<in
 // ---------------------------------------------------------------------------
 static const int JET_KMAX = 4;
 
+// Memo of the last evaluation of one jet operator.  The operator is a pure function of (x, y), so
+// returning the stored outputs when it is called again at exactly the same (x, y) gives bit-identical
+// results.  This happens constantly: within one inner Newton step the same locations are evaluated by
+// the objective (line search), the gradient and the Hessian tapes.  The memo is shared (shared_ptr) by
+// all copies of the operator that TMBad makes when it derives the gradient / Hessian tapes from the
+// joint tape, so a location evaluated by one tape is not recomputed by another.
+// Not thread safe: disabled when compiled with OpenMP (TMB parallel evaluation).
+struct JetMemo {
+  double x, y;
+  bool valid;
+  std::vector<double> out;
+  JetMemo() : x(0), y(0), valid(false) {}
+};
+
 struct RasterJetOp : TMBad::global::DynamicOperator<2, -1> {
   SplinePtr tab;
   std::shared_ptr<const std::vector<int> > layers;
   int k0;
   bool barrier;   // false: jet of the spline layers; true: jet (k0 = 1) of the barrier potential B
+  std::shared_ptr<JetMemo> memo;
   RasterJetOp(SplinePtr tab_, std::shared_ptr<const std::vector<int> > layers_, int k0_, bool barrier_ = false) :
-    tab(tab_), layers(layers_), k0(k0_), barrier(barrier_) {}
+    tab(tab_), layers(layers_), k0(k0_), barrier(barrier_) {
+#ifndef _OPENMP
+    memo = std::make_shared<JetMemo>();
+#endif
+  }
   int P() const { return SplineTable::jet_size(k0, JET_KMAX); }
   // Structural sparsity of the jet: partial (nx, ny) of a degree-p tensor spline is identically
   // zero if nx > p or ny > p; for the barrier potential B = d^2 / 2 the bound is 2p, and for the
@@ -484,12 +532,17 @@ struct RasterJetOp : TMBad::global::DynamicOperator<2, -1> {
   }
 
   void forward(TMBad::ForwardArgs<double> &args) {
-    size_t m = output_size();
-    double buf[STACK_MAX]; std::vector<double> big;
-    double* o = buf;
-    if (m > STACK_MAX) { big.resize(m); o = big.data(); }
-    eval(args.x(0), args.x(1), o);
-    for (size_t i = 0; i < m; i++) args.y(i) = o[i];
+    const size_t m = output_size();
+    const double x = args.x(0), y = args.x(1);
+    double* o = &args.y(0);                     // the outputs of an operator are contiguous
+    if (memo) {
+      JetMemo& c = *memo;
+      if (c.valid && c.x == x && c.y == y) { for (size_t i = 0; i < m; i++) o[i] = c.out[i]; return; }
+      eval(x, y, o);
+      c.out.assign(o, o + m); c.x = x; c.y = y; c.valid = true;
+      return;
+    }
+    eval(x, y, o);
   }
   void forward(TMBad::ForwardArgs<ad> &args) {
     std::vector<ad> z = (*this)(args.x(0), args.x(1));
@@ -550,6 +603,185 @@ inline std::vector<TMBad::ad_aug> barrier_grad(const SplinePtr& tab, TMBad::ad_a
   RasterJetOp op(tab, std::make_shared<const std::vector<int> >(1, 0), 1, true);
   std::vector<TMBad::ad_aug> z = op(x, y);
   std::vector<TMBad::ad_aug> r(2); r[0] = z[0]; r[1] = z[1];
+  return r;
+}
+
+// ---------------------------------------------------------------------------
+// Jet of the movement potential (used by the model's drift).
+//   Phi(x, y) = sum_l a_l S_l(x, y)  [+ a_B B(x, y)]
+// where S_l are covariate spline layers, B the barrier potential and the coefficients a are AD
+// inputs (beta_c, times the DATA weights of dynamic layers or of the smoothing ring; a_B = -lambda).
+// The force is h = grad Phi, i.e. exactly sum_c beta_c grad S_c - lambda grad B.
+//
+// Inputs (x, y, a_1..a_n); outputs the 14 partials of Phi of orders 1..JET_KMAX (same layout as
+// RasterJetOp with k0 = 1).  Compared with one RasterJetOp for all layers followed by the
+// beta-weighted sums on the tape, the operator has n_layers times fewer outputs.  The tape that is
+// differentiated to get the inner Hessian and the Laplace gradient therefore depends on the number
+// of covariates only through n scalar inputs, instead of 14 outputs per layer each multiplied by
+// its coefficient.
+// Derivatives:
+//   d out(k-j, j) / dx = out(k+1-j, j),  d out(k-j, j) / dy = out(k-j, j+1)   (own outputs)
+//   d out_i / d a_l    = J_l,i  (partial i of layer l)
+// In double reverse sweeps J_l comes from the memo filled by the forward pass. When TMB derives a
+// new tape (reverse with ad), J_l is recorded as the per-layer jet operators above. Those are only
+// reached by derivatives with respect to the coefficients (beta, lambda): in the inner-Hessian tape
+// (random x random) they are dead code and are removed.
+// ---------------------------------------------------------------------------
+struct PotentialJetOp : TMBad::global::DynamicOperator<-1, -1> {
+  SplinePtr cov, bar;                                   // covariate stack (may be unused), barrier (may be null)
+  std::shared_ptr<const std::vector<int> > layers;      // covariate layers
+  int nl;                                               // number of covariate layers
+  bool has_bar;
+  std::shared_ptr<JetMemo> memo;                        // raw per-layer jets, keyed by (x, y)
+  PotentialJetOp(SplinePtr cov_, std::shared_ptr<const std::vector<int> > layers_, SplinePtr bar_) :
+    cov(cov_), bar(bar_), layers(layers_), nl((int) layers_->size()), has_bar((bool) bar_) {
+#ifndef _OPENMP
+    memo = std::make_shared<JetMemo>();
+#endif
+  }
+  static int P() { return SplineTable::jet_size(1, JET_KMAX); }
+  int ncoef() const { return nl + (has_bar ? 1 : 0); }
+  TMBad::Index input_size() const { return (TMBad::Index) (2 + ncoef()); }
+  TMBad::Index output_size() const { return (TMBad::Index) P(); }
+  static const bool have_input_size_output_size = true;
+  typedef TMBad::ad_aug ad;
+
+  bool nonzero_partial(int nx, int ny) const {
+    int p = 0;
+    if (nl > 0) p = cov->degree;
+    if (has_bar) { int pb = (bar->onset > 0.0 ? 7 : 2) * bar->degree; if (pb > p) p = pb; }
+    return nx <= p && ny <= p;
+  }
+  void eval_raw(double x, double y, double* raw) const {
+    if (nl > 0) cov->eval_jet(layers->data(), nl, x, y, 1, JET_KMAX, raw);
+    if (has_bar) barrier_potential_jet(*bar, x, y, JET_KMAX, raw + (size_t) nl * P());
+  }
+  // Per-layer jets at (x, y): from the memo when (x, y) is unchanged, otherwise evaluated.
+  const double* raw_at(double x, double y, std::vector<double>& buf) const {
+    const size_t m = (size_t) ncoef() * P();
+    if (memo) {
+      JetMemo& c = *memo;
+      if (!(c.valid && c.x == x && c.y == y)) {
+        c.out.resize(m); eval_raw(x, y, c.out.data()); c.x = x; c.y = y; c.valid = true;
+      }
+      return c.out.data();
+    }
+    buf.resize(m); eval_raw(x, y, buf.data());
+    return buf.data();
+  }
+  static void combine(const double* raw, const double* a, int nc, double* o) {
+    const int Pp = P();
+    for (int i = 0; i < Pp; i++) o[i] = 0.0;
+    for (int l = 0; l < nc; l++) {
+      const double al = a[l]; const double* r = raw + (size_t) l * Pp;
+      for (int i = 0; i < Pp; i++) o[i] += al * r[i];
+    }
+  }
+  // Taped (or constant-folded) call; in = (x, y, a_1..a_n)
+  std::vector<ad> operator()(const std::vector<ad>& in) const {
+    bool anyvar = false;
+    for (size_t i = 0; i < in.size(); i++) if (CppAD::Variable(in[i])) { anyvar = true; break; }
+    if (!anyvar) {
+      const int nc = ncoef();
+      std::vector<double> raw((size_t) nc * P()), a(nc), o(P());
+      eval_raw(asDouble(in[0]), asDouble(in[1]), raw.data());
+      for (int l = 0; l < nc; l++) a[l] = asDouble(in[2 + l]);
+      combine(raw.data(), a.data(), nc, o.data());
+      std::vector<ad> z(P());
+      for (int i = 0; i < P(); i++) z[i] = ad(o[i]);
+      return z;
+    }
+    return TMBad::global::Complete<PotentialJetOp>(*this)(in);
+  }
+
+  void forward(TMBad::ForwardArgs<double> &args) {
+    const int nc = ncoef();
+    std::vector<double> buf;
+    const double* raw = raw_at(args.x(0), args.x(1), buf);
+    double a[64]; std::vector<double> av;
+    double* ap = a;
+    if (nc > 64) { av.resize(nc); ap = av.data(); }
+    for (int l = 0; l < nc; l++) ap[l] = args.x(2 + l);
+    combine(raw, ap, nc, &args.y(0));                   // the outputs of an operator are contiguous
+  }
+  void forward(TMBad::ForwardArgs<ad> &args) {
+    std::vector<ad> in(input_size());
+    for (size_t i = 0; i < in.size(); i++) in[i] = args.x(i);
+    std::vector<ad> z = (*this)(in);
+    for (size_t i = 0; i < z.size(); i++) args.y(i) = z[i];
+  }
+  // x / y adjoints from the operator's own outputs (order-JET_KMAX outputs have zero derivative,
+  // as for RasterJetOp: they are never read, see JET_KMAX).
+  template<class T>
+  void reverse_xy(TMBad::ReverseArgs<T> &args) {
+    T dx0 = T(0.0), dx1 = T(0.0);
+    int off = 0;
+    for (int k = 1; k < JET_KMAX; k++) {
+      const int offn = off + k + 1;
+      for (int j = 0; j <= k; j++) {
+        if (!nonzero_partial(k + 1 - j, j) && !nonzero_partial(k - j, j + 1)) continue;
+        T dy = args.dy(off + j);
+        dx0 += args.y(offn + j) * dy;
+        dx1 += args.y(offn + j + 1) * dy;
+      }
+      off = offn;
+    }
+    args.dx(0) += dx0;
+    args.dx(1) += dx1;
+  }
+  void reverse(TMBad::ReverseArgs<double> &args) {
+    reverse_xy(args);
+    const int nc = ncoef(), Pp = P();
+    std::vector<double> buf;
+    const double* raw = raw_at(args.x(0), args.x(1), buf);
+    for (int l = 0; l < nc; l++) {
+      const double* r = raw + (size_t) l * Pp;
+      double s = 0.0;
+      for (int i = 0; i < Pp; i++) s += r[i] * args.dy(i);
+      args.dx(2 + l) += s;
+    }
+  }
+  void reverse(TMBad::ReverseArgs<ad> &args) {
+    reverse_xy(args);
+    const int Pp = P();
+    ad x = args.x(0), y = args.x(1);
+    std::vector<ad> R;
+    if (nl > 0) { RasterJetOp op(cov, layers, 1); R = op(x, y); }
+    if (has_bar) {
+      RasterJetOp ob(bar, std::make_shared<const std::vector<int> >(1, 0), 1, true);
+      std::vector<ad> b = ob(x, y);
+      R.insert(R.end(), b.begin(), b.end());
+    }
+    for (int l = 0; l < ncoef(); l++) {
+      ad s = ad(0.0);
+      for (int i = 0; i < Pp; i++) s += R[(size_t) l * Pp + i] * args.dy(i);
+      args.dx(2 + l) += s;
+    }
+  }
+  void forward(TMBad::ForwardArgs<TMBad::Writer> &args) { Rf_error("PotentialJetOp: source code writer not implemented"); }
+  void reverse(TMBad::ReverseArgs<TMBad::Writer> &args) { Rf_error("PotentialJetOp: source code writer not implemented"); }
+  const char* op_name() { return "PJET"; }
+};
+
+// grad Phi (2 values) for Phi = sum_l a_l S_l [+ a_B B]; `bar` null = no barrier term.
+inline std::vector<TMBad::ad_aug> potential_grad(const SplinePtr& cov, const std::vector<int>& layers, const SplinePtr& bar,
+                                                 TMBad::ad_aug x, TMBad::ad_aug y, const std::vector<TMBad::ad_aug>& a) {
+  PotentialJetOp op(cov, std::make_shared<const std::vector<int> >(layers), bar);
+  std::vector<TMBad::ad_aug> in(2 + a.size());
+  in[0] = x; in[1] = y;
+  for (size_t l = 0; l < a.size(); l++) in[2 + l] = a[l];
+  std::vector<TMBad::ad_aug> z = op(in);
+  std::vector<TMBad::ad_aug> r(2); r[0] = z[0]; r[1] = z[1];
+  return r;
+}
+inline std::vector<double> potential_grad(const SplinePtr& cov, const std::vector<int>& layers, const SplinePtr& bar,
+                                          double x, double y, const std::vector<double>& a) {
+  PotentialJetOp op(cov, std::make_shared<const std::vector<int> >(layers), bar);
+  const int nc = op.ncoef();
+  std::vector<double> raw((size_t) nc * op.P()), o(op.P());
+  op.eval_raw(x, y, raw.data());
+  PotentialJetOp::combine(raw.data(), a.data(), nc, o.data());
+  std::vector<double> r(2); r[0] = o[0]; r[1] = o[1];
   return r;
 }
 #endif
@@ -689,6 +921,57 @@ MATRIX extract_raster_values(TYPE x, TYPE y, TYPE z,
   }
   return grad_values;
 }
+
+#ifndef IS_RCPP_BUILD
+// ---------------------------------------------------------------------------
+// Drift force h = sum_c beta_c grad S_c(x, y, z) - lambda grad B(x, y), via one PotentialJetOp per
+// evaluation point.  Same layers and time weights as extract_raster_values (z is DATA); the
+// coefficients beta_c * w are formed on the parameters only.  ring_w scales the covariate part
+// (weight of this point in the smoothing ring; 1 without smoothing).  The barrier term is
+// included when `bar` is non-null.
+// ---------------------------------------------------------------------------
+template<class Type>
+void cov_layer_weights(double zd, const vector<Type> &all_z_values, const vector<int> &n_zvals_cov,
+                       const vector<int> &cov_offset, int n_covs,
+                       std::vector<int> &lay, std::vector<double> &wl, std::vector<int> &ci) {
+  lay.clear(); wl.clear(); ci.clear();
+  for (int i = 0; i < n_covs; i++) {
+    int layers = n_zvals_cov(i), offset = cov_offset(i);
+    int z_idx1 = 0, z_idx2 = 0;
+    double z_weight = 0.0;
+    if (layers > 1) {
+      double zfirst = asDouble(all_z_values(offset)), zlast = asDouble(all_z_values(offset + layers - 1));
+      if (zd <= zfirst) { z_idx1 = 0; z_idx2 = 0; }
+      else if (zd >= zlast) { z_idx1 = layers - 1; z_idx2 = layers - 1; }
+      else {
+        for (int k = 0; k < layers - 1; k++) {
+          double t1 = asDouble(all_z_values(offset + k)), t2 = asDouble(all_z_values(offset + k + 1));
+          if (zd >= t1 && zd <= t2) { z_idx1 = k; z_idx2 = k + 1; z_weight = (zd - t1) / (t2 - t1); break; }
+        }
+      }
+    }
+    if (layers > 1 && z_idx1 != z_idx2) {
+      lay.push_back(offset + z_idx1); wl.push_back(1.0 - z_weight); ci.push_back(i);
+      lay.push_back(offset + z_idx2); wl.push_back(z_weight); ci.push_back(i);
+    } else {
+      lay.push_back(offset + z_idx1); wl.push_back(1.0); ci.push_back(i);
+    }
+  }
+}
+
+template<class Type>
+void potential_force(Type x, Type y, const langevin_raster::SplinePtr &cov_spline,
+                     const std::vector<int> &lay, const std::vector<double> &wl, const std::vector<int> &ci,
+                     const vector<Type> &beta, double ring_w,
+                     const langevin_raster::SplinePtr &bar, Type lambda, Type &h0, Type &h1) {
+  std::vector<Type> a(lay.size() + (bar ? 1 : 0));
+  for (size_t l = 0; l < lay.size(); l++) a[l] = beta(ci[l]) * Type(ring_w * wl[l]);
+  if (bar) a[lay.size()] = -lambda;
+  if (a.empty()) return;
+  std::vector<Type> g = langevin_raster::potential_grad(cov_spline, lay, bar, x, y, a);
+  h0 += g[0]; h1 += g[1];
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // Smoothing radius for calculate_smooth_gradient().

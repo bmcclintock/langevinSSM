@@ -96,7 +96,7 @@ Type log_pnorm_upper(Type x)
   Type xa = CppAD::CondExpGt(x, Type(8.0), x, Type(8.0));
   Type r = Type(1.0) / (xa * xa);
   Type ser = Type(1.0) + r * (Type(-1.0) + r * (Type(3.0) + r * (Type(-15.0) + r * (Type(105.0) +
-             r * (Type(-945.0) + r * Type(10395.0))))));
+    r * (Type(-945.0) + r * Type(10395.0))))));
   Type asym = -Type(0.5) * xa * xa - Type(0.5) * log(Type(2.0 * M_PI)) - log(xa) + log(ser);
   return CppAD::CondExpGt(x, Type(8.0), asym, direct);
 }
@@ -112,36 +112,36 @@ template<class Type>
 Type log_pgh1_upper(Type z, Type lam, Type chi, Type psi)
 {
   static const double gh_x[24] = {-6.0159255614257443, -5.2593829276680388, -4.6256627564237869, -4.0536644024481499,
-    -3.5200068130345272, -3.0125461375655633, -2.5238810170114276, -2.0490035736616981, -1.5842500109616937,
-    -1.1267608176112449, -0.67417110703721195, -0.22441454747251546, 0.2244145474725153, 0.67417110703721228,
-    1.1267608176112454, 1.5842500109616942, 2.0490035736616989, 2.5238810170114263, 3.0125461375655638,
-    3.520006813034525, 4.0536644024481516, 4.6256627564237869, 5.259382927668045, 6.0159255614257434};
+                                  -3.5200068130345272, -3.0125461375655633, -2.5238810170114276, -2.0490035736616981, -1.5842500109616937,
+                                  -1.1267608176112449, -0.67417110703721195, -0.22441454747251546, 0.2244145474725153, 0.67417110703721228,
+                                  1.1267608176112454, 1.5842500109616942, 2.0490035736616989, 2.5238810170114263, 3.0125461375655638,
+                                  3.520006813034525, 4.0536644024481516, 4.6256627564237869, 5.259382927668045, 6.0159255614257434};
   // log(weight) + node^2
   static const double gh_lw[24] = {-0.14055535719000289, -0.38776076553999417, -0.51518226609870865, -0.59745971303239642,
-    -0.65576687610675322, -0.69901095318921058, -0.73173791030169699, -0.75654526290860691, -0.77502142694586862,
-    -0.7881713515714166, -0.79662923758200099, -0.8007705983701533, -0.80077059837015296, -0.79662923758199922,
-    -0.7881713515714206, -0.77502142694586817, -0.7565452629085998, -0.73173791030170143, -0.69901095318921058,
-    -0.65576687610675677, -0.59745971303238932, -0.51518226609870155, -0.38776076553996575, -0.14055535718998868};
-  // centring: smooth positive part of z
-  Type zp = Type(0.5) * (z + sqrt(z * z + Type(1.0)));
-  Type chi2 = chi + zp * zp;
-  Type l2 = lam - Type(0.5) * zp * zp / (Type(1.0) + zp * zp);
-  Type wm = (l2 + sqrt(l2 * l2 + chi2 * psi)) / psi;
-  Type sc = sqrt(Type(2.0)) / sqrt(Type(0.5) * (chi2 / wm + psi * wm));
-  Type vm = log(wm);
-  // GIG normalising constant
-  Type lc = Type(0.5) * lam * log(psi / chi) - log(Type(2.0)) - log_besselK(sqrt(chi * psi), lam);
-  vector<Type> lv(24);
-  for (int j = 0; j < 24; j++) {
-    Type v = vm + sc * Type(gh_x[j]);
-    Type w = exp(v);
-    lv(j) = lc + lam * v - Type(0.5) * (chi / w + psi * w) + log_pnorm_upper(z * exp(-Type(0.5) * v)) + Type(gh_lw[j]);
-  }
-  Type m = lv(0);
-  for (int j = 1; j < 24; j++) m = CppAD::CondExpGt(lv(j), m, lv(j), m);
-  Type sum = Type(0.0);
-  for (int j = 0; j < 24; j++) sum += exp(lv(j) - m);
-  return m + log(sum) + log(sc);
+                                   -0.65576687610675322, -0.69901095318921058, -0.73173791030169699, -0.75654526290860691, -0.77502142694586862,
+                                   -0.7881713515714166, -0.79662923758200099, -0.8007705983701533, -0.80077059837015296, -0.79662923758199922,
+                                   -0.7881713515714206, -0.77502142694586817, -0.7565452629085998, -0.73173791030170143, -0.69901095318921058,
+                                   -0.65576687610675677, -0.59745971303238932, -0.51518226609870155, -0.38776076553996575, -0.14055535718998868};
+                                   // centring: smooth positive part of z
+                                   Type zp = Type(0.5) * (z + sqrt(z * z + Type(1.0)));
+                                   Type chi2 = chi + zp * zp;
+                                   Type l2 = lam - Type(0.5) * zp * zp / (Type(1.0) + zp * zp);
+                                   Type wm = (l2 + sqrt(l2 * l2 + chi2 * psi)) / psi;
+                                   Type sc = sqrt(Type(2.0)) / sqrt(Type(0.5) * (chi2 / wm + psi * wm));
+                                   Type vm = log(wm);
+                                   // GIG normalising constant
+                                   Type lc = Type(0.5) * lam * log(psi / chi) - log(Type(2.0)) - log_besselK(sqrt(chi * psi), lam);
+                                   vector<Type> lv(24);
+                                   for (int j = 0; j < 24; j++) {
+                                     Type v = vm + sc * Type(gh_x[j]);
+                                     Type w = exp(v);
+                                     lv(j) = lc + lam * v - Type(0.5) * (chi / w + psi * w) + log_pnorm_upper(z * exp(-Type(0.5) * v)) + Type(gh_lw[j]);
+                                   }
+                                   Type m = lv(0);
+                                   for (int j = 1; j < 24; j++) m = CppAD::CondExpGt(lv(j), m, lv(j), m);
+                                   Type sum = Type(0.0);
+                                   for (int j = 0; j < 24; j++) sum += exp(lv(j) - m);
+                                   return m + log(sum) + log(sc);
 }
 
 template<class Type>
@@ -340,6 +340,8 @@ Type langevinSSM(objective_function<Type>* obj)
   langevin_raster::SplinePtr barrier_spline;
   if (barrier_penalty > Type(0.0) || lambda_mode > 0) barrier_spline = build_barrier_spline(barrier_dist, raster_resolution, raster_extent, spline_degree, asDouble(barrier_onset));
 
+  std::vector<int> f_lay, f_ci; std::vector<double> f_wl;   // per-step covariate layers / time weights
+
   // Process model - loop over tracks
   for(int id = 0; id < track_starts.size(); id++) {
     int start_idx = track_starts(id);
@@ -366,36 +368,34 @@ Type langevinSSM(objective_function<Type>* obj)
       Type y_prev = mu(1,idx);
       Type z_prev = times(idx);
 
-      // Calculate gradient of log(π)
-      matrix<Type> grad;
-      if(smoothGradient) {
-        grad = calculate_smooth_gradient(
-          x_prev, y_prev, z_prev,
-          cov_spline, all_z_values, n_zvals_cov, cov_offset,
-          n_covs, weights, smooth_sigma, smooth_gamma, dt_step, zetaScale, process_model
-        );
-      } else {
-        grad = extract_raster_values(
-          x_prev, y_prev, z_prev,
-          cov_spline, all_z_values, n_zvals_cov, cov_offset, n_covs
-        );
-      }
-
-      // Force vector h = ∇log[π(x)]
-      vector<Type> h(2);
-      h.setZero();
-      for(int c = 0; c < n_covs; c++) {
-        h(0) += beta(c) * grad(0,c);
-        h(1) += beta(c) * grad(1,c);
-      }
-
-      // --- BARRIER PENALTY FORCE ---
-      Type h0 = h(0), h1 = h(1);
+      // Force h = grad log pi(x) - lambda_t grad B(x) = grad Phi, with the movement potential
+      //   Phi = sum_c beta_c S_c - lambda_t B
+      // evaluated by one fused operator per point (PotentialJetOp): its outputs are the partials of
+      // Phi itself rather than of every covariate layer, so the force costs the same number of taped
+      // operations whatever the number of covariates.
       Type lambda_t = lambda_w;
       if (lambda_mode == 1) lambda_t = lambda_stability_limit(sigma_sca, gamma, dt_step, process_model);
-      apply_barrier_penalty(x_prev, y_prev, barrier_spline, lambda_t, h0, h1);
+      langevin_raster::SplinePtr bar_t;
+      if (barrier_spline && asDouble(lambda_t) > 0.0) bar_t = barrier_spline;
+      cov_layer_weights(asDouble(z_prev), all_z_values, n_zvals_cov, cov_offset, n_covs, f_lay, f_wl, f_ci);
+      Type h0 = Type(0.0), h1 = Type(0.0);
+      if (smoothGradient) {
+        // Ring average of the covariate force (see calculate_smooth_gradient); barrier at the centre only.
+        Type rad = smooth_gradient_radius(smooth_sigma, smooth_gamma, dt_step, Type(weights(0)), zetaScale, process_model);
+        potential_force(x_prev, y_prev, cov_spline, f_lay, f_wl, f_ci, beta, asDouble(weights(0)), bar_t, lambda_t, h0, h1);
+        int n_points = weights.size();
+        langevin_raster::SplinePtr nobar;
+        for (int ip = 0; ip < n_points - 1; ip++) {
+          Type angle = (n_points == 9) ? Type(M_PI) * (Type(2.0) * ip + Type(1.0)) / Type(8.0)
+            : Type(M_PI) * (Type(2.0) * ip + Type(1.0)) / Type(4.0);
+          potential_force(Type(x_prev + rad * cos(angle)), Type(y_prev + rad * sin(angle)), cov_spline, f_lay, f_wl, f_ci,
+                          beta, asDouble(weights(ip + 1)), nobar, lambda_t, h0, h1);
+        }
+      } else {
+        potential_force(x_prev, y_prev, cov_spline, f_lay, f_wl, f_ci, beta, 1.0, bar_t, lambda_t, h0, h1);
+      }
+      vector<Type> h(2);
       h(0) = h0; h(1) = h1;
-      // -----------------------------
 
       if(process_model == 1) {  // Underdamped
         Type gdt = gamma * dt_step;
@@ -412,28 +412,26 @@ Type langevinSSM(objective_function<Type>* obj)
         Type var_v = -s2 * em1_2gdt;
         Type cov_xv = s2/gamma * (em1_gdt * em1_gdt);
 
+        // The two coordinates are independent with the SAME 2x2 covariance, so its inverse and
+        // log-determinant are computed once per step (closed form) rather than by two MVNORM calls.
+        // Per coordinate this is exactly MVNORM(Sigma)(nu) = 0.5 log|Sigma| + 0.5 nu' Sigma^-1 nu + log(2 pi).
+        // Every quantity below except nx and nv depends only on parameters and dt, so the terms that
+        // depend on the latent states (which drive the size of the inner Hessian tape) are minimal.
+        Type det_S = var_x * var_v - cov_xv * cov_xv;
+        Type qa = Type(0.5) * var_v / det_S;    // 0.5 * (Sigma^-1)_11
+        Type qb = -cov_xv / det_S;              //       (Sigma^-1)_12   (counted twice in the quadratic form)
+        Type qc = Type(0.5) * var_x / det_S;    // 0.5 * (Sigma^-1)_22
+        Type cB = s2 / gamma * (dt_step - term1);   // coefficient of h in the position mean
+        Type cV = s2 * term1;                       // coefficient of h in the velocity mean
+        nll += log(det_S) + Type(2.0 * log(2.0 * M_PI));
+
         for(int i = 0; i < 2; i++) {
-          // Position mean
-          Type mu_x_pred = mu(i,idx) +
-            vel(i,idx) * term1 +
-            s2*h(i)/gamma * (dt_step - term1);
-
-          // Velocity mean
-          Type mu_v_pred = vel(i,idx) * exp_gdt +
-            s2*h(i) * term1;
-
-          // Construct variance-covariance matrix
-          matrix<Type> Sigma(2,2);
-          Sigma(0,0) = var_x;
-          Sigma(1,1) = var_v;
-          Sigma(0,1) = cov_xv;
-          Sigma(1,0) = cov_xv;
-
-          vector<Type> nu(2);
-          nu(0) = mu(i,idx+1) - mu_x_pred;
-          nu(1) = vel(i,idx+1) - mu_v_pred;
-
-          nll += MVNORM(Sigma)(nu);
+          // Position and velocity means:
+          //   mu_x_pred = mu + vel (1 - e^{-gdt})/gamma + s2 h / gamma (dt - (1 - e^{-gdt})/gamma)
+          //   mu_v_pred = vel e^{-gdt} + s2 h (1 - e^{-gdt})/gamma
+          Type nx = mu(i,idx+1) - (mu(i,idx) + vel(i,idx) * term1 + h(i) * cB);
+          Type nv = vel(i,idx+1) - (vel(i,idx) * exp_gdt + h(i) * cV);
+          nll += nx * (qa * nx + qb * nv) + qc * nv * nv;
         }
       } else {  // Overdamped
 
@@ -611,7 +609,21 @@ Type langevinSSM(objective_function<Type>* obj)
       Type k_i = k(k_group(i));
       int dist_i = dist_obs(i);
 
-      if (dist_i == 0) {
+      if (!keep.osa_active() && dist_i <= 1) {
+        // Model fitting (no OSA residuals): all keep indicators are 1, so the marginal x conditional
+        // decompositions below reduce to the joint bivariate density, evaluated directly
+        // (fewer operations on the latent locations).  With d2 = r' Sigma^-1 r, r = obs - mu:
+        //   Gaussian: log f = -log(2 pi) - 1/2 log|Sigma| - d2 / 2
+        //   t (df):   log f = -log(2 pi) - 1/2 log|Sigma| - (df + 2)/2 log(1 + d2 / df)
+        // (for the t, lgamma(df/2 + 1) - lgamma(df/2) - log(df pi) = -log(2 pi) exactly).
+        Type dx = x_obs - mu_x;
+        Type ey = (y_obs - mu_y) - (covXY / varX) * dx;
+        Type var_y_given_x = varY - covXY * covXY / varX;
+        Type d2 = dx * dx / varX + ey * ey / var_y_given_x;
+        Type ll_c = -Type(log(2.0 * M_PI)) - Type(0.5) * log(varX * var_y_given_x);
+        if (dist_i == 0) nll -= ll_c - Type(0.5) * d2;
+        else nll -= ll_c - Type(0.5) * (df_i + Type(2.0)) * log(Type(1.0) + d2 / df_i);
+      } else if (dist_i == 0) {
         // Gaussian Model
         nll -= kX * dnorm(x_obs, mu_x, sdX, true);
         Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);

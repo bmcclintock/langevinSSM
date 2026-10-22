@@ -46,74 +46,25 @@ narDat <- narFilt <- formatData(narRaw, id="ID", date="datetime_UTC", coord=c("X
 
 covs <- list(bathy=scale(bathy * maskBuff), barrier = barrier)
 
-leaksDat <- maskLeakage(narDat,mask, level=1, tolerance=0,coord=c("x","y"))
+# number of locations in land cells
+leaksDat <- maskLeakage(narDat,mask, level=1.e-6, tolerance=0,coord=c("x","y"))
 
 plotRaster(mask,extent = origextent)+geom_point(aes(x=x,y=y),data=narFilt,col="#E69F00")
 
 narFilt <- routeTracks(narFilt,maskBuff)
-leaksRoute <- maskLeakage(narFilt,mask, level=1, tolerance=0,coord=c("mu.x_pr","mu.y_pr"))
+leaksRoute <- maskLeakage(narFilt,mask, level=1, tolerance=res(mask)[1]*2+1,coord=c("mu.x_pr","mu.y_pr"))
 
-# random initial values that yield maximum log-likelihood
-narPar <- list(beta = -0.588223050464112,
-               sigma = 2599.48381240145,
-               gamma = 1.99934981183229,
-               psi = 21.0399917348219,
-               tau = c(1.42885457494551, 1.25090566160653))
+onset <- 5000
 
-narPar$mu <- cbind(narFilt$mu.x_pr,narFilt$mu.y_pr)
+narPar <- list(beta = 0, sigma = 3000, gamma = 1,
+             psi = 15, psi_maj = 0.6, b_maj = 0.4, b_min = 0.4,
+             tau = c(1, 1), rho_o = 0,
+             mu  = cbind(narFilt$mu.x_pr, narFilt$mu.y_pr))
 
-narFit <- fitLangevin(narFilt, model = model, spatialCovs = covs, barrier = "barrier",
-                      par = narPar,
-                      scaleFactor=scaleFactor,
-                      control=list(trace=1),
-                      silent = TRUE)
-narFit
+narFit <- fitLangevin(narFilt, model = model, spatialCovs = covs, barrier = "barrier", barrierOnset = onset,
+                   obs_dist = "Gaussian", par = narPar, scaleFactor = scaleFactor,
+                   control = list(trace = 1))
+
 plot(narFit,spatialCovs=covs,data=narFilt,extent=origextent,normalize=TRUE,maskRast=maskBuff)
-narLeaks <- maskLeakage(narFit,mask,level=1,tolerance = res(mask)[1]*2+1)
-
-narRes <- residuals(narFit,data=narFilt,spatialCovs=covs)
-narRes
-plot(narRes)
-
-narSim <- simLangevin(narFit,data=narFilt,spatialCovs=covs,timeStep="1 min")
-leaksSim <- maskLeakage(narSim,mask,level=1,tolerance=res(mask)[1]*2+1)
-plotRaster(mask,extent = origextent)+geom_point(aes(x=mu.x,y=mu.y),data=narSim,col="#E69F00")
-
-narBest <- narFit
-parBest <- narPar
-
-for(i in 1:100){
-  message("Simulation ",i)
-  #par <- list(beta=rnorm(1,0,2),
-  #            sigma = runif(1,1500,3000),
-  #            gamma = runif(1,0.5,4),
-  #            psi = runif(1,1,5),
-  #            tau = runif(2,0.5,10))
-
-  par <- getPar(narBest)
-  par$beta <- par$beta + rnorm(1,0,1)
-  par$sigma <- par$sigma + runif(1,-100,100)
-  par$gamma <- par$gamma + runif(1,-1,1)
-  par$psi <- max(par$psi + runif(1,-1,1),1)
-  par$tau <- pmax(par$tau + runif(2,-0.5,2),0.5)
-  par$mu <- cbind(narFilt$mu.x_pr,narFilt$mu.y_pr)
-  par$vel <- NULL
-
-  fit <- tryCatch(suppressWarnings(suppressMessages(fitLangevin(narFilt, model = model, spatialCovs = covs, barrier = "barrier",
-                                                                par = par,
-                                                                scaleFactor=scaleFactor,
-                                                                #control=list(trace=1),
-                                                                silent = TRUE))),error=function(e) e)
-
-  if(!inherits(fit,"error")){
-    print(fit$objective)
-    if(AIC(fit)<=AIC(narBest)) {
-      narBest <- fit
-      parBest <- par
-      print(narBest)
-      print(plot(narBest,spatialCovs=covs,data=narFilt,extent=origextent,normalize=TRUE,maskRast=maskBuff))
-      leaksBest <- maskLeakage(narBest,mask,level=1,tolerance = res(mask)[1]*2+1)
-    }
-  }
-}
-
+# number of estimated locations with no support less than 1 cell inland
+narLeaks <- maskLeakage(narFit,mask,level=1,tolerance = res(mask)[1]+1.e-6)

@@ -54,7 +54,7 @@
 #' \strong{Barrier strength (\code{lambda = "tied"}):}
 #' By default \code{simLangevin} uses the same rule as \code{\link{fitLangevin}}: at each simulation step the barrier spring constant is set to the stability limit \eqn{\lambda_{max}(\sigma, \gamma, \Delta t)} of the discretised SDE (see the barrier section below), i.e. the hardest wall the numerical solver can represent at that step. Because \eqn{\lambda_{max}} grows as \eqn{\Delta t} shrinks, the simulated wall is only as hard as \code{timeStep} allows; to mimic animals that never cross a barrier, simulate at a fine \code{timeStep} and use \code{subSample} to obtain the desired observation interval.
 #'
-#' For tied simulations the returned object has \code{attr(, "lambda") = "tied"} (unchanged by \code{subSample}, because a hard wall remains a hard wall however often it is observed), so \code{fitLangevin(lambda = NULL)} also fits a tied barrier. For a numeric \code{lambda} the stored value is the numeric stiffness, rescaled to the observation interval when \code{subSample} is used.
+#' For tied simulations the returned object has \code{attr(, "lambda") = "tied"} (unchanged by \code{subSample}, because a hard wall remains a hard wall however often it is observed), so \code{fitLangevin(lambda = NULL)} also fits a tied barrier and \code{getUD} uses a hard wall. The value of the tied \eqn{\lambda} is stored separately in \code{attr(, "lambda_tied")} (natural scale), defined as \code{\link{fitLangevin}} reports it in \code{fit$conditions$lambda_report}: the stability limit at the median positive time step of the returned data (after any \code{subSample}), evaluated at the simulation's \eqn{\sigma} and \eqn{\gamma}. It can therefore be compared directly with \code{lambda_report} from a fit to the simulated data. For the \code{fitLangevin} method it is the fit's tied \eqn{\lambda}, \code{fit$conditions$lambda_report}. It is not the per-step value used inside the simulation, which is larger when \code{timeStep} is smaller than the observation interval. For a numeric \code{lambda} the stored value is the numeric stiffness, rescaled to the observation interval when \code{subSample} is used, and there is no \code{"lambda_tied"} attribute.
 #'
 #'
 #' @return A data frame of class \code{dataLangevin} containing the simulated trajectories.
@@ -355,6 +355,10 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     }
   }
 
+  # true tied lambda, defined as in fitLangevin (stability limit at the median observed step);
+  # computed after subSample because that changes the observed steps
+  if (!is.null(barrier) && tied) attr(out, "lambda_tied") <- .tied_lambda_value(model, sigma, gamma, out$dt)
+
   return(out)
 }
 
@@ -639,6 +643,10 @@ simLangevin.fitLangevin <- function(model,
 
   if (!is.null(cond$barrier)) {
     attr(out, "lambda") <- if (tied) "tied" else cond$lambda
+    # the fit's tied lambda (fit$conditions$lambda_report: stability limit at the fit's median step)
+    if (tied) attr(out, "lambda_tied") <- if (!is.null(cond$lambda_report)) cond$lambda_report else
+      .tied_lambda_value(cond$model, exp(fit$tmb_setup$parList$log_sigma) * scaleFactor,
+                         if (cond$model == "underdamped") exp(fit$tmb_setup$parList$log_gamma) else 1, median_dt = dat$median_dt)
     attr(out, "barrier") <- cond$barrier
     attr(out, "barrierOnset") <- .cond_onset(cond)
     attr(out, "scaleFactor") <- scaleFactor
@@ -648,6 +656,16 @@ simLangevin.fitLangevin <- function(model,
 }
 
 # --- Lambda Helpers ---
+# Tied lambda on the natural scale, defined as fitLangevin reports it: the stability limit at the
+# median positive time step (steps <= 1e-6 are duplicated times, as in build_tmb_data).
+.tied_lambda_value <- function(model, sigma, gamma, dt = NULL, median_dt = NULL) {
+  if (is.null(median_dt)) {
+    pos_dt <- dt[!is.na(dt) & dt > 1.e-6]
+    median_dt <- if (length(pos_dt)) stats::median(pos_dt) else 1
+  }
+  .stability_limit(model, sigma, if (model == "underdamped") gamma else 1, median_dt)
+}
+
 .is_tied_lambda <- function(lambda) {
   if (is.character(lambda)) {
     if (length(lambda) != 1 || !identical(lambda, "tied")) stop("'lambda' must be \"tied\" or a single non-negative number.")

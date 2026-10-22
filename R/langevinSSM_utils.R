@@ -318,7 +318,8 @@ summary.fitLangevin <- function(object, ...) {
     coef_beta = as.matrix(coef_beta), # printCoefmat prefers matrices
     coef_process = as.matrix(coef_process),
     barrier = object$conditions$barrier,
-    lambda = object$conditions$lambda
+    lambda = object$conditions$lambda,
+    lambda_mode = object$conditions$lambda_mode
   )
 
   class(res) <- "summary.fitLangevin"
@@ -353,8 +354,11 @@ print.summary.fitLangevin <- function(x, digits = 4, signif.stars = TRUE, ...) {
   cat("Max Log-Likelihood:", x$loglik, "\n")
   cat("Optimization time: ", round(x$elapsed, 2), "seconds\n")
 
-  if (!is.null(x$barrier) && !is.null(x$lambda)) {
-    cat("Barrier penalty:   ", signif(x$lambda, 4), "\n")
+  if (identical(x$lambda_mode, "tied")) {
+    cat("Barrier penalty:    tied\n")
+  } else if (!is.null(x$barrier) && !is.null(x$lambda)) {
+    if (identical(x$lambda_mode, "estimate")) cat("Barrier penalty:    estimate\n")
+    else cat("Barrier penalty:   ", signif(x$lambda, 4), "\n")
   }
   cat("\n")
 

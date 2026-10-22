@@ -993,3 +993,48 @@ test_that("initialInner and polishOptim have been removed", {
   expect_false(any(c("initialInner", "polishOptim") %in% names(fit$conditions)))
   expect_true(is.finite(fit$objective))
 })
+
+test_that("optMethod = 'nloptr' avoids NaN outer steps from poor starts and matches nlminb", {
+  skip_if_not_installed("nloptr")
+  set.seed(11)
+  sim <- suppressMessages(simLangevin(model = "overdamped", par = list(beta = c(-4, 6, 5), sigma = 5),
+                                      nbAnimals = 1, obsPerAnimal = 150, spatialCovs = exampleCovs[1:3],
+                                      measurementError = list(smaj.sd = 1.5, smin.sd = 0.75, eor.lim = c(0, 180))))
+  st <- list(beta = c(0, 0, 0), sigma = 50)   # poor start: unscaled L-BFGS gave 4 NaN evaluations here
+  f1 <- suppressWarnings(suppressMessages(fitLangevin(sim, model = "overdamped", spatialCovs = exampleCovs[1:3], par = st,
+                                                      optMethod = "nlminb", calcSE = FALSE)))
+  # count non-finite objective values returned to nloptr (counter in globalenv: trace() evaluates elsewhere)
+  assign(".langevin_nan_count", 0, envir = globalenv())
+  on.exit(rm(".langevin_nan_count", envir = globalenv()), add = TRUE)
+  suppressMessages(trace(nloptr::nloptr, where = asNamespace("nloptr"), print = FALSE, tracer = quote({
+    ef <- eval_f
+    eval_f <- function(x) {
+      v <- ef(x)
+      if (!is.finite(v)) assign(".langevin_nan_count", get(".langevin_nan_count", globalenv()) + 1, envir = globalenv())
+      v
+    }
+  })))
+  on.exit(suppressMessages(untrace(nloptr::nloptr, where = asNamespace("nloptr"))), add = TRUE)
+  f2 <- suppressWarnings(suppressMessages(fitLangevin(sim, model = "overdamped", spatialCovs = exampleCovs[1:3], par = st,
+                                                      optMethod = "nloptr", calcSE = FALSE)))
+  expect_equal(f2$convergence, 0)
+  expect_equal(f2$objective, f1$objective, tolerance = 1e-6)
+  expect_equal(get(".langevin_nan_count", globalenv()), 0)
+  expect_true(f2$evaluations[["function"]] >= f2$iterations)
+})
+
+test_that("optMethod = 'nloptr' with print_level traces the unscaled negative log-likelihood", {
+  skip_if_not_installed("nloptr")
+  set.seed(11)
+  sim <- suppressMessages(simLangevin(model = "overdamped", par = list(beta = c(-4, 6, 5), sigma = 5),
+                                      nbAnimals = 1, obsPerAnimal = 150, spatialCovs = exampleCovs[1:3],
+                                      measurementError = list(smaj.sd = 1.5, smin.sd = 0.75, eor.lim = c(0, 180))))
+  out <- capture.output(fit <- suppressWarnings(suppressMessages(
+    fitLangevin(sim, model = "overdamped", spatialCovs = exampleCovs[1:3], par = list(beta = c(0, 0, 0), sigma = 50),
+                optMethod = "nloptr", calcSE = FALSE, control = list(print_level = 3)))))
+  fv <- as.numeric(sub(".*f\\(x\\) = ", "", grep("f\\(x\\) = ", out, value = TRUE)))
+  expect_equal(length(fv), fit$evaluations[["function"]])
+  expect_equal(min(fv, na.rm = TRUE), fit$objective, tolerance = 1e-5)
+  expect_equal(length(grep("x = \\(", out)), length(fv))
+  expect_equal(fit$conditions$control$print_level, 3)
+})

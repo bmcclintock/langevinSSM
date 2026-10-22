@@ -218,6 +218,7 @@ set.seed(10,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
+                              lambda = 4,
                               barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 4,
                                                       smin.sd = 1,
@@ -225,7 +226,7 @@ simDat_barrier <- simLangevin(par = par_barrier,
 
 fit_barrier <- fitLangevin(data = simDat_barrier,
                            spatialCovs = exampleCovs_barrier,
-                           lambda = 4.003)
+                           lambda = 4)
 fit_barrier
 
 plot(fit_barrier, data = simDat_barrier,

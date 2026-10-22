@@ -179,6 +179,36 @@ parse_priors <- function(par, prior, spatialCovs, map = NULL, obs_spec = NULL) {
   return(priors)
 }
 
+# Columns of dat$Y (time steps) whose location is known exactly: observed coordinates with no measurement error
+# information (obs_mod NA). States shared through duplicated times (dt < 1e-6, see mapDuplicatedTimes) are one
+# state, so every time step of such a group is known if any of them is; two known observations in a group must
+# have the same coordinates.
+.known_locations <- function(dat) {
+  obs <- !is.na(dat$Y[1, ]) & !is.na(dat$Y[2, ])
+  known <- obs & is.na(dat$obs_mod)
+  n <- length(known)
+  attr(known, "Y") <- dat$Y
+  if (!any(known) || n < 2) return(known)
+  # group id: a new group starts unless the step is a duplicated time of the same track
+  dup <- c(FALSE, dat$delta_t[-1] < 1.e-6 & as.character(dat$ID[-1]) == as.character(dat$ID[-n]))
+  grp <- cumsum(!dup)
+  kg <- unique(grp[known])
+  for (g in unique(grp[known][duplicated(grp[known])])) {   # groups with more than one known observation
+    k <- which(known & grp == g)
+    if (any(dat$Y[1, k] != dat$Y[1, k[1]]) || any(dat$Y[2, k] != dat$Y[2, k[1]])) {
+      stop("Observations ", paste(k, collapse = ", "), " (track ", as.character(dat$ID[k[1]]), ") are at the same time (dt < 1e-6) ",
+           "and have no measurement error information, so they are known locations, but their coordinates differ. ",
+           "Remove the duplicates or supply their measurement errors.", call. = FALSE)
+    }
+  }
+  # every step of a group with a known observation shares that observation's location
+  out <- grp %in% kg
+  kidx <- which(known)[match(grp, grp[known])]
+  y <- dat$Y; y[, out] <- dat$Y[, kidx[out]]
+  attr(out, "Y") <- y
+  out
+}
+
 # --- Main checkPar Function ---
 # lambda_mode: 0 = fixed or no barrier, 1 = tied, 2 = estimate (par$lambda/map$lambda only allowed for 2)
 checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior = NULL, lambda_mode = 0L, obs_spec = NULL){
@@ -432,25 +462,27 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
       re <- c("mu","vel")
     }
 
-    if (all(is.na(dat$obs_mod))) {
-      has_nas <- any(is.na(dat$Y))
-
-      if (model == "overdamped") {
-        re <- if (has_nas) "mu" else NULL
-      } else {
-        re <- if (has_nas) c("mu", "vel") else "vel"
-      }
-
-      valid_Y <- !is.na(dat$Y)
-      par$mu[valid_Y] <- dat$Y[valid_Y] * dat$scale_factor
-
-      if (has_nas) {
-        mu_map <- rep(NA, length(dat$Y))
-        na_idx <- which(is.na(dat$Y))
-        mu_map[na_idx] <- 1:length(na_idx)
-        map$mu <- factor(mu_map)
-      } else {
-        map$mu <- factor(rep(NA, length(dat$Y)))
+    # Known locations: observed coordinates without any measurement error information (no error ellipse and no
+    # x.err/y.err) are treated as exact. Their location is fixed at the observation via 'map' (the velocity stays
+    # random), whether all or only some observations lack measurement error.
+    known <- .known_locations(dat)
+    if (any(known)) {
+      if (is.null(par$mu)) par$mu <- matrix(0, 2, ncol(dat$Y))
+      par$mu[, known] <- attr(known, "Y")[, known, drop = FALSE] * dat$scale_factor
+      mu_map <- if (is.null(map$mu)) as.character(seq_along(par$mu)) else as.character(map$mu)
+      mu_map[c(rbind(known, known))] <- NA
+      map$mu <- factor(mu_map, levels = unique(mu_map[!is.na(mu_map)]))
+      if (all(is.na(mu_map))) re <- setdiff(re, "mu")
+      if (!length(re)) re <- NULL
+      # mixed data: say so, because a missing error is more often an omission than an exact location
+      n_err <- sum(!is.na(dat$obs_mod))
+      if (n_err > 0) {
+        n_none <- sum(!is.na(dat$Y[1, ]) & is.na(dat$obs_mod))
+        n_shared <- sum(known & !is.na(dat$obs_mod))
+        warning(n_none, " of ", n_none + n_err, " observed locations have no measurement error information (no error ellipse and no x.err/y.err) ",
+                "and are treated as known locations (no measurement error)",
+                if (n_shared) paste0("; ", n_shared, " observation(s) with measurement error at the same time (dt < 1e-6) share these fixed locations") else "",
+                ". If their errors are unknown rather than zero, supply them (e.g. formatData(..., emf = ...)) or remove these observations.", call. = FALSE)
       }
     }
 
@@ -509,12 +541,13 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
 }
 
 # Estimated parameter of each element of unlist(par): "<name>:<map level>" (elements with the same value are tied),
-# NA if fixed by 'map', and "re" for the random effects (mu, vel), which are not checked.
+# NA if fixed by 'map' (including known locations), and "re" for the random effects (mu, vel), which are not tied.
 .prior_levels <- function(par, map = NULL) {
   unlist(lapply(names(par), function(nm) {
     n <- length(par[[nm]])
-    if (nm %in% c("mu", "vel")) return(rep("re", n))
     m <- map[[nm]]
+    if (nm == "vel") return(rep("re", n))
+    if (nm == "mu") return(if (is.null(m)) rep("re", n) else ifelse(is.na(as.character(m)), NA_character_, "re"))
     if (is.null(m)) return(paste0(nm, ":", seq_len(n)))
     m <- as.character(m)
     ifelse(is.na(m), NA_character_, paste0(nm, ":", m))
@@ -531,6 +564,7 @@ checkPar <- function(par, model, map=NULL, dat=NULL, spatialCovs = NULL, prior =
     l_psi_maj = , l_b_maj = , l_b_min = " The error ellipse power law parameters are only estimated if they are included in 'par'.",
     l_psi = , l_tau = , l_rho_o = paste0(" '", nat, "' is only estimated if it is included in 'par'."),
     log_gamma = " 'gamma' is not a parameter of the overdamped model.",
+    mu = " Locations of observations without measurement error information (no error ellipse and no x.err/y.err) are known and fixed at the observation.",
     "")
   paste0("A prior is specified for ", what, ", which is not estimated (fixed by 'map', or by default).", hint,
          " Priors can only be specified for estimated parameters.")

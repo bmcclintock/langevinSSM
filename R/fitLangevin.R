@@ -225,7 +225,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param par List containing the initial values for the parameters. These can include state process parameters for the habitat selection coefficients (``beta''), the ``speed'' parameter (``sigma''), and, for the underdamped model, the friction coefficient (``gamma''). If \code{lambda = "estimate"}, \code{par} can also include the initial barrier strength (``lambda'', natural scale; default: the stability limit used by \code{lambda = "tied"} at the median time step, see \code{\link{initialValues}}), which can be fixed using \code{map = list(lambda = factor(NA))}. ``lambda'' cannot be included in \code{par} otherwise.
 #' Observation process parameters include a scaling factor to account for uncertainty in the Argos error ellipse (``psi''), the scale of the semi-major axis and the exponents of the semi-major and semi-minor axes of the error ellipse power law (``psi_maj'', ``b_maj'', ``b_min''), a scaling factor to account for uncertainty in the x- and y-axis errors for Argos least squares or GPS observations (``tau''), and a correlation term between the x- and y-axis errors for Argos least squares or GPS observations (``rho_o''). If (some) observations have \code{obs_dist = "t"}, observation process parameters also include the degrees of freedom (``df''). If (some) observations have \code{obs_dist = "Huber"}, they include the threshold (``k''). ``tau'', ``df'' and ``k'' can be shared or specified by error type and/or location class (see Details). All parameters are specified on their natural scale and are converted to working scale internally.
 #' Any missing state process parameters are generated using \code{\link{initialValues}}. Any missing observation process parameters are fixed to their default values (``psi'' = ``psi_maj'' = ``b_maj'' = ``b_min'' = 1, ``tau'' = 1, ``rho_o'' = 0, ``df'' = 5, and ``k'' = 2, all shared by every observation) via \code{map}. See Details.
-#' @param lambda Barrier strength. One of: \code{"tied"} (default), a non-negative number (fixed), or \code{"estimate"}. With \code{"tied"} the barrier is treated as a hard wall: at every time step \eqn{t} the spring constant is set to the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed inside the likelihood from the current \code{sigma} and \code{gamma} (see Details), so \eqn{\lambda} is not a free parameter and the wall becomes harder automatically as the time step shrinks. A number fixes \eqn{\lambda} (a soft wall of known stiffness, e.g. data simulated by \code{\link{simLangevin}}); \code{"estimate"} treats \eqn{\log\lambda} as a free parameter (only identifiable when animals actually enter the restricted zone), with its starting value given by \code{par$lambda}. Numeric values, \code{par$lambda}, and the reported estimates are all on the natural scale (units of 1/distance^2 in the units of the coordinates) and do not depend on \code{scaleFactor}. If \code{NULL}, the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"tied"}.
+#' @param lambda Barrier strength. One of: \code{"tied"} (default), a non-negative number (fixed), or \code{"estimate"}. With \code{"tied"} the barrier is treated as a hard wall: at every time step \eqn{t} the spring constant is set to the largest value for which the one-step transition is numerically stable, \eqn{\lambda_t = \lambda_{max}(\sigma, \gamma, \Delta t_t)}, computed inside the likelihood from the current \code{sigma} and \code{gamma} (see Details), so \eqn{\lambda} is not a free parameter and the wall becomes harder automatically as the time step shrinks. A number fixes \eqn{\lambda} (a soft wall of known stiffness, e.g. data simulated by \code{\link{simLangevin}}); \code{"estimate"} treats \eqn{\log\lambda} as a free parameter (only identifiable when locations actually enter the restricted zone), with its starting value given by \code{par$lambda}. Numeric values, \code{par$lambda}, and the reported estimates are all on the natural scale (units of 1/distance^2 in the units of the coordinates) and do not depend on \code{scaleFactor}. If \code{NULL}, the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"tied"}.
 #' @param barrierOnset Onset length \eqn{\ell} of the barrier potential, in the units of the coordinates (or \code{"res"} for one cell of the barrier raster). With \code{0} the potential is \eqn{B(d) = \min(d,0)^2/2} (the penalty of Delporte et al. 2025), whose force is continuous at the boundary but whose curvature jumps from 0 to \eqn{\lambda}. With \eqn{\ell > 0} the force rises smoothly (\eqn{C^4}) from zero at the boundary over the first \eqn{\ell} of the restricted side and is thereafter the quadratic wall shifted by \eqn{\ell/2}; the allowed side is unaffected. A small positive onset (e.g., one cell) makes the Laplace approximation better behaved when many (smoothed) locations lie close to the boundary, and is a natural way to encode positional uncertainty of the boundary itself. It is not a fixed quantity and should be chosen for the species and data: for animals that should never be on the restricted side (e.g., whales at a coastline) it is a numerical device of the order of the raster resolution or coastline accuracy; for animals that legitimately use the restricted side (e.g., pinnipeds hauling out on land) a larger value (or a soft, estimated \code{lambda}) is more appropriate. Ignored without a barrier. If \code{NULL} (default), the value stored by \code{\link{simLangevin}} is used when available, otherwise \code{"res"} (one cell of the barrier raster). Use \code{0} for the quadratic potential. See Details.
 #' @param prior Optional 2-column data frame containing the mean (column 1) and standard deviation (column 2) for normally distributed priors on the working scale parameters. The row names must match the working scale parameter names (e.g., \code{"beta_cov1"}, \code{"log_sigma"}, \code{"log_gamma"}, or \code{"log_lambda"} when \code{lambda = "estimate"}). Supplying the base name of a vector or matrix parameter (e.g., \code{"beta"}, \code{"mu"}, \code{"vel"}) will apply the prior to all of its elements. To target specific coordinates and time steps for the random effects, append the coordinate (\code{.x} or \code{.y}) and the row index of the observation to the base name (e.g., \code{"mu.x_1"} for the x-coordinate of the 1st observation in \code{data}, or \code{"vel.y_10"} for the y-velocity of the 10th observation in \code{data}). Parameters omitted from this data frame are assigned flat (improper) priors. Observation process parameters use their working scale names (\code{"l_psi"}, \code{"l_psi_maj"}, \code{"l_b_maj"}, \code{"l_b_min"}, \code{"l_tau"}, \code{"l_rho_o"}, \code{"l_df"}, \code{"l_k"}). Elements of grouped observation parameters (see Details) can be targeted by position (e.g., \code{"l_tau_3"}, the x element of the second \code{tau} group, or \code{"l_df_2"}) or by group name, using \code{"."} as separator: \code{"l_tau.G"} (x and y elements of the \code{tau} of location class G), \code{"l_tau.x.G"} or \code{"l_tau.y.G"} (one element), \code{"l_tau.x"} or \code{"l_tau.y"} (the x or y element of every group), \code{"l_df.B"}, \code{"l_k.epar"}. Priors can only be specified for estimated parameters: a row whose parameter (or element) is fixed, either by \code{map} or by default because it is not included in \code{par} or not used by the model (e.g., \code{"l_df"} without t-distributed observations, or \code{"l_b_maj"} without the error ellipse power law), is an error, and a base or group name only applies to its estimated elements. Elements tied by \code{map} (e.g., \code{map = list(tau = factor(c(1, 1)))}) are a single estimated parameter and receive the prior once; if their rows of \code{prior} differ, the prior of the first element is used with a warning. Default: \code{NULL} (no priors).
 #' @param map List defining how to optionally collect and fix parameters. See \code{\link[TMB]{MakeADFun}}.
@@ -241,7 +241,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param method Character string indicating the type of algorithm used for the outer optimization (e.g., \code{"BFGS"}). When \code{optMethod = "nloptr"}, \code{"BFGS"} is internally mapped to \code{"NLOPT_LD_LBFGS"} for compatibility. Default: \code{"BFGS"}.
 #' @param optMethod Character string indicating the optimization function (engine) to use for the outer optimization. Options are \code{"nlminb"} or \code{"nloptr"}. If \code{"nloptr"} is selected, the \code{nloptr} package must be installed. Default: \code{"nlminb"}.
 #' @param inner.control List controlling inner optimization. See \code{\link[TMB]{MakeADFun}}.
-#' @param control A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}.
+#' @param control A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}. The defaults for \code{optMethod="nloptr"} are \code{maxeval = eval.max} (1000), \code{xtol_rel = 1e-8} and \code{ftol_rel = 1e-12}. Internally, the objective is divided by the norm of its gradient at the starting values (when this exceeds 1) so that the first step of gradient-based NLopt algorithms is of unit length; the reported objective is on the original scale, as is the trace printed with \code{control = list(print_level = 1)} (\code{f(x)} is the negative log-likelihood; \code{print_level = 3} also prints the working-scale parameters).
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
 #' @param calcSE Logical indicating whether or not to calculate standard errors for the parameter estimates. Default: \code{TRUE}.
 #'
@@ -280,6 +280,8 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'   \deqn{\Sigma = \begin{bmatrix} \tau_1^2 \sigma_x^2 & \rho_o \tau_1 \tau_2 \sigma_x \sigma_y \\ \rho_o \tau_1 \tau_2 \sigma_x \sigma_y & \tau_2^2 \sigma_y^2 \end{bmatrix}}
 #'   with \eqn{\text{tau}=(\tau_1,\tau_2)} scaling the standard deviations \eqn{(\text{x.err}=\sigma_x,\text{y.err}=\sigma_y)} and rho_o \eqn{=\rho_o} accounting for the correlation between the x- and y-axis errors.
 #' }
+#' \strong{Known locations:} An observation with coordinates but no measurement error information (\code{NA} for all of \code{smaj}, \code{smin}, \code{eor}, \code{x.err} and \code{y.err}) is treated as a known location: its true location (\code{mu}) is fixed at the observed coordinates and only its velocity is estimated. This applies whether all or only some observations lack measurement error information (a warning is given in the latter case, because a missing error is often an omission; use \code{formatData(..., emf = )} to fill errors by location class). A time step that shares its state with a known location through a duplicated time (\eqn{\Delta t < 10^{-6}}) is fixed at the same location, and two known locations at the same time with different coordinates are an error. Priors cannot be specified for known locations.
+#'
 #' Whenever a coordinate is \code{NA} (either present in the original dataset or introduced via the \code{predTimes} argument in \code{\link{formatData}}), \code{fitLangevin} skips the evaluation of the observation error model for that time step. Instead, it relies solely on the Langevin diffusion state process model to predict the true (latent) location.
 #'
 #' \strong{Error ellipse power law (\code{psi_maj}, \code{b_maj}, \code{b_min}):}
@@ -393,6 +395,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #'
 #' @rawNamespace useDynLib(langevinSSM, .registration=TRUE); useDynLib(langevinSSM_TMBExports)
 #' @importFrom stats nlminb
+#' @importFrom utils modifyList
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
 fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = c("Gaussian", "t", "Huber"), spatialCovs, barrier = NULL, par, lambda = "tied", barrierOnset = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, grad = c("quintic", "cubic", "bilinear"), smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE, calcSE = TRUE){
@@ -404,6 +407,8 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
   model <- match.arg(model)
   obs_dist <- .norm_obs_dist(obs_dist)
   optMethod <- match.arg(optMethod)
+  control <- utils::modifyList(list(trace = 0, iter.max = 1000, eval.max = 1000), as.list(control))
+  inner.control <- utils::modifyList(list(maxit = 1000), as.list(inner.control))
 
   if (optMethod == "nloptr" && !requireNamespace("nloptr", quietly = TRUE)) {
     stop("Package 'nloptr' is required when optMethod = 'nloptr'. Please install it using install.packages('nloptr').")
@@ -518,9 +523,12 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
       algo <- method
       if (algo == "BFGS") algo <- "NLOPT_LD_LBFGS"
 
-      # control list for nloptr mapping from the default nlminb list when possible
+      # control list for nloptr mapping from the default nlminb list when possible.
+      # nloptr's default xtol_rel = 1e-4 stops gradient methods early, so use tighter defaults
+      # (overridable through 'control').
       opts <- list(algorithm = algo,
-                   maxeval = if (!is.null(control$eval.max)) control$eval.max else 1000)
+                   maxeval = if (!is.null(control$eval.max)) control$eval.max else 1000,
+                   xtol_rel = 1e-8, ftol_rel = 1e-12)
 
       # Overwrite with any user-provided controls mapping directly to nloptr (e.g., control$algorithm = "NLOPT_GD_MLSL")
       for (n in names(control)) {
@@ -528,19 +536,46 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
         opts[[n]] <- control[[n]]
       }
 
+      # NLopt's gradient methods (e.g. L-BFGS) start from an identity Hessian, so the first trial point
+      # is x0 - g(x0): a step as long as the initial gradient, which for a poor start can be
+      # hundreds of units in log(sigma)/log(gamma). The Laplace approximation is NaN there, and every
+      # such point costs a long, failing inner optimisation. nlminb avoids this by limiting its first
+      # step. Dividing the objective by the initial gradient norm (when > 1) limits the first step to
+      # unit length. This does not change the minimiser; ftol_rel is unaffected and the objective is
+      # reported unscaled.
+      g0 <- try(obj2$gr(obj2$par), silent = TRUE)
+      fscale <- if (inherits(g0, "try-error") || !all(is.finite(g0))) 1 else max(1, sqrt(sum(g0^2)))
+      # nloptr's own trace (print_level) would show the scaled objective, so it is turned off and the
+      # same trace is printed here on the original (negative log-likelihood) scale:
+      # print_level >= 1: f(x); >= 3: also x.
+      print_level <- if (is.null(opts$print_level)) 0L else as.integer(opts$print_level)
+      opts$print_level <- 0L
+      n_f <- 0L; n_g <- 0L
       fit_try <- try({
-        nloptr::nloptr(x0 = obj2$par, eval_f = function(x) obj2$fn(x), eval_grad_f = function(x) obj2$gr(x), opts = opts)
+        nloptr::nloptr(x0 = obj2$par,
+                       eval_f = function(x) {
+                         n_f <<- n_f + 1L
+                         v <- obj2$fn(x)
+                         if (print_level >= 1L) {
+                           cat("iteration: ", n_f, "\n", sep = "")
+                           if (print_level >= 3L) cat("\tx = ( ", paste(sprintf("%f", x), collapse = ", "), " )\n", sep = "")
+                           cat("\tf(x) = ", sprintf("%f", v), "\n", sep = "")
+                         }
+                         v / fscale
+                       },
+                       eval_grad_f = function(x) { n_g <<- n_g + 1L; obj2$gr(x) / fscale },
+                       opts = opts)
       }, silent = TRUE)
 
       if (!inherits(fit_try, "try-error")) {
         # Format nloptr output to match expected nlminb structure
         fit <- list(
           par = fit_try$solution,
-          objective = fit_try$objective,
+          objective = fit_try$objective * fscale,
           convergence = if (fit_try$status < 0) fit_try$status else 0, # Map negative nloptr statuses to an error code
           message = fit_try$message,
           iterations = fit_try$iterations,
-          evaluations = c("function" = fit_try$iterations, "gradient" = fit_try$iterations)
+          evaluations = c("function" = n_f, "gradient" = n_g)
         )
         names(fit$par) <- names(obj2$par)
       } else {

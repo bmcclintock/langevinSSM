@@ -121,12 +121,12 @@ use the `formatData` and `fitLangevin` functions. For example:
 # unformatDat is example data appropriate for formatData that loads with the package
 head(unformatDat)
 #>   id                date        x        y      smaj      smin       eor x.err
-#> 1  1 2026-10-19 00:00:00 1022.110 1006.222 3.1904213 0.8238468  25.25334    NA
-#> 2  1 2026-10-19 00:00:36 1022.556 1007.536 0.2602149 0.1929297  48.24272    NA
-#> 3  1 2026-10-19 00:01:12 1021.444 1008.586 1.9072127 0.6294832 126.97307    NA
-#> 4  1 2026-10-19 00:01:48 1022.745 1007.629 0.1952989 0.0469546 126.62606    NA
-#> 5  1 2026-10-19 00:02:24 1023.500 1008.079 1.4343749 1.1175133 164.35512    NA
-#> 6  1 2026-10-19 00:03:00 1022.996 1008.430 0.8349596 0.1392169  26.87534    NA
+#> 1  1 2026-11-03 00:00:00 1022.110 1006.222 3.1904213 0.8238468  25.25334    NA
+#> 2  1 2026-11-03 00:00:36 1022.556 1007.536 0.2602149 0.1929297  48.24272    NA
+#> 3  1 2026-11-03 00:01:12 1021.444 1008.586 1.9072127 0.6294832 126.97307    NA
+#> 4  1 2026-11-03 00:01:48 1022.745 1007.629 0.1952989 0.0469546 126.62606    NA
+#> 5  1 2026-11-03 00:02:24 1023.500 1008.079 1.4343749 1.1175133 164.35512    NA
+#> 6  1 2026-11-03 00:03:00 1022.996 1008.430 0.8349596 0.1392169  26.87534    NA
 #>   y.err
 #> 1    NA
 #> 2    NA
@@ -140,12 +140,12 @@ exampleDat <- formatData(unformatDat, time.unit = "hours")
 
 head(exampleDat)
 #>   id                date   dt        x        y   lc      smaj      smin
-#> 1  1 2026-10-19 00:00:00 0.00 1022.110 1006.222 <NA> 3.1904213 0.8238468
-#> 2  1 2026-10-19 00:00:36 0.01 1022.556 1007.536 <NA> 0.2602149 0.1929297
-#> 3  1 2026-10-19 00:01:12 0.01 1021.444 1008.586 <NA> 1.9072127 0.6294832
-#> 4  1 2026-10-19 00:01:48 0.01 1022.745 1007.629 <NA> 0.1952989 0.0469546
-#> 5  1 2026-10-19 00:02:24 0.01 1023.500 1008.079 <NA> 1.4343749 1.1175133
-#> 6  1 2026-10-19 00:03:00 0.01 1022.996 1008.430 <NA> 0.8349596 0.1392169
+#> 1  1 2026-11-03 00:00:00 0.00 1022.110 1006.222 <NA> 3.1904213 0.8238468
+#> 2  1 2026-11-03 00:00:36 0.01 1022.556 1007.536 <NA> 0.2602149 0.1929297
+#> 3  1 2026-11-03 00:01:12 0.01 1021.444 1008.586 <NA> 1.9072127 0.6294832
+#> 4  1 2026-11-03 00:01:48 0.01 1022.745 1007.629 <NA> 0.1952989 0.0469546
+#> 5  1 2026-11-03 00:02:24 0.01 1023.500 1008.079 <NA> 1.4343749 1.1175133
+#> 6  1 2026-11-03 00:03:00 0.01 1022.996 1008.430 <NA> 0.8349596 0.1392169
 #>         eor x.err y.err
 #> 1 0.4407540    NA    NA
 #> 2 0.8419944    NA    NA
@@ -288,12 +288,12 @@ mu_ci <- confint(fit_under, parm= "mu")
 
 head(mu_ci)
 #>   id                date mu.x_2.5% mu.x_97.5% mu.y_2.5% mu.y_97.5%
-#> 1  1 2026-10-19 00:00:00  1022.303   1022.599  1007.436   1007.688
-#> 2  1 2026-10-19 00:00:36  1022.379   1022.637  1007.503   1007.725
-#> 3  1 2026-10-19 00:01:12  1022.452   1022.678  1007.569   1007.765
-#> 4  1 2026-10-19 00:01:48  1022.522   1022.721  1007.632   1007.808
-#> 5  1 2026-10-19 00:02:24  1022.590   1022.767  1007.693   1007.856
-#> 6  1 2026-10-19 00:03:00  1022.656   1022.815  1007.751   1007.908
+#> 1  1 2026-11-03 00:00:00  1022.303   1022.599  1007.436   1007.688
+#> 2  1 2026-11-03 00:00:36  1022.379   1022.637  1007.503   1007.725
+#> 3  1 2026-11-03 00:01:12  1022.452   1022.678  1007.569   1007.765
+#> 4  1 2026-11-03 00:01:48  1022.522   1022.721  1007.632   1007.808
+#> 5  1 2026-11-03 00:02:24  1022.590   1022.767  1007.693   1007.856
+#> 6  1 2026-11-03 00:03:00  1022.656   1022.815  1007.751   1007.908
 
 # AIC for comparing models with different fixed effects
 AIC(fit_under) 
@@ -482,6 +482,7 @@ par_barrier$beta <- c(par_barrier$beta, -0.15)
 simDat_barrier <- simLangevin(par = par_barrier,
                               nbAnimals = 3,
                               spatialCovs = exampleCovs_barrier,
+                              lambda = 4,
                               barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 4,
                                                       smin.sd = 1,
@@ -489,7 +490,7 @@ simDat_barrier <- simLangevin(par = par_barrier,
 
 fit_barrier <- fitLangevin(data = simDat_barrier,
                            spatialCovs = exampleCovs_barrier,
-                           lambda = 4.003)
+                           lambda = 4)
 fit_barrier
 #> 
 #> Habitat-Driven Langevin Diffusion Model
@@ -497,24 +498,24 @@ fit_barrier
 #> Model type:        Underdamped 
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -3760.144 
-#> Optimization time:  1.37 seconds
-#> Barrier penalty:    4.003 
+#> Max Log-Likelihood: -3761.386 
+#> Optimization time:  1.15 seconds
+#> Barrier penalty:    4 
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
-#>               Estimate Std. Error
-#> beta_cov1    -3.755564      0.846
-#> beta_cov2     5.800506      0.881
-#> beta_cov3     6.528340      0.864
-#> beta_d2c     -0.001507      0.522
-#> beta_d2coast -0.117922      0.088
-#> sigma         4.835697      0.188
-#> gamma         0.576948      0.079
-#> rho_o         0.000000      0.000
-#> tau_1         1.000000      0.000
-#> tau_2         1.000000      0.000
-#> psi           1.000000      0.000
+#>              Estimate Std. Error
+#> beta_cov1    -2.97223      0.779
+#> beta_cov2     7.28269      1.336
+#> beta_cov3     4.82359      0.944
+#> beta_d2c     -0.30375      0.422
+#> beta_d2coast -0.08373      0.092
+#> sigma         5.18885      0.339
+#> gamma         0.51997      0.085
+#> rho_o         0.00000      0.000
+#> tau_1         1.00000      0.000
+#> tau_2         1.00000      0.000
+#> psi           1.00000      0.000
 
 plot(fit_barrier, data = simDat_barrier,
                   spatialCovs = exampleCovs_barrier,
@@ -537,25 +538,25 @@ fit_barrier_tied
 #> Model type:        Underdamped 
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -3759.641 
-#> Optimization time:  1.28 seconds
+#> Max Log-Likelihood: -3760.865 
+#> Optimization time:  1.32 seconds
 #> Barrier penalty:    tied
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>              Estimate Std. Error
-#> beta_cov1    -2.87398      0.745
-#> beta_cov2     4.47855      0.852
-#> beta_cov3     4.98241      0.983
-#> beta_d2c     -0.07326      0.412
-#> beta_d2coast -0.07966      0.074
-#> sigma         5.50423      0.391
-#> gamma         0.45408      0.038
+#> beta_cov1    -2.56639      0.747
+#> beta_cov2     6.37692      1.285
+#> beta_cov3     4.19791      0.939
+#> beta_d2c     -0.31339      0.365
+#> beta_d2coast -0.05752      0.083
+#> sigma         5.59080      0.503
+#> gamma         0.45986      0.074
 #> rho_o         0.00000      0.000
 #> tau_1         1.00000      0.000
 #> tau_2         1.00000      0.000
 #> psi           1.00000      0.000
-#> lambda        2.99985      0.593
+#> lambda        2.94468      0.934
 
 plot(fit_barrier_tied, data = simDat_barrier,
                        spatialCovs = exampleCovs_barrier,
@@ -576,25 +577,25 @@ fit_barrier_est
 #> Model type:        Underdamped 
 #> Observation model: Gaussian 
 #> Convergence:       Successful 
-#> Max Log-Likelihood: -3759.607 
-#> Optimization time:  1.37 seconds
+#> Max Log-Likelihood: -3760.842 
+#> Optimization time:  1.3 seconds
 #> Barrier penalty:    estimate
 #> 
 #> Parameter Estimates (Natural Scale):
 #> ---------------------------------------
 #>              Estimate Std. Error
-#> beta_cov1    -3.02677      0.976
-#> beta_cov2     4.71246      1.260
-#> beta_cov3     5.23261      1.398
-#> beta_d2c     -0.07700      0.435
-#> beta_d2coast -0.08249      0.079
-#> sigma         5.36772      0.626
-#> gamma         0.48240      0.116
+#> beta_cov1    -2.48405      0.821
+#> beta_cov2     6.14997      1.640
+#> beta_cov3     4.06053      1.119
+#> beta_d2c     -0.29910      0.358
+#> beta_d2coast -0.05707      0.081
+#> sigma         5.68378      0.684
+#> gamma         0.44157      0.111
 #> rho_o         0.00000      0.000
 #> tau_1         1.00000      0.000
 #> tau_2         1.00000      0.000
 #> psi           1.00000      0.000
-#> lambda        3.13142      0.789
+#> lambda        2.93033      0.930
 
 plot(fit_barrier_est, data = simDat_barrier,
                          spatialCovs = exampleCovs_barrier,

@@ -80,7 +80,7 @@ par_barrier$beta <- c(par_barrier$beta, -0.1)
 # simulate the data
 set.seed(10,kind="Mersenne-Twister",normal.kind="Inversion")
 simDat_barrier <- simLangevin(par = par_barrier,
-                              nbAnimals = 3,
+                              nbAnimals = 3,lambda=4,
                               spatialCovs = exampleCovs_barrier,
                               barrier = "coast_barrier",
                               measurementError = list(smaj.sd = 1.5,

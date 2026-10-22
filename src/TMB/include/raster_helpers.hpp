@@ -138,14 +138,14 @@ template<> struct BsplineDot<0> { static inline double f(const double*, const do
 
 template<int DEG> inline const BsplineDerivTable& bspline_table() { static const BsplineDerivTable T(DEG); return T; }
 
-template<int DEG, int N> struct BsplineOrder {
+template<int DEG, int N, bool Done = (N > DEG)> struct BsplineOrder {
   static inline void run(const BsplineDerivTable& T, const double* tp, int K, double w[SPLINE_WMAX][SPLINE_WMAX]) {
     if (N > K) return;
     for (int k = 0; k <= DEG; k++) w[N][k] = BsplineDot<DEG - N + 1>::f(T.D[N][k], tp);
     BsplineOrder<DEG, N + 1>::run(T, tp, K, w);
   }
 };
-template<int DEG> struct BsplineOrder<DEG, DEG + 1> {
+template<int DEG, int N> struct BsplineOrder<DEG, N, true> {
   static inline void run(const BsplineDerivTable&, const double*, int, double[SPLINE_WMAX][SPLINE_WMAX]) {}
 };
 

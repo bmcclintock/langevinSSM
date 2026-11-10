@@ -154,9 +154,10 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
   start_time <- as.POSIXct("2024-01-01 00:00:00", tz = "UTC")
   dat$date <- start_time + (1:nrow(dat)) * 3600
 
-  # FORCEFULLY assign observation errors to everything initially
-  dat$x.err <- 2
-  dat$y.err <- 2
+  dat$x <- dat$x + stats::rnorm(nrow(dat), 0, 0.1)
+  dat$y <- dat$y + stats::rnorm(nrow(dat), 0, 0.1)
+  dat$x.err <- 0.1
+  dat$y.err <- 0.1
   dat$lc <- "G"
   dat$id <- "A"
 
@@ -164,7 +165,7 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
 
   # A. Hard Duplicate 1 (With observation error)
   dup_row1 <- dat[5, ]
-  dup_row1$x <- dup_row1$x + 1.0 # Slight GPS jitter
+  dup_row1$x <- dup_row1$x + 0.1 # Slight GPS jitter
   dat <- rbind(dat, dup_row1)
 
   # B. Hard Duplicate 2 (Known location, NO observation error)
@@ -192,6 +193,7 @@ test_that("underdamped fitLangevin calculates OSA residuals correctly with dupli
       silent = TRUE
     )
   }))
+  expect_equal(fit$convergence, 0) # OSA residuals need a well-defined optimum
 
   fit$residuals <- suppressMessages(residuals(fit, fmt_dat, spatialCovs))
 

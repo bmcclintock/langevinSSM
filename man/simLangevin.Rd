@@ -23,6 +23,7 @@ simLangevin(model, ...)
   initialPosition,
   measurementError = NULL,
   subSample = NULL,
+  ncores = getOption("langevinSSM.ncores", 1L),
   ...
 )
 
@@ -33,6 +34,7 @@ simLangevin(model, ...)
   timeStep = 0.01,
   jointPrecision = FALSE,
   conditional = FALSE,
+  ncores = getOption("langevinSSM.ncores", 1L),
   ...
 )
 }
@@ -66,6 +68,12 @@ simLangevin(model, ...)
 \item{measurementError}{A list or data frame of parameters used to simulate observation error. See \code{\link{addMeasurementError}}. Default: \code{NULL}.}
 
 \item{subSample}{List of specifications for subsampling data from the continuous-time process model, which can include \code{samplingRate} and \code{propMissing}. See \code{\link{subSampleData}}. Default: \code{NULL} (no subsampling or missing data).}
+
+\item{ncores}{Number of threads (OpenMP). Animals (tracks) are simulated in parallel; for a \code{fitLangevin}
+object, the likelihood used to reconstruct the fitted model and its standard errors is also evaluated with
+\code{ncores} threads. The random numbers are drawn serially from R's generator, in the same order as with one
+thread, so for a given seed the simulated tracks do not depend on \code{ncores}. Default:
+\code{getOption("langevinSSM.ncores", 1)}. Ignored if the package was compiled without OpenMP support.}
 
 \item{data}{The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.}
 

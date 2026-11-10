@@ -6,6 +6,19 @@ NEW FEATURES
 
 * barrier force (lambda) can now be fixed, tied to the movement parameters, or estimated
 
+* multi-threading (OpenMP): new 'ncores' argument in fitLangevin, predLangevin and simLangevin (default
+  getOption("langevinSSM.ncores", 1), i.e. one thread). The likelihood is split into 'ncores' parts that TMB
+  evaluates in parallel (results agree with ncores = 1 up to rounding); animals are simulated in parallel
+  (tracks are identical for any ncores, and to previous versions, for a given seed). Without OpenMP support
+  (e.g. CRAN's macOS toolchain), the package builds as before and runs serially. On macOS, OpenMP can be
+  enabled through ~/.R/Makevars (CPPFLAGS += -Xclang -fopenmp, LDFLAGS += -lomp); the TMB part of the
+  package now honours the same user Makevars as R CMD INSTALL (including ~/.R/Makevars-<platform>).
+
+* cAIC also has an 'ncores' argument (OpenMP).
+
+* new function has_omp() reports whether OpenMP is available (and used by 'ncores') in the likelihood and in
+  the simulator, and the number of processors.
+
 BUG FIXES
 
 * Previously the cell index was computed with floor(asDouble(x)) while the tape was being recorded, which froze the cell (and hence the raster values) at the taping location. When the inner optimisation moved a location into a neighbouring cell, the tape kept using the old cell's values.

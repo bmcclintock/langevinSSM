@@ -34,7 +34,8 @@ Type hierLangevin(objective_function<Type>* obj)
   int n = theta_hat.rows();
   int p = theta_hat.cols();
 
-  Type nll = 0.0;
+  // parallel_accumulator: required because the DLL may be compiled with OpenMP (see langevinSSM.hpp)
+  parallel_accumulator<Type> nll(obj);
 
   vector<Type> sd = exp(log_sd);
 

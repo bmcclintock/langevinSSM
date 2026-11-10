@@ -243,12 +243,12 @@ struct SplineTable {
         for (int k = 1; k < w; k++) m = std::min(m, coef[(size_t) r * ncol + mirror_index(c + lo + k, ncol)]);
         rmin[(size_t) r * ncol + c] = m;
       }
-      for (int r = 0; r < nrow; r++)
-        for (int c = 0; c < ncol; c++) {
-          double m = rmin[(size_t) mirror_index(r + lo, nrow) * ncol + c];
-          for (int k = 1; k < w; k++) m = std::min(m, rmin[(size_t) mirror_index(r + lo + k, nrow) * ncol + c]);
-          neg_cell[(size_t) r * ncol + c] = m < 0.0;
-        }
+    for (int r = 0; r < nrow; r++)
+      for (int c = 0; c < ncol; c++) {
+        double m = rmin[(size_t) mirror_index(r + lo, nrow) * ncol + c];
+        for (int k = 1; k < w; k++) m = std::min(m, rmin[(size_t) mirror_index(r + lo + k, nrow) * ncol + c]);
+        neg_cell[(size_t) r * ncol + c] = m < 0.0;
+      }
   }
   // False only if the surface is certainly >= 0 on the cell containing (x, y) (layer 0, clamped).
   bool maybe_negative(double x, double y) const {
@@ -479,12 +479,31 @@ static const int JET_KMAX = 4;
 // the objective (line search), the gradient and the Hessian tapes.  The memo is shared (shared_ptr) by
 // all copies of the operator that TMBad makes when it derives the gradient / Hessian tapes from the
 // joint tape, so a location evaluated by one tape is not recomputed by another.
-// Not thread safe: disabled when compiled with OpenMP (TMB parallel evaluation).
+// Thread safety (package compiled with OpenMP, fitLangevin(ncores > 1)): TMB evaluates the parts of
+// a parallel objective in different threads, and copies of one operator may be evaluated concurrently.
+// The memo therefore has one slot per thread (TMB::openmp() value when the operator is taped), and a
+// thread only reads and writes its own slot.  Because the cached value is a pure function of (x, y),
+// results do not depend on which thread evaluates which tape.  Threads beyond the number of slots
+// evaluate without the memo.
 struct JetMemo {
   double x, y;
   bool valid;
   std::vector<double> out;
   JetMemo() : x(0), y(0), valid(false) {}
+};
+struct JetMemoSet {
+  std::vector<JetMemo> slot;
+  JetMemoSet() {
+#ifdef _OPENMP
+    slot.resize(config.nthreads > 1 ? (size_t) config.nthreads : 1);
+#else
+    slot.resize(1);
+#endif
+  }
+  JetMemo* get() {
+    const size_t t = (size_t) TMBAD_THREAD_NUM;
+    return t < slot.size() ? &slot[t] : NULL;
+  }
 };
 
 struct RasterJetOp : TMBad::global::DynamicOperator<2, -1> {
@@ -492,13 +511,9 @@ struct RasterJetOp : TMBad::global::DynamicOperator<2, -1> {
   std::shared_ptr<const std::vector<int> > layers;
   int k0;
   bool barrier;   // false: jet of the spline layers; true: jet (k0 = 1) of the barrier potential B
-  std::shared_ptr<JetMemo> memo;
+  std::shared_ptr<JetMemoSet> memo;
   RasterJetOp(SplinePtr tab_, std::shared_ptr<const std::vector<int> > layers_, int k0_, bool barrier_ = false) :
-    tab(tab_), layers(layers_), k0(k0_), barrier(barrier_) {
-#ifndef _OPENMP
-    memo = std::make_shared<JetMemo>();
-#endif
-  }
+    tab(tab_), layers(layers_), k0(k0_), barrier(barrier_), memo(std::make_shared<JetMemoSet>()) {}
   int P() const { return SplineTable::jet_size(k0, JET_KMAX); }
   // Structural sparsity of the jet: partial (nx, ny) of a degree-p tensor spline is identically
   // zero if nx > p or ny > p; for the barrier potential B = d^2 / 2 the bound is 2p, and for the
@@ -535,8 +550,9 @@ struct RasterJetOp : TMBad::global::DynamicOperator<2, -1> {
     const size_t m = output_size();
     const double x = args.x(0), y = args.x(1);
     double* o = &args.y(0);                     // the outputs of an operator are contiguous
-    if (memo) {
-      JetMemo& c = *memo;
+    JetMemo* pc = memo ? memo->get() : NULL;
+    if (pc) {
+      JetMemo& c = *pc;
       if (c.valid && c.x == x && c.y == y) { for (size_t i = 0; i < m; i++) o[i] = c.out[i]; return; }
       eval(x, y, o);
       c.out.assign(o, o + m); c.x = x; c.y = y; c.valid = true;
@@ -577,8 +593,8 @@ struct RasterJetOp : TMBad::global::DynamicOperator<2, -1> {
   }
   void reverse(TMBad::ReverseArgs<double> &args) { reverse_impl(args); }
   void reverse(TMBad::ReverseArgs<ad> &args) { reverse_impl(args); }
-  void forward(TMBad::ForwardArgs<TMBad::Writer> &args) { Rf_error("RasterJetOp: source code writer not implemented"); }
-  void reverse(TMBad::ReverseArgs<TMBad::Writer> &args) { Rf_error("RasterJetOp: source code writer not implemented"); }
+  void forward(TMBad::ForwardArgs<TMBad::Writer> &) { Rf_error("RasterJetOp: source code writer not implemented"); }
+  void reverse(TMBad::ReverseArgs<TMBad::Writer> &) { Rf_error("RasterJetOp: source code writer not implemented"); }
   const char* op_name() { return barrier ? "BJET" : "RJET"; }
 };
 
@@ -632,13 +648,10 @@ struct PotentialJetOp : TMBad::global::DynamicOperator<-1, -1> {
   std::shared_ptr<const std::vector<int> > layers;      // covariate layers
   int nl;                                               // number of covariate layers
   bool has_bar;
-  std::shared_ptr<JetMemo> memo;                        // raw per-layer jets, keyed by (x, y)
+  std::shared_ptr<JetMemoSet> memo;                     // raw per-layer jets, keyed by (x, y); one slot per thread
   PotentialJetOp(SplinePtr cov_, std::shared_ptr<const std::vector<int> > layers_, SplinePtr bar_) :
-    cov(cov_), bar(bar_), layers(layers_), nl((int) layers_->size()), has_bar((bool) bar_) {
-#ifndef _OPENMP
-    memo = std::make_shared<JetMemo>();
-#endif
-  }
+    cov(cov_), bar(bar_), layers(layers_), nl((int) layers_->size()), has_bar((bool) bar_),
+    memo(std::make_shared<JetMemoSet>()) {}
   static int P() { return SplineTable::jet_size(1, JET_KMAX); }
   int ncoef() const { return nl + (has_bar ? 1 : 0); }
   TMBad::Index input_size() const { return (TMBad::Index) (2 + ncoef()); }
@@ -659,8 +672,9 @@ struct PotentialJetOp : TMBad::global::DynamicOperator<-1, -1> {
   // Per-layer jets at (x, y): from the memo when (x, y) is unchanged, otherwise evaluated.
   const double* raw_at(double x, double y, std::vector<double>& buf) const {
     const size_t m = (size_t) ncoef() * P();
-    if (memo) {
-      JetMemo& c = *memo;
+    JetMemo* pc = memo ? memo->get() : NULL;
+    if (pc) {
+      JetMemo& c = *pc;
       if (!(c.valid && c.x == x && c.y == y)) {
         c.out.resize(m); eval_raw(x, y, c.out.data()); c.x = x; c.y = y; c.valid = true;
       }
@@ -758,8 +772,8 @@ struct PotentialJetOp : TMBad::global::DynamicOperator<-1, -1> {
       args.dx(2 + l) += s;
     }
   }
-  void forward(TMBad::ForwardArgs<TMBad::Writer> &args) { Rf_error("PotentialJetOp: source code writer not implemented"); }
-  void reverse(TMBad::ReverseArgs<TMBad::Writer> &args) { Rf_error("PotentialJetOp: source code writer not implemented"); }
+  void forward(TMBad::ForwardArgs<TMBad::Writer> &) { Rf_error("PotentialJetOp: source code writer not implemented"); }
+  void reverse(TMBad::ReverseArgs<TMBad::Writer> &) { Rf_error("PotentialJetOp: source code writer not implemented"); }
   const char* op_name() { return "PJET"; }
 };
 
@@ -1125,16 +1139,20 @@ TYPE get_bilinear_val(TYPE x, TYPE y, const MATRIX &grid, const VECTOR &ext, con
   int c0 = static_cast<int>(floor(AS_DOUBLE(col_raw)));
   int r0 = static_cast<int>(floor(AS_DOUBLE(row_raw)));
 
-  if (c0 < 0) c0 = 0; if (c0 >= n_cols - 1) c0 = n_cols - 2;
-  if (r0 < 0) r0 = 0; if (r0 >= n_rows - 1) r0 = n_rows - 2;
+  if (c0 < 0) c0 = 0;
+  if (c0 >= n_cols - 1) c0 = n_cols - 2;
+  if (r0 < 0) r0 = 0;
+  if (r0 >= n_rows - 1) r0 = n_rows - 2;
   int c1 = c0 + 1;
   int r1 = r0 + 1;
 
   TYPE dx = col_raw - TYPE(c0);
   TYPE dy = row_raw - TYPE(r0);
 
-  if(dx < TYPE(0.0)) dx = TYPE(0.0); if(dx > TYPE(1.0)) dx = TYPE(1.0);
-  if(dy < TYPE(0.0)) dy = TYPE(0.0); if(dy > TYPE(1.0)) dy = TYPE(1.0);
+  if(dx < TYPE(0.0)) dx = TYPE(0.0);
+  if(dx > TYPE(1.0)) dx = TYPE(1.0);
+  if(dy < TYPE(0.0)) dy = TYPE(0.0);
+  if(dy > TYPE(1.0)) dy = TYPE(1.0);
 
   TYPE val = grid(r0, c0) * (TYPE(1.0) - dx) * (TYPE(1.0) - dy) +
     grid(r0, c1) * dx * (TYPE(1.0) - dy) +

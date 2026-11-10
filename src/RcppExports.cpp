@@ -13,8 +13,8 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // simulate_langevin_cpp
-DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition, NumericMatrix barrier_dist, NumericVector barrier_penalty, int spline_degree, double barrier_onset);
-RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP, SEXP barrier_distSEXP, SEXP barrier_penaltySEXP, SEXP spline_degreeSEXP, SEXP barrier_onsetSEXP) {
+DataFrame simulate_langevin_cpp(int model, int nbAnimals, int obsPerAnimal, NumericVector dt_vec, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition, NumericMatrix barrier_dist, NumericVector barrier_penalty, int spline_degree, double barrier_onset, int ncores);
+RcppExport SEXP _langevinSSM_simulate_langevin_cpp(SEXP modelSEXP, SEXP nbAnimalsSEXP, SEXP obsPerAnimalSEXP, SEXP dt_vecSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP, SEXP barrier_distSEXP, SEXP barrier_penaltySEXP, SEXP spline_degreeSEXP, SEXP barrier_onsetSEXP, SEXP ncoresSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -31,7 +31,40 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type barrier_penalty(barrier_penaltySEXP);
     Rcpp::traits::input_parameter< int >::type spline_degree(spline_degreeSEXP);
     Rcpp::traits::input_parameter< double >::type barrier_onset(barrier_onsetSEXP);
-    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, barrier_penalty, spline_degree, barrier_onset));
+    Rcpp::traits::input_parameter< int >::type ncores(ncoresSEXP);
+    rcpp_result_gen = Rcpp::wrap(simulate_langevin_cpp(model, nbAnimals, obsPerAnimal, dt_vec, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, barrier_penalty, spline_degree, barrier_onset, ncores));
+    return rcpp_result_gen;
+END_RCPP
+}
+// simulate_langevin_tracks_cpp
+DataFrame simulate_langevin_tracks_cpp(int model, List dt_list, List penalty_list, double gamma, double sigma, NumericVector beta, List raster_data, NumericMatrix initialPosition, NumericMatrix barrier_dist, int spline_degree, double barrier_onset, int ncores);
+RcppExport SEXP _langevinSSM_simulate_langevin_tracks_cpp(SEXP modelSEXP, SEXP dt_listSEXP, SEXP penalty_listSEXP, SEXP gammaSEXP, SEXP sigmaSEXP, SEXP betaSEXP, SEXP raster_dataSEXP, SEXP initialPositionSEXP, SEXP barrier_distSEXP, SEXP spline_degreeSEXP, SEXP barrier_onsetSEXP, SEXP ncoresSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type model(modelSEXP);
+    Rcpp::traits::input_parameter< List >::type dt_list(dt_listSEXP);
+    Rcpp::traits::input_parameter< List >::type penalty_list(penalty_listSEXP);
+    Rcpp::traits::input_parameter< double >::type gamma(gammaSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type beta(betaSEXP);
+    Rcpp::traits::input_parameter< List >::type raster_data(raster_dataSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type initialPosition(initialPositionSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type barrier_dist(barrier_distSEXP);
+    Rcpp::traits::input_parameter< int >::type spline_degree(spline_degreeSEXP);
+    Rcpp::traits::input_parameter< double >::type barrier_onset(barrier_onsetSEXP);
+    Rcpp::traits::input_parameter< int >::type ncores(ncoresSEXP);
+    rcpp_result_gen = Rcpp::wrap(simulate_langevin_tracks_cpp(model, dt_list, penalty_list, gamma, sigma, beta, raster_data, initialPosition, barrier_dist, spline_degree, barrier_onset, ncores));
+    return rcpp_result_gen;
+END_RCPP
+}
+// lssm_omp_num_procs
+int lssm_omp_num_procs();
+RcppExport SEXP _langevinSSM_lssm_omp_num_procs() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(lssm_omp_num_procs());
     return rcpp_result_gen;
 END_RCPP
 }

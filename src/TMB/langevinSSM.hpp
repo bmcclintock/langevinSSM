@@ -290,7 +290,13 @@ Type langevinSSM(objective_function<Type>* obj)
   vector<Type> df = exp(l_df);
   vector<Type> k = exp(l_k);
 
-  Type nll = 0.0;
+  // Negative log-likelihood.  parallel_accumulator<Type> behaves exactly like 'Type nll = 0' in a
+  // serial build.  When the package is compiled with OpenMP and fitLangevin(ncores > 1) sets
+  // TMB::openmp(ncores), TMB tapes the objective in ncores parts: every '+=' / '-=' on nll is assigned
+  // to one part (round robin), and the parts are evaluated in parallel and summed.  Each time step of
+  // the process model and each observation therefore adds its total contribution with a single
+  // '+=' (via the local nll_t), so that the force computed for a step is taped in one part only.
+  parallel_accumulator<Type> nll(obj);
 
   // Create map of unique IDs to track lengths
   int curr_id = ID(0);
@@ -363,6 +369,8 @@ Type langevinSSM(objective_function<Type>* obj)
 
       if(skip_step(idx+1) == 1) continue;
 
+      Type nll_t = Type(0.0);   // contribution of this step (added to nll once, below)
+
       // Get current locations and absolute time
       Type x_prev = mu(0,idx);
       Type y_prev = mu(1,idx);
@@ -423,7 +431,7 @@ Type langevinSSM(objective_function<Type>* obj)
         Type qc = Type(0.5) * var_x / det_S;    // 0.5 * (Sigma^-1)_22
         Type cB = s2 / gamma * (dt_step - term1);   // coefficient of h in the position mean
         Type cV = s2 * term1;                       // coefficient of h in the velocity mean
-        nll += log(det_S) + Type(2.0 * log(2.0 * M_PI));
+        nll_t += log(det_S) + Type(2.0 * log(2.0 * M_PI));
 
         for(int i = 0; i < 2; i++) {
           // Position and velocity means:
@@ -431,7 +439,7 @@ Type langevinSSM(objective_function<Type>* obj)
           //   mu_v_pred = vel e^{-gdt} + s2 h (1 - e^{-gdt})/gamma
           Type nx = mu(i,idx+1) - (mu(i,idx) + vel(i,idx) * term1 + h(i) * cB);
           Type nv = vel(i,idx+1) - (vel(i,idx) * exp_gdt + h(i) * cV);
-          nll += nx * (qa * nx + qb * nv) + qc * nv * nv;
+          nll_t += nx * (qa * nx + qb * nv) + qc * nv * nv;
         }
       } else {  // Overdamped
 
@@ -441,9 +449,10 @@ Type langevinSSM(objective_function<Type>* obj)
 
         Type sd = sigma_sca * sqrt(dt_step);
 
-        nll -= (dnorm(mu(0,idx+1), Ex, sd, true) +
+        nll_t -= (dnorm(mu(0,idx+1), Ex, sd, true) +
           dnorm(mu(1,idx+1), Ey, sd, true));
       }
+      nll += nll_t;
     }
   }
 
@@ -553,6 +562,7 @@ Type langevinSSM(objective_function<Type>* obj)
   // OBSERVATION MODEL
   for(int i = 0; i < timeSteps; ++i) {
     if(isd(i) == 1) {
+      Type nll_i = Type(0.0);   // contribution of this observation (added to nll once, below)
       matrix<Type> cov_obs(2, 2);
       cov_obs.setZero();
       if(obs_mod(i) == 0) {
@@ -621,20 +631,20 @@ Type langevinSSM(objective_function<Type>* obj)
         Type var_y_given_x = varY - covXY * covXY / varX;
         Type d2 = dx * dx / varX + ey * ey / var_y_given_x;
         Type ll_c = -Type(log(2.0 * M_PI)) - Type(0.5) * log(varX * var_y_given_x);
-        if (dist_i == 0) nll -= ll_c - Type(0.5) * d2;
-        else nll -= ll_c - Type(0.5) * (df_i + Type(2.0)) * log(Type(1.0) + d2 / df_i);
+        if (dist_i == 0) nll_i -= ll_c - Type(0.5) * d2;
+        else nll_i -= ll_c - Type(0.5) * (df_i + Type(2.0)) * log(Type(1.0) + d2 / df_i);
       } else if (dist_i == 0) {
         // Gaussian Model
-        nll -= kX * dnorm(x_obs, mu_x, sdX, true);
+        nll_i -= kX * dnorm(x_obs, mu_x, sdX, true);
         Type mu_y_cond = mu_y + kX * (covXY / varX) * (x_obs - mu_x);
         Type sd_y_cond = sqrt(varY - kX * (covXY * covXY / varX));
-        nll -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);
+        nll_i -= kY * dnorm(y_obs, mu_y_cond, sd_y_cond, true);
         if (osa_cdf) {
           Type lF, lS;
           log_pnorm_both((x_obs - mu_x) / sdX, lF, lS);
-          nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
+          nll_i -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
           log_pnorm_both((y_obs - mu_y_cond) / sd_y_cond, lF, lS);
-          nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
+          nll_i -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
         }
       } else if (dist_i == 1) {
         // Bivariate t-distribution model, written as marginal(x) * conditional(y | x)
@@ -655,13 +665,13 @@ Type langevinSSM(objective_function<Type>* obj)
         Type df_y = df_i + kX;
         Type ll_y = dt((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, true) - Type(0.5) * log(scale2_y);
 
-        nll -= kX * ll_x + kY * ll_y;
+        nll_i -= kX * ll_x + kY * ll_y;
         if (osa_cdf) {
           Type lF, lS;
           log_pt_both(dx / sdX, df_i, lF, lS);
-          nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
+          nll_i -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
           log_pt_both((y_obs - mu_y_cond) / sqrt(scale2_y), df_y, lF, lS);
-          nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
+          nll_i -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
         }
       } else if (dist_i == 2) {
         // Pseudo-Huber model (bivariate hyperbolic distribution):
@@ -685,13 +695,13 @@ Type langevinSSM(objective_function<Type>* obj)
         Type ll_joint = -(k_i * sqrt(k2 + d2) - k2) - log(Type(2.0 * M_PI)) - Type(0.5) * log(det) -
           log(Type(1.0) + Type(1.0) / k2);
         if (!keep.osa_active()) {
-          nll -= ll_joint;
+          nll_i -= ll_joint;
         } else {
           Type zx = dx / sdX;
           Type ll_x = log_dgh1(zx, Type(1.5), k2, k2) - log(sdX);
           Type ll_ymarg = log_dgh1(dy / sdY, Type(1.5), k2, k2) - log(sdY);
           Type ll_y = kX * (ll_joint - ll_x) + (Type(1.0) - kX) * ll_ymarg;
-          nll -= kX * ll_x + kY * ll_y;
+          nll_i -= kX * ll_x + kY * ll_y;
           if (osa_cdf) {
             // x / sdX ~ GH(3/2, k^2, k^2). Given x (kX = 1) the standardised y | x ~ GH(1, k^2 + zx^2, k^2);
             // without x (kX = 0) y / sdY ~ GH(3/2, k^2, k^2). Blended smoothly in kX, exact at kX = 0 and 1.
@@ -700,13 +710,14 @@ Type langevinSSM(objective_function<Type>* obj)
             Type chi_y = k2 + kX * zx * zx;
             Type lF = log_pgh1_upper(-zx, Type(1.5), k2, k2);
             Type lS = log_pgh1_upper(zx, Type(1.5), k2, k2);
-            nll -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
+            nll_i -= keep.cdf_lower(0,i) * lF + keep.cdf_upper(0,i) * lS;
             lF = log_pgh1_upper(-zy, lam_y, chi_y, k2);
             lS = log_pgh1_upper(zy, lam_y, chi_y, k2);
-            nll -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
+            nll_i -= keep.cdf_lower(1,i) * lF + keep.cdf_upper(1,i) * lS;
           }
         }
       }
+      nll += nll_i;
     }
   }
 

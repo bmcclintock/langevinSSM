@@ -25,6 +25,11 @@
 #' @param data The \code{dataLangevin} object (as returned by \code{\link{formatData}} or \code{\link{simLangevin}}) used to fit the model.
 #' @param jointPrecision Logical. If \code{TRUE}, draws parameters and latent variables from the full joint precision matrix of both fixed parameters and random effects. If \code{FALSE}, fixes the movement parameters at their point estimates and draws only random effects. Default: \code{FALSE}.
 #' @param conditional Logical. If \code{TRUE}, simulates tracks conditional on the observed data (imputation), adding observation error to the drawn latent states based on the measurement error information in \code{data}. If \code{FALSE}, simulates an entirely new track forwards in time (e.g. for posterior predictive check). Default: \code{FALSE}.
+#' @param ncores Number of threads (OpenMP). Animals (tracks) are simulated in parallel; for a \code{fitLangevin}
+#' object, the likelihood used to reconstruct the fitted model and its standard errors is also evaluated with
+#' \code{ncores} threads. The random numbers are drawn serially from R's generator, in the same order as with one
+#' thread, so for a given seed the simulated tracks do not depend on \code{ncores}. Default:
+#' \code{getOption("langevinSSM.ncores", 1)}. Ignored if the package was compiled without OpenMP support.
 #'
 #' @details
 #' \strong{Simulating from Scratch (Default Method):}
@@ -165,6 +170,7 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
                                 initialPosition,
                                 measurementError = NULL,
                                 subSample = NULL,
+                                ncores = getOption("langevinSSM.ncores", 1L),
                                 ...) {
 
   model <- match.arg(model)
@@ -311,7 +317,8 @@ simLangevin.default <- function(model = c("underdamped", "overdamped"),
     barrier_dist = barrier_dist_mat,
     barrier_penalty = barrier_pen,
     spline_degree = .grad_degree(grad),
-    barrier_onset = barrierOnset
+    barrier_onset = barrierOnset,
+    ncores = .check_ncores(ncores, has_openmp = .rcpp_has_openmp())
   )
 
   class(out) <- c("dataLangevin", class(out))
@@ -371,6 +378,7 @@ simLangevin.fitLangevin <- function(model,
                                     timeStep = 0.01,
                                     jointPrecision = FALSE,
                                     conditional = FALSE,
+                                    ncores = getOption("langevinSSM.ncores", 1L),
                                     ...) {
 
   if (is.null(data) || !inherits(data,"dataLangevin")) stop("data must be a dataLangevin object.")
@@ -449,6 +457,10 @@ simLangevin.fitLangevin <- function(model,
   }
 
   dat <- c(dat, fit$tmb_setup$priors)
+
+  ncores <- .check_ncores(ncores)
+  old_threads <- .set_tmb_threads(ncores)
+  on.exit(.restore_tmb_threads(old_threads), add = TRUE)
 
   obj2 <- try({
     TMB::MakeADFun(
@@ -552,7 +564,13 @@ simLangevin.fitLangevin <- function(model,
     min_dt <- min(data$dt[data$dt > 0], na.rm = TRUE)
     prec <- max(10, ceiling(abs(log10(min_dt))) + 3)
 
-    for (i in unique(data$id)) {
+    raster_names <- c("raster_vals","raster_coords","raster_resolution","raster_extent","n_covs","all_z_values","n_zvals_cov","cov_offset")
+    ids <- unique(data$id)
+    trk <- vector("list", length(ids))
+
+    # Time grid, initial position and barrier penalty of every track
+    for (k in seq_along(ids)) {
+      i <- ids[k]
       ind_data <- data[data$id == i, ]
 
       if (inherits(ind_data$date, c("POSIXt", "Date"))) {
@@ -569,33 +587,39 @@ simLangevin.fitLangevin <- function(model,
 
       first_idx <- which(data$id == i)[1]
 
-      # Feed the working scale initial positions to the solver
-      init_pos <- matrix(c(mu_working[first_idx, 1], mu_working[first_idx, 2]), nrow = 1, ncol = 2)
-
-      raster_names <- c("raster_vals","raster_coords","raster_resolution","raster_extent","n_covs","all_z_values","n_zvals_cov","cov_offset")
-
       sim_pen <- dat$barrier_penalty
       if (tied && !is.null(cond$barrier)) {
         sim_pen <- .stability_limit(cond$model, sigma_working, nat_par$gamma, full_dt_vec)
         if (length(unique(sim_pen)) == 1L) sim_pen <- sim_pen[1]
       }
-      sim_full <- simulate_langevin_cpp(
-        model = ifelse(fit$conditions$model=="underdamped", 1, 0),
-        nbAnimals = 1,
-        obsPerAnimal = length(full_dt_vec),
-        dt_vec = full_dt_vec,
-        gamma = nat_par$gamma,
-        sigma = sigma_working, # Provide working scale sigma
-        beta = nat_par$beta,
-        raster_data = dat[raster_names],
-        initialPosition = init_pos,
-        barrier_dist = dat$barrier_dist,
-        barrier_penalty = sim_pen,
-        spline_degree = dat$spline_degree,
-        barrier_onset = dat$barrier_onset
-      )
+      trk[[k]] <- list(dt = full_dt_vec, pen = as.numeric(sim_pen), obs_idx = obs_idx, first_idx = first_idx)
+    }
 
-      sim_ind <- sim_full[obs_idx, ]
+    # Feed the working scale initial positions to the solver.  The tracks are simulated in one call (in parallel
+    # if ncores > 1); the random draws are the same as when simulating the tracks one after the other.
+    init_pos <- mu_working[vapply(trk, `[[`, 1L, "first_idx"), , drop = FALSE]
+    sim_all <- simulate_langevin_tracks_cpp(
+      model = ifelse(fit$conditions$model=="underdamped", 1, 0),
+      dt_list = lapply(trk, `[[`, "dt"),
+      penalty_list = lapply(trk, `[[`, "pen"),
+      gamma = nat_par$gamma,
+      sigma = sigma_working, # Provide working scale sigma
+      beta = nat_par$beta,
+      raster_data = dat[raster_names],
+      initialPosition = init_pos,
+      barrier_dist = dat$barrier_dist,
+      spline_degree = dat$spline_degree,
+      barrier_onset = dat$barrier_onset,
+      ncores = ncores
+    )
+    sim_rows <- split(seq_len(nrow(sim_all)), sim_all$id)
+
+    for (k in seq_along(ids)) {
+      i <- ids[k]
+      ind_data <- data[data$id == i, ]
+      sim_full <- sim_all[sim_rows[[k]], ]
+
+      sim_ind <- sim_full[trk[[k]]$obs_idx, ]
 
       # rescale the outputs back to the natural scale
       sim_ind$mu.x <- sim_ind$mu.x * scaleFactor

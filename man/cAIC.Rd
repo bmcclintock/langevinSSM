@@ -4,7 +4,13 @@
 \alias{cAIC}
 \title{Calculate Conditional AIC for a fitted Langevin model}
 \usage{
-cAIC(fit, data, spatialCovs, nSims = 200)
+cAIC(
+  fit,
+  data,
+  spatialCovs,
+  nSims = 200,
+  ncores = getOption("langevinSSM.ncores", 1L)
+)
 }
 \arguments{
 \item{fit}{A \code{fitLangevin} object.}
@@ -14,6 +20,8 @@ cAIC(fit, data, spatialCovs, nSims = 200)
 \item{spatialCovs}{A list of named \code{\link[terra]{SpatRaster-class}} objects containing the spatial covariates.}
 
 \item{nSims}{Integer. The number of Rademacher vectors used for Hutchinson's trace estimator (if the exact sparse inverse fails). Default: 200.}
+
+\item{ncores}{Number of threads (OpenMP) used to evaluate the likelihood (two objective functions and a joint precision matrix are computed). See \code{\link{fitLangevin}}. Default: \code{getOption("langevinSSM.ncores", 1)}.}
 }
 \value{
 A list containing the calculated \code{cAIC}, effective degrees of freedom (\code{EDF}),

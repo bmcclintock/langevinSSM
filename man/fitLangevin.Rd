@@ -29,7 +29,8 @@ fitLangevin(
   inner.control = list(maxit = 1000),
   control = list(trace = 0, iter.max = 1000, eval.max = 1000),
   getJointPrecision = FALSE,
-  calcSE = TRUE
+  calcSE = TRUE,
+  ncores = getOption("langevinSSM.ncores", 1L)
 )
 }
 \arguments{
@@ -84,6 +85,14 @@ Any missing state process parameters are generated using \code{\link{initialValu
 \item{getJointPrecision}{Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.}
 
 \item{calcSE}{Logical indicating whether or not to calculate standard errors for the parameter estimates. Default: \code{TRUE}.}
+
+\item{ncores}{Number of threads (OpenMP) used to evaluate the likelihood and its derivatives. The likelihood is
+split into \code{ncores} parts (sums over time steps and observations) that are evaluated in parallel. Default:
+\code{getOption("langevinSSM.ncores", 1)}, i.e. a single thread unless set by the user, e.g. with
+\code{options(langevinSSM.ncores = 4)}. Values larger than the number of available processors are reduced to it.
+If the package was compiled without OpenMP support (e.g. on platforms where the compiler has none),
+\code{ncores} is ignored. Results agree with \code{ncores = 1} up to floating-point rounding (the order of
+summation differs).}
 }
 \value{
 \code{fitLangevin} object, i.e., a list of:

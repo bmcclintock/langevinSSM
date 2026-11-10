@@ -244,6 +244,13 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @param control A list of control parameters for the outer optimization. For \code{optMethod="nlminb"}, see \code{\link[stats]{nlminb}}. For \code{optMethod="nloptr"}, these arguments are directly mapped to the \code{opts} list in \code{\link[nloptr]{nloptr}}. The defaults for \code{optMethod="nloptr"} are \code{maxeval = eval.max} (1000), \code{xtol_rel = 1e-8} and \code{ftol_rel = 1e-12}. Internally, the objective is divided by the norm of its gradient at the starting values (when this exceeds 1) so that the first step of gradient-based NLopt algorithms is of unit length; the reported objective is on the original scale, as is the trace printed with \code{control = list(print_level = 1)} (\code{f(x)} is the negative log-likelihood; \code{print_level = 3} also prints the working-scale parameters).
 #' @param getJointPrecision Logical indicating whether or not to return the joint precision matrix for the random effects. Default: \code{FALSE}.
 #' @param calcSE Logical indicating whether or not to calculate standard errors for the parameter estimates. Default: \code{TRUE}.
+#' @param ncores Number of threads (OpenMP) used to evaluate the likelihood and its derivatives. The likelihood is
+#' split into \code{ncores} parts (sums over time steps and observations) that are evaluated in parallel. Default:
+#' \code{getOption("langevinSSM.ncores", 1)}, i.e. a single thread unless set by the user, e.g. with
+#' \code{options(langevinSSM.ncores = 4)}. Values larger than the number of available processors are reduced to it.
+#' If the package was compiled without OpenMP support (e.g. on platforms where the compiler has none),
+#' \code{ncores} is ignored. Results agree with \code{ncores = 1} up to floating-point rounding (the order of
+#' summation differs).
 #'
 #' @return \code{fitLangevin} object, i.e., a list of:
 #' \item{par}{See \code{\link[stats]{nlminb}} or \code{\link[nloptr]{nloptr}}}
@@ -398,7 +405,7 @@ extract_tmb_estimates <- function(fit, obj, sdreport_out, re, map, data, scaleFa
 #' @importFrom utils modifyList
 #' @importFrom TMB MakeADFun sdreport oneStepPredict
 #' @export
-fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = c("Gaussian", "t", "Huber"), spatialCovs, barrier = NULL, par, lambda = "tied", barrierOnset = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, grad = c("quintic", "cubic", "bilinear"), smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE, calcSE = TRUE){
+fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = c("Gaussian", "t", "Huber"), spatialCovs, barrier = NULL, par, lambda = "tied", barrierOnset = NULL, prior = NULL, map=NULL, coord = c("x", "y"), scaleFactor = 1, grad = c("quintic", "cubic", "bilinear"), smoothGradient = FALSE, npoints = 4, curweight = 0.5, zetaScale = 1, hessian=FALSE, silent=TRUE, method="BFGS", optMethod=c("nlminb", "nloptr"), inner.control=list(maxit=1000), control = list(trace=0,iter.max=1000,eval.max=1000), getJointPrecision = FALSE, calcSE = TRUE, ncores = getOption("langevinSSM.ncores", 1L)){
 
   if(!inherits(data,"dataLangevin")) stop("'data' is not formatted as a 'dataLangevin' object. See ?formatData")
 
@@ -497,6 +504,11 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
   tmbpar$vel <- tmbpar$vel / scaleFactor
 
   message("   Constructing objective function...")
+
+  # Multi-threading (OpenMP): the likelihood is taped in 'ncores' parts that are evaluated in parallel
+  ncores <- .check_ncores(ncores)
+  old_threads <- .set_tmb_threads(ncores)
+  on.exit(.restore_tmb_threads(old_threads), add = TRUE)
 
   obj2 <- try({
     TMB::MakeADFun(c(model="langevinSSM",dat), tmbpar, map = tmbmap, random = re, DLL = "langevinSSM_TMBExports", hessian = hessian, method = method, silent = silent, inner.control = inner.control)
@@ -644,7 +656,7 @@ fitLangevin <- function(data, model = c("underdamped","overdamped"), obs_dist = 
               if (calcSE) paste0("; relative SE ", ifelse(is.finite(lse), signif(lse, 2), "NaN")) else "",
               "). Consider fixing lambda or using lambda = \"tied\".", call. = FALSE)
   }
-  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, grad = grad, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, smoothPar = smoothPar, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda_est, lambda_mode = if (is.null(barrier)) NULL else c("fixed","tied","estimate")[lambda_mode + 1L], lambda_report = lambda_report, barrierOnset = if (is.null(barrier)) NULL else barrierOnset, calcSE = calcSE, obs_spec = obs_spec)
+  fit$conditions <- list(hessian = hessian, method = method, optMethod = optMethod, silent = silent, inner.control = inner.control, control = control, scaleFactor = scaleFactor, model = model, obs_dist = obs_dist, par = par, map = map, grad = grad, smoothGradient = smoothGradient, npoints = npoints, curweight = curweight, zetaScale = zetaScale, smoothPar = smoothPar, prior = origprior, coord = coord, out_of_bounds = out_of_bounds, barrier = barrier, lambda = lambda_est, lambda_mode = if (is.null(barrier)) NULL else c("fixed","tied","estimate")[lambda_mode + 1L], lambda_report = lambda_report, barrierOnset = if (is.null(barrier)) NULL else barrierOnset, calcSE = calcSE, obs_spec = obs_spec, ncores = ncores)
 
   boundsWarning(fit)
 

@@ -42,8 +42,10 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
+          lockfile: false
           extra-packages: |
             any::rcmdcheck
+            any::terra
             jmlondon/pathroutr
           needs: check
 

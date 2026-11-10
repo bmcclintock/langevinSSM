@@ -42,12 +42,13 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          lockfile: false
+          cache-version: 2
           extra-packages: |
             any::rcmdcheck
             any::terra
             jmlondon/pathroutr
           needs: check
+          upgrade: true
 
       - uses: r-lib/actions/check-r-package@v2
         with:

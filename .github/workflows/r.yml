@@ -48,7 +48,7 @@ jobs:
             any::terra
             jmlondon/pathroutr
           needs: check
-          upgrade: true
+          upgrade: 'TRUE'
 
       - uses: r-lib/actions/check-r-package@v2
         with:

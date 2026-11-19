@@ -682,8 +682,10 @@ Type langevinSSM(objective_function<Type>* obj)
         Type det = varX * var_y_given_x;
         Type d2 = dx * dx / varX + pow(dy - (covXY / varX) * dx, 2) / var_y_given_x;
         Type k2 = k_i * k_i;
-        Type ll_joint = -(k_i * sqrt(k2 + d2) - k2) - log(Type(2.0 * M_PI)) - Type(0.5) * log(det) -
-          log(Type(1.0) + Type(1.0) / k2);
+        // k sqrt(k^2 + d2) - k^2 written as k d2 / (sqrt(k^2 + d2) + k): identical, but free of the
+        // catastrophic cancellation that makes the objective (and gradient) noisy for large k.
+        Type ll_joint = -(k_i * d2 / (sqrt(k2 + d2) + k_i)) - log(Type(2.0 * M_PI)) - Type(0.5) * log(det) -
+          log1p(Type(1.0) / k2);
         if (!keep.osa_active()) {
           nll -= ll_joint;
         } else {

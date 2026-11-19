@@ -225,7 +225,12 @@ test_that("grouped fits work with getPar, predLangevin, simLangevin and residual
   d <- grp_mixed(n = 40)
   f <- gfit(d, list(tau = list(G = 1), k = c(G = 3, epar = 2), psi = 1, b_maj = 1),
             list(tau = factor(c(NA, NA))), obs_dist = "Huber", calcSE = TRUE)
-  expect_equal(f$convergence, 0)
+  # The data are simulated with Gaussian errors, so the MLE of k is at +Inf (Huber -> Gaussian) and
+  # nlminb walks l_k up a flat ridge; whether PORT then reports code 0 or 1 ("false convergence")
+  # depends on last-bit floating point differences between platforms. This test is about plumbing,
+  # so only require a usable fit.
+  expect_true(f$convergence %in% c(0, 1))
+  expect_true(is.finite(f$objective))
   gp <- getPar(f)
   expect_equal(names(gp$k), c("G", "epar"))
   expect_true(all(c("k_G", "k_epar", "tau_G_1", "tau_G_2") %in% rownames(f$estimates$natural)))
